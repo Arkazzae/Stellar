@@ -252,6 +252,11 @@ export function Rail({
   const canSort = canManageChannels;
   const looseText = textChannels.filter((channel) => channel.sectionId === undefined);
   const looseVoice = voiceChannels.filter((channel) => channel.sectionId === undefined);
+  const showTextCaption = sections.length === 0 || looseText.length > 0;
+  const showVoiceCaption = sections.length === 0 || looseVoice.length > 0;
+  // Empty loose lists stay open as drop targets, even when their captions are hidden.
+  const looseTextOpen = textOpen || !showTextCaption;
+  const looseVoiceOpen = voiceOpen || !showVoiceCaption;
   const grouped = sections.map((section) => ({
     section,
     text: textChannels.filter((channel) => channel.sectionId === section.id),
@@ -269,8 +274,8 @@ export function Rail({
     textChannels,
     voiceChannels,
     sections,
-    textOpen,
-    voiceOpen,
+    textOpen: looseTextOpen,
+    voiceOpen: looseVoiceOpen,
     closedSections,
     canSortChannels: canSort,
     onMoveChannel: (channelMove) => void rearrange(() => onMoveChannel(channelMove)),
@@ -327,15 +332,16 @@ export function Rail({
     />
   );
 
+  const createChannel = canManageChannels ? onCreateChannel : undefined;
   const createAction = (kind: "text" | "voice") =>
-    canManageChannels && onCreateChannel !== undefined ? (
+    createChannel !== undefined ? (
       <CreateChannelButton
         label={t(
           kind === "text"
             ? "shell.createTextChannel"
             : "shell.createVoiceChannel",
         )}
-        onCreate={() => onCreateChannel(kind)}
+        onCreate={() => createChannel(kind)}
       />
     ) : null;
 
@@ -392,6 +398,9 @@ export function Rail({
     >
       <RailHeader
         serverName={serverName}
+        onCreateChannel={!showTextCaption && !showVoiceCaption && createChannel !== undefined
+          ? () => createChannel("text")
+          : undefined}
         onEditServer={canAccessServerSettings ? onEditServer : undefined}
         onInvite={canManageServer ? onInvite : undefined}
       />
@@ -399,9 +408,9 @@ export function Rail({
       <div className="rail-scroll" ref={dragContainer}>
         <CollapsibleGroup
           id={`${railId}-text`}
-          caption={t("shell.textChannels")}
+          caption={showTextCaption ? t("shell.textChannels") : undefined}
           captionTitle={canSort ? t("shell.dragChannel") : undefined}
-          open={textOpen}
+          open={looseTextOpen}
           onToggle={() => setTextOpen((open) => !open)}
           actions={createAction("text")}
         >
@@ -409,8 +418,8 @@ export function Rail({
         </CollapsibleGroup>
         <CollapsibleGroup
           id={`${railId}-voice`}
-          caption={t("shell.voiceChannels")}
-          open={voiceOpen}
+          caption={showVoiceCaption ? t("shell.voiceChannels") : undefined}
+          open={looseVoiceOpen}
           onToggle={() => setVoiceOpen((open) => !open)}
           actions={createAction("voice")}
         >

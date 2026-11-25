@@ -128,6 +128,7 @@ pub async fn history(
         .database()
         .read(move |db| read_history(db, &messages, caller.user, server, channel, query))
         .await?;
+    crate::link_previews::enqueue_imported(&state, channel, &page.messages).await;
     Ok(Json(page))
 }
 

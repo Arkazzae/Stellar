@@ -401,6 +401,7 @@ async fn settings_are_read_before_they_are_saved_and_saved_as_a_whole() {
     assert_eq!(before["mfaRequirement"], "optional");
     assert_eq!(before["backupRetentionDays"], 14);
     assert_eq!(before["smtpPort"], 587);
+    assert_eq!(before["uploadUserLimitBytes"], 2_147_483_648_i64);
 
     let mut body = json!({
         "instanceName": "Orbit HQ", "timeZone": "UTC", "mailingEnabled": false, "mailFromAddress": "",
@@ -446,6 +447,47 @@ async fn settings_are_read_before_they_are_saved_and_saved_as_a_whole() {
     body["mailFromAddress"] = json!("not an address");
     let refused = scene.owner.client.send(Request::new(Method::PUT, "/api/cockpit/settings").json(&body)).await;
     assert!(refused.json::<Value>()["errors"]["mailFromAddress"].is_array());
+}
+
+#[tokio::test]
+async fn cockpit_upload_quota_applies_to_the_next_upload() {
+    let scene = Scene::with(&[
+        ("STELLARR_UPLOAD_USER_BYTES", "10"),
+        ("STELLARR_MIN_FREE_BYTES", "0"),
+    ]).await;
+    let path = "/api/cockpit/settings";
+    let before = scene.owner.client.get(path).await.json::<Value>();
+    assert_eq!(before["uploadUserLimitBytes"], 10);
+
+    let image = || crate::uploads::image("quota.png");
+    let refused = crate::uploads::upload(&scene.member, image()).await;
+    assert_eq!(refused.status, 507, "{}", refused.text());
+
+    let mut body = json!({
+        "instanceName": before["instanceName"], "timeZone": before["timeZone"],
+        "mailingEnabled": before["mailingEnabled"], "mailFromAddress": before["mailFromAddress"],
+        "inviteMailEnabled": before["inviteMailEnabled"], "recoveryMailEnabled": before["recoveryMailEnabled"],
+        "alertMailEnabled": before["alertMailEnabled"], "backupRetentionDays": before["backupRetentionDays"],
+        "logRetentionDays": before["logRetentionDays"], "orphanObjectRetentionDays": before["orphanObjectRetentionDays"],
+        "automaticCleanupEnabled": before["automaticCleanupEnabled"], "uploadUserLimitBytes": 24
+    });
+    let denied = scene.admin.client.send(Request::new(Method::PUT, path).json(&body)).await;
+    assert_eq!(denied.status, 403);
+    let updated = scene.owner.client.send(Request::new(Method::PUT, path).json(&body)).await;
+    assert_eq!(updated.status, 200, "{}", updated.text());
+    assert_eq!(updated.json::<Value>()["uploadUserLimitBytes"], 24);
+
+    let uploaded = crate::uploads::upload(&scene.member, image()).await;
+    assert_eq!(uploaded.status, 201, "{}", uploaded.text());
+    body.as_object_mut().unwrap().remove("uploadUserLimitBytes");
+    let unchanged = scene.owner.client.send(Request::new(Method::PUT, path).json(&body)).await;
+    assert_eq!(unchanged.status, 200, "{}", unchanged.text());
+    assert_eq!(unchanged.json::<Value>()["uploadUserLimitBytes"], 24);
+    body["uploadUserLimitBytes"] = json!(-1);
+    let invalid = scene.owner.client.send(Request::new(Method::PUT, path).json(&body)).await;
+    assert_eq!(invalid.status, 400, "{}", invalid.text());
+    assert!(invalid.json::<Value>()["errors"]["uploadUserLimitBytes"].is_array());
+    assert_eq!(scene.owner.client.get(path).await.json::<Value>()["uploadUserLimitBytes"], 24);
 }
 
 #[tokio::test]

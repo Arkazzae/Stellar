@@ -209,6 +209,7 @@ pub(crate) fn text(key: MessageKey) -> &'static str {
             "Cloudflare R2 wymaga HTTPS, nazwy bucketu, regionu, bezpiecznego prefiksu i obu poświadczeń. Zapisz poświadczenia przed włączeniem wysyłki kopii."
         }
         MessageKey::CockpitLogRetentionRange => "Retencja logów musi wynosić od 1 do {max} dni.",
+        MessageKey::CockpitUploadQuotaRange => "Podaj limit miejsca z obsługiwanego zakresu, od zera wzwyż.",
         MessageKey::CockpitOrphanRetentionRange => {
             "Retencja osieroconych obiektów musi wynosić od 1 do {max} dni."
         }

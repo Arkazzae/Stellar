@@ -315,6 +315,11 @@ export const en = {
   "settings.instance.publicUrl": "Public URL",
   "settings.instance.publicUrlHint": "Comes from STELLARR_DOMAIN in the server's environment. Used in invitations and system messages.",
   "settings.instance.timeZone": "Server time zone",
+  "settings.storage.title": "File storage",
+  "settings.storage.description": "This quota applies to each account across all servers on the instance. It includes attachments imported from Discord.",
+  "settings.storage.userLimit": "File storage per account (MiB)",
+  "settings.storage.userLimitHint": "Set 0 to disable the account quota. The instance quota and free disk space reserve still apply.",
+  "settings.storage.invalidQuota": "Enter a non-negative file storage limit.",
   "settings.retention.title": "Data retention",
   "settings.retention.description":
     "The limits are saved now; the cleanup jobs will be added separately.",

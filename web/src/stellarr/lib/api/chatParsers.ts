@@ -70,6 +70,7 @@ function parseEmbed(value: unknown, path: string): MessageEmbed {
     ...definedField("title", optionalString(record, "title")),
     ...definedField("description", optionalString(record, "description")),
     ...definedField("thumbnailUrl", safeAssetUrl(optionalString(record, "thumbnailUrl"))),
+    ...definedField("animationUrl", safeAssetUrl(optionalString(record, "animationUrl"))),
   };
 }
 

@@ -173,6 +173,34 @@ beforeEach(() => {
 });
 
 describe("Rail channel sorting", () => {
+  it("hides empty default captions while keeping channel creation and moves out of sections", () => {
+    const onCreateChannel = vi.fn();
+    const { onMoveChannel } = setup({
+      textChannels: TEXT.filter((item) => item.sectionId !== undefined),
+      voiceChannels: VOICE.filter((item) => item.sectionId !== undefined),
+      onCreateChannel,
+    });
+
+    expect(screen.queryByRole("button", { name: /^tekstowe$/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^głosowe$/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Utwórz kanał" }));
+    expect(onCreateChannel).toHaveBeenCalledExactlyOnceWith("text");
+
+    const tasks = channel("zadania");
+    tasks.focus();
+    fireEvent.keyDown(tasks, { key: " " });
+    fireEvent.keyDown(tasks, { key: "ArrowUp" });
+    fireEvent.keyDown(tasks, { key: " " });
+    expect(onMoveChannel).toHaveBeenCalledExactlyOnceWith({
+      channelId: "t-4",
+      sectionId: null,
+      order: ["t-4"],
+    });
+    expect(screen.getByRole("button", { name: /^tekstowe$/i })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^głosowe$/i })).toBeNull();
+    expect(channel("zadania")).toHaveFocus();
+  });
+
   it("sends the group's new order when a channel is dropped in its own group", () => {
     const { onMoveChannel, onSelectTextChannel } = setup();
 

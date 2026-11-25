@@ -160,6 +160,8 @@ pub struct Preview {
     /// The picture, already downloaded: the reader's browser is sent to this
     /// server for it, never to the linked host.
     pub thumbnail: Option<FetchedImage>,
+    /// A small, validated MP4 rendition when a GIF image cannot be fetched.
+    pub animation: Option<Vec<u8>>,
 }
 
 /// Why a link gets no card.
@@ -248,35 +250,70 @@ impl Fetcher {
     /// host answers only decides how the card reads. A YouTube video is asked
     /// through its own endpoint and never read as an ordinary page.
     pub async fn preview(&self, link: &Link) -> Result<Preview, NoCard> {
+        self.preview_with_metadata(link, None).await
+    }
+
+    /// Supplies metadata already obtained from the source of imported history.
+    /// The same settings and outbound policy apply to any thumbnail it names.
+    pub async fn preview_with_metadata(
+        &self,
+        link: &Link,
+        metadata: Option<PageCard>,
+    ) -> Result<Preview, NoCard> {
         // GIPHY requires the viewer's own client to talk to it, so the link
         // stays in the message for the client to resolve.
         if parse_giphy_link(link).is_some() {
             return Err(NoCard::Giphy);
         }
         let video = parse_video_link(link);
-        let card = match (&video, self.settings.enabled) {
-            (_, false) => Err(NoCard::Disabled),
-            (Some(video), true) if video.provider == YOUTUBE => {
-                self.fetch_youtube(video).await.map_err(NoCard::Unreadable)
-            }
-            (_, true) => self.fetch_card(link).await.map_err(NoCard::Unreadable),
+        let card = match (&video, self.settings.enabled, metadata) {
+            (_, false, _) => Err(NoCard::Disabled),
+            (_, true, Some(card)) => Ok((card, None)),
+            (Some(video), true, None) if video.provider == YOUTUBE => self
+                .fetch_youtube(video)
+                .await
+                .map(|card| (card, None))
+                .map_err(NoCard::Unreadable),
+            (_, true, None) => self.fetch_link(link).await.map_err(NoCard::Unreadable),
         };
-        let card = match (card, &video) {
-            (Ok(card), None) if card.is_empty() => return Err(NoCard::Empty),
-            (Ok(card), _) => Some(card),
+        let (card, direct_image) = match (card, &video) {
+            (Ok((card, None)), None) if card.is_empty() => return Err(NoCard::Empty),
+            (Ok(pair), _) => pair,
             (Err(reason), None) => return Err(reason),
-            (Err(_), Some(_)) => None,
+            (Err(_), Some(_)) => (PageCard::default(), None),
         };
 
-        let thumbnail = match card.as_ref().and_then(|c| c.image_url.as_deref()) {
-            Some(address) => match Link::parse(address) {
-                Some(image) => self.fetch_image(&image).await.ok(),
-                None => None,
-            },
-            None => None,
+        let mut thumbnail = direct_image;
+        for image in [&card.image_url, &card.fallback_image_url] {
+            if thumbnail.is_some() {
+                break;
+            }
+            if let Some(link) = image.as_deref().and_then(Link::parse) {
+                thumbnail = self.fetch_image(&link).await.ok();
+            }
+        }
+        let has_gif = thumbnail
+            .as_ref()
+            .is_some_and(|image| image.kind == ImageKind::Gif);
+        let animation = match card.animation_url.as_deref().and_then(Link::parse) {
+            Some(link) if video.is_none() && !has_gif => self.fetch_animation(&link).await.ok(),
+            _ => None,
         };
-        let card = card.unwrap_or_default();
+        if animation.is_some() {
+            thumbnail = None;
+        }
+        if video.is_none()
+            && card.title.is_none()
+            && card.description.is_none()
+            && thumbnail.is_none()
+            && animation.is_none()
+        {
+            return Err(NoCard::Empty);
+        }
         let domain = link.domain().to_owned();
+        let is_gif = thumbnail
+            .as_ref()
+            .is_some_and(|image| image.kind == ImageKind::Gif);
         Ok(Preview {
             kind: if video.is_some() {
                 PreviewKind::Video
@@ -284,16 +321,48 @@ impl Fetcher {
                 PreviewKind::Link
             },
             url: link.to_string(),
-            provider: video
-                .as_ref()
-                .map_or_else(|| domain.clone(), |v| v.provider.to_owned()),
+            provider: video.as_ref().map_or_else(
+                || {
+                    if is_gif {
+                        "gif".to_owned()
+                    } else {
+                        domain.clone()
+                    }
+                },
+                |v| v.provider.to_owned(),
+            ),
             provider_id: video.as_ref().map(|v| v.id.clone()),
             start_seconds: video.as_ref().and_then(|v| v.start_seconds),
             domain,
             title: card.title,
             description: card.description,
             thumbnail,
+            animation,
         })
+    }
+
+    /// A pasted address can point straight at an image, including a GIF.
+    async fn fetch_link(&self, link: &Link) -> Result<(PageCard, Option<FetchedImage>), Failure> {
+        let response = self
+            .get(
+                &link.fetch_address().ok_or(Failure::BadAddress)?,
+                ACCEPT_PAGE,
+                true,
+                self.settings
+                    .max_html_bytes
+                    .max(self.settings.max_image_bytes),
+            )
+            .await?;
+        let image = response
+            .headers
+            .get(CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .and_then(parse_content_type)
+            .and_then(|value| ImageKind::from_media_type(&value.media_type));
+        if image.is_some() {
+            return Ok((PageCard::default(), Some(self.read_image(response).await?)));
+        }
+        Ok((self.read_card(link, response).await?, None))
     }
 
     /// Reads what a page says about itself.
@@ -307,6 +376,11 @@ impl Fetcher {
                 cap,
             )
             .await?;
+        self.read_card(link, response).await
+    }
+
+    async fn read_card(&self, link: &Link, response: Response) -> Result<PageCard, Failure> {
+        let cap = self.settings.max_html_bytes;
         let Response {
             status,
             headers,
@@ -361,6 +435,11 @@ impl Fetcher {
                 cap,
             )
             .await?;
+        self.read_image(response).await
+    }
+
+    async fn read_image(&self, response: Response) -> Result<FetchedImage, Failure> {
+        let cap = self.settings.max_image_bytes;
         let Response {
             status,
             headers,
@@ -397,6 +476,40 @@ impl Fetcher {
             bytes: bytes.to_vec(),
             kind: declared,
         })
+    }
+
+    async fn fetch_animation(&self, link: &Link) -> Result<Vec<u8>, Failure> {
+        let cap = self.settings.max_image_bytes;
+        let mut response = self
+            .get(
+                &link.fetch_address().ok_or(Failure::BadAddress)?,
+                "video/mp4",
+                false,
+                cap,
+            )
+            .await?;
+        if !response.status.is_success() {
+            return Err(Failure::Status(response.status.as_u16()));
+        }
+        let media_type = response
+            .headers
+            .get(CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .and_then(parse_content_type);
+        if !media_type.is_some_and(|value| value.media_type == "video/mp4") {
+            return Err(Failure::NotAPage);
+        }
+        if announced_length(&response.headers).is_some_and(|length| length > cap as u64) {
+            return Err(Failure::TooLarge);
+        }
+        let (bytes, truncated) = response.body.read_up_to(cap).await?;
+        if truncated {
+            return Err(Failure::TooLarge);
+        }
+        if bytes.len() < 12 || &bytes[4..8] != b"ftyp" {
+            return Err(Failure::NotAPage);
+        }
+        Ok(bytes.to_vec())
     }
 
     /// Reads what YouTube itself says about a video whose id has already been

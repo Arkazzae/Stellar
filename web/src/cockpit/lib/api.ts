@@ -358,6 +358,8 @@ export interface CockpitSettings {
   instanceName: string;
   publicUrl: string;
   timeZone: string;
+  /** Effective per-account upload quota. Zero disables the account quota. */
+  uploadUserLimitBytes?: number;
   mailingEnabled: boolean;
   /** The transport mail goes through: SMTP, or Resend when it is turned on under Integrations. */
   mailProvider: "smtp" | "resend";
@@ -626,7 +628,7 @@ export const cockpitApi = {
   // save of the other settings leaves them as they are stored.
   updateSettings: (
     settings: CockpitSettings,
-    changes: CockpitIntegrationSwitches & CockpitSecurityChanges = {},
+    changes: CockpitIntegrationSwitches & CockpitSecurityChanges & Pick<CockpitSettings, "uploadUserLimitBytes"> = {},
     signal?: AbortSignal,
   ) =>
     request<CockpitSettings>(

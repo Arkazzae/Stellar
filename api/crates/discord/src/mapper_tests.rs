@@ -236,6 +236,7 @@ fn a_message_keeps_its_author_reply_files_embeds_stickers_and_reactions() {
           "channel_id": "290926798999357250",
           "type": 19,
           "content": "Supa <@53908099506183680>",
+          "mentions": [{ "id": "53908099506183680", "username": "ula", "global_name": "Ula", "member": { "nick": "Ula z Krew" } }, null],
           "timestamp": "2017-07-11T17:27:07.299000+00:00",
           "edited_timestamp": "2017-07-11T17:30:00.000000+00:00",
           "pinned": true,
@@ -250,7 +251,7 @@ fn a_message_keeps_its_author_reply_files_embeds_stickers_and_reactions() {
               "width": 640, "height": 480 },
             { "filename": "no id" }
           ],
-          "embeds": [{ "type": "article", "url": "https://example.test/a", "title": "A", "thumbnail": { "url": "https://example.test/t.png" } }],
+          "embeds": [{ "type": "article", "url": "https://example.test/a", "title": "A", "thumbnail": { "url": "https://example.test/t.png", "proxy_url": "https://images-ext-1.discordapp.net/t.png" } }],
           "sticker_items": [{ "id": "749054660769218631", "name": "Wave", "format_type": 3 }],
           "reactions": [
             { "count": 3, "count_details": { "burst": 1, "normal": 2 }, "emoji": { "id": null, "name": "🔥" } },
@@ -262,6 +263,11 @@ fn a_message_keeps_its_author_reply_files_embeds_stickers_and_reactions() {
 
     assert_eq!(message.id, "1200000000000000001");
     assert_eq!(message.content, "Supa <@53908099506183680>");
+    assert_eq!(message.mentions.len(), 1);
+    assert_eq!(message.mentions[0].id, "53908099506183680");
+    assert_eq!(message.mentions[0].username.as_deref(), Some("ula"));
+    assert_eq!(message.mentions[0].display_name.as_deref(), Some("Ula"));
+    assert_eq!(message.mentions[0].nickname.as_deref(), Some("Ula z Krew"));
     assert_eq!(Some(message.created_at), millis(1_499_794_027_299));
     assert_eq!(message.edited_at, seconds(1_499_794_200));
     assert_eq!(
@@ -309,6 +315,8 @@ fn a_message_keeps_its_author_reply_files_embeds_stickers_and_reactions() {
             title: Some("A".into()),
             description: None,
             image_url: Some("https://example.test/t.png".into()),
+            image_proxy_url: Some("https://images-ext-1.discordapp.net/t.png".into()),
+            video_url: None,
         }]
     );
     assert_eq!(

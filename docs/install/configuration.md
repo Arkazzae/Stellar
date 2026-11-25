@@ -57,6 +57,8 @@ Without TURN the API returns an empty `rtc.iceServers` list and browsers use the
 
 ## Uploads and quotas
 
+Set the per-account quota in **Cockpit → Settings → File storage**. The saved value applies to each account across the instance, including Discord attachment imports, and takes effect on the next upload. The value in Cockpit overrides `STELLARR_UPLOAD_USER_BYTES`, which supplies the default until a value is saved.
+
 Set byte limits to `0` (or a negative integer) to disable the corresponding quota check.
 
 | Variable | Type | Default | Description |

@@ -8,6 +8,28 @@ Create new servers from the rail on the far left. Inside a server, channels can 
 
 Text channels support a topic line and per-user slow mode. Deleting a channel removes its messages, attachment links, reactions, link cards, pins, FTS5 search rows, and message journal in the same SQLite transaction. Unreferenced files are removed from `/data/stellarr/files/` once Cockpit's orphan retention (`retention.orphans-days`) passes.
 
+## Import from Discord
+
+Open **Create a server → Import from Discord** in the left rail. The wizard creates a private Stellarr server. It copies the selected public text and voice channels and their categories. You can copy channel structure only, all available message history, or history from a date. With a history range selected, you can include public threads and forum posts. Stellarr keeps the names of imported authors on local profiles. Invite members and set up roles and permissions in Stellarr after the import.
+
+### Connect the bot
+
+1. Create an application in the [Discord Developer Portal](https://discord.com/developers/applications) and enable **Guild Install** under **Installation**. Open **Bot** to get its token. For message history, enable **Message Content Intent** on that page. [Discord bot setup](https://docs.discord.com/developers/quick-start/getting-started)
+2. Paste the token into the Stellarr wizard and choose **Find servers**. If the server is missing, use **Add bot to a server**, select the Discord server, and authorize **View Channels** and **Read Message History**. Refresh the list in Stellarr.
+3. Choose the source server, channels, and history range. Review the scope and start the import. Stellarr lists channels available to all members. History also requires access to read past messages in those channels.
+
+### Copy photos, videos, and other files
+
+After Stellarr copies the history, open the import report and choose **Import missing attachments**. Enter the same bot token and choose **Start copying files**. Stellarr fetches fresh Discord file URLs and stores supported files on the server it already created. It adds them to their original messages and restores messages that consisted of files alone. [Discord attachment URLs](https://docs.discord.com/developers/reference#signed-attachment-cdn-urls)
+
+The report counts attachment-only messages as skipped until their files are copied. The missing-files count includes those messages and messages whose text already came over. The default per-file limits are 10 MiB for images and 100 MiB for videos. Imported files count toward the importing account’s storage quota, which defaults to 2 GiB, and the instance quota. The operator can change the account limit in **Cockpit → Settings → File storage** before resuming. [Uploads and quotas](../install/configuration.md#uploads-and-quotas)
+
+Stellarr builds link previews as readers open the imported history. A provider must make a preview available for its page link to show an image or animation. Discord uploads are handled by **Import missing attachments**.
+
+### Check progress or resume
+
+The Stellarr API runs one Discord import or attachment job at a time. You can close the wizard while it works. Reopen **Create a server → Import from Discord** to see the latest import. If history stopped, choose **Resume import**. If file copying stopped, choose **Resume copying files**. Enter the bot token again to continue the same import. Keep the bot on Discord until you finish copying files.
+
 ## Chat, media, and translation
 
 Messages support Markdown, code blocks, inline replies, and side threads (`ThreadPanel`). From the composer you can post multi-option polls, record a voice message, or pick from 50+ built-in astronaut stickers and custom server emojis (`EmojiPane`). When GIPHY is configured in Cockpit, members can search GIFs or turn external GIPHY requests off in their privacy settings.

@@ -114,7 +114,7 @@ pub async fn read(
             Ok(Some(dto::load(db, &messages, &ids, Some(user))?))
         })
         .await?;
-    found
-        .map(|messages| Json(ThreadMessages { messages }))
-        .ok_or_else(ApiError::not_found)
+    let messages = found.ok_or_else(ApiError::not_found)?;
+    crate::link_previews::enqueue_imported(&state, channel, &messages).await;
+    Ok(Json(ThreadMessages { messages }))
 }

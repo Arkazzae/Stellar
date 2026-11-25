@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ClientDownloadModal } from "@/components/settings/server/ClientDownloadModal";
+import { DiscordImportModal } from "@/components/settings/server/DiscordImportModal";
 import {
   ServerCreateModal,
   ServerDiscoverModal,
   type CreatedServerInvite,
   type ServerCreateInput,
 } from "@/components/settings/server/ServerDirectoryModals";
+import { discordImport } from "@/lib/api/calls/discordImport";
 import { getClientReleases } from "@/lib/platform/desktopRelease";
 import { ApiError, describeError } from "@/lib/api/errors";
 import { useDirectory, useLanguage, usePorts, useSession, useUi } from "@/state/hooks";
@@ -124,6 +126,12 @@ export function ServerDirectoryDialogs() {
     [directory, session, ui],
   );
 
+  const activateCreated = useCallback((serverId: string) => {
+    rememberCreatedServer({ id: serverId });
+    setCreatedId(serverId);
+    activateServer(serverId);
+  }, [activateServer]);
+
   const createServer = useCallback(
     async (input: ServerCreateInput) => {
       let serverId: string;
@@ -132,11 +140,9 @@ export function ServerDirectoryDialogs() {
       } catch (cause) {
         throw new Error(describeError(cause, t("shell.serverCreateFailed"), t));
       }
-      rememberCreatedServer({ id: serverId });
-      setCreatedId(serverId);
-      activateServer(serverId);
+      activateCreated(serverId);
     },
-    [activateServer, directory, t],
+    [activateCreated, directory, t],
   );
 
   const closeCreate = () => {
@@ -189,11 +195,20 @@ export function ServerDirectoryDialogs() {
         open={ui.modal === "server-create" || created !== null}
         onClose={closeCreate}
         onCreate={createServer}
+        onDiscordImport={() => ui.openModal("discord-import")}
         servers={directory.servers}
         created={created}
         invite={invite}
         onCopyInvite={(url) => navigator.clipboard.writeText(url)}
       />
+      {ui.modal === "discord-import" && (
+        <DiscordImportModal
+          api={discordImport}
+          onBack={() => ui.openModal("server-create")}
+          onClose={ui.closeModal}
+          onOpenServer={activateCreated}
+        />
+      )}
       <ServerDiscoverModal
         open={ui.modal === "server-discover"}
         onClose={ui.closeModal}

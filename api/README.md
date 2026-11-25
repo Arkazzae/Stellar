@@ -95,7 +95,7 @@ housekeeping/       a worker: hourly pruning of journals, orphan uploads, deleti
 cockpit/            a group: /api/cockpit (users, roles, servers, sessions, runtime, logs, settings)
 releases/           a group: /.well-known/stellarr/client discovery and desktop/Android builds
 health/             a group: /health/live and /health/ready
-discord_import/     writes a stellarr-discord snapshot into an existing server, page by page
+discord_import/     wizard API and background jobs for copying Discord structure, history, and missing attachments
 testing.rs          helpers the unit tests share (not compiled outside tests)
 ```
 

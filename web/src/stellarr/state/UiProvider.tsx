@@ -34,6 +34,7 @@ export type ModalKey =
   | "invite"
   /** Creates a server, from the launcher at the bottom of the server rail. */
   | "server-create"
+  | "discord-import"
   /** Finds a public server, or joins one from an invite. */
   | "server-discover"
   /** Which client to install. */
