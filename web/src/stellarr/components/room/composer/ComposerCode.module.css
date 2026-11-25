@@ -330,6 +330,15 @@
     grid-template-areas:
       "head head head"
       "field more send";
+    padding-bottom: 4px;
+  }
+
+  .head {
+    min-height: 44px;
+  }
+
+  .field {
+    margin-block: 4px;
   }
 
   .box > :global(.comp-mobile-more) {
