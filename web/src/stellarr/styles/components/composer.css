@@ -29,6 +29,8 @@
      band; a taller draft grows the box upwards and keeps its bottom edge. */
   .composer{
     --composer-h:54px;
+    /* Leave room for the transcript on short or zoomed-in viewports. */
+    --composer-editor-height:33dvh;
     flex:none;padding:4px 20px calc((var(--dock-h) - var(--composer-h)) / 2);width:100%;position:relative;
   }
   .chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
@@ -224,7 +226,7 @@
        A composer that stayed 15px under a 16.5px transcript would read as a
        different app for the one line you are actually writing. */
     font:inherit;font-size:var(--msg-size);line-height:var(--msg-leading);
-    max-height:calc(var(--msg-leading) * 8em);
+    max-height:min(8lh, max(1lh + 12px, var(--composer-editor-height)));
     padding:6px 0;outline:none;align-self:center;
   }
   .composer .send{
@@ -385,6 +387,8 @@
      On touch they retain the same visual glyphs while their boxes adopt the
      composer's existing 44px rhythm. */
   @media (max-width:767px), (pointer:coarse){
+    /* Keep Safari from zooming the field on focus and honor larger text. */
+    .composer textarea{font-size:max(var(--text-16), var(--msg-size))}
     /* A touch composer keeps writing, disclosure and send in the fixed row.
        Secondary actions open above it, including on a tablet whose persistent
        rail leaves too little room for six finger-sized controls. */

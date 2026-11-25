@@ -290,7 +290,10 @@
   }
   .set-area{min-height:88px;line-height:1.55;color:var(--text-muted);resize:vertical}
   .set-area.empty{color:var(--text-faint)}
-  .set-select{position:relative;padding-right:32px;color:var(--text-muted);max-width:320px}
+  .set-select{
+    position:relative;padding-right:32px;color:var(--text-muted);max-width:320px;
+    contain:paint;text-overflow:ellipsis;
+  }
   .set-select::after{
     content:"";position:absolute;right:14px;top:50%;width:6px;height:6px;
     border-right:1.5px solid var(--text-faint);border-bottom:1.5px solid var(--text-faint);
@@ -316,17 +319,19 @@
   /*
    * A ladder, laid out as one.
    *
-   * Three, four and five choices that differ only in degree are one pill of
-   * equal segments: the eye reads the order off the line. The sentence that
-   * explains a rung is there once, under the row, for the choice that is on,
+   * Choices stay in order as they wrap to fit larger text. The sentence that
+   * explains a rung is there once, under the group, for the choice that is on,
    * and every segment carries its own as a tooltip.
    */
   .ladder{
-    --ui-segmented-columns:repeat(5,minmax(0,1fr));
+    --ui-segmented-columns:repeat(auto-fit,minmax(min(100%, 10ch),1fr));
     --ui-segmented-pill-item-padding:0 8px;
+    font-size:var(--text-12);border-radius:var(--radius-md);
   }
-  .ladder:has(> :nth-child(4):last-child){--ui-segmented-columns:repeat(4,minmax(0,1fr))}
-  .ladder:has(> :nth-child(3):last-child){--ui-segmented-columns:repeat(3,minmax(0,1fr))}
+  .ladder > .ui-segmented-item{
+    height:auto;min-width:0;min-height:var(--ui-segmented-pill-item-height, 26px);
+    flex-wrap:wrap;padding-block:4px;overflow-wrap:anywhere;
+  }
   /* A choice whose files are still arriving: the ring stands before its name. */
   .ladder .ladder-ring{margin-right:4px}
   /* The one line the row costs: what the current choice actually means. */
