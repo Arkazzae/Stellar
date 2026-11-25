@@ -437,7 +437,6 @@
   .lang-search + .lang-rows{
     max-height:316px;overflow-y:auto;overscroll-behavior:contain;
     border-top:1px solid var(--line-subtle);
-    scrollbar-width:thin;scrollbar-color:var(--line) transparent;
   }
   .lang-row{
     width:100%;min-height:56px;display:grid;grid-template-columns:minmax(0,1fr) auto 22px;

@@ -69,88 +69,39 @@
 
 
   /* ---------- SCROLLBARS ---------- */
-  /*
-   * The bar appears when the region is scrolled or hovered, and is invisible
-   * otherwise: a permanent 5px line down the side of every panel is chrome the
-   * conversation does not need.
-   */
-  /*
-   * The standard properties are fenced off to the engines that have nothing
-   * else. Setting `scrollbar-width` / `scrollbar-color` anywhere Chrome can see
-   * them makes it drop every `::-webkit-scrollbar` rule below and draw its own
-   * bar instead — stepper arrows at both ends and all. Firefox has no such
-   * pseudo-elements, and its thin bar has no steppers to begin with.
-   */
   @supports not selector(::-webkit-scrollbar) {
     * {
       scrollbar-width: thin;
       scrollbar-color: var(--line) transparent;
     }
-  }
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-  /* No end caps. The bar is a thumb and nothing else — the stepper buttons some
-     platforms add at either end are two more controls nobody presses. */
-  ::-webkit-scrollbar-button {
-    display: none;
-    width: 0;
-    height: 0;
-  }
-  ::-webkit-scrollbar-thumb {
-    background: var(--line);
-    border-radius: 999px;
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    background: var(--line-strong);
-  }
-  /* More than the buttons used to occupy: the bar is a short mark floating
-     clear of the panel's corners, not a rail running the full edge. */
-  ::-webkit-scrollbar-track {
-    background: transparent;
-    margin-block: 14px;
-  }
-  ::-webkit-scrollbar-track:horizontal {
-    margin-block: 0;
-    margin-inline: 14px;
-  }
-  ::-webkit-scrollbar-corner {
-    background: transparent;
+    :is(.transcript, .rail-scroll, .roster-list, .voice-stage):not(:hover):not(:focus-within) {
+      scrollbar-color: transparent transparent;
+    }
   }
 
-  @supports not selector(::-webkit-scrollbar) {
-    .transcript,
-    .rail-scroll,
-    .roster-list,
-    .voice-stage {
-      scrollbar-color: transparent transparent;
-      transition: scrollbar-color var(--dur-base) var(--ease-standard);
-    }
-    .transcript:hover,
-    .rail-scroll:hover,
-    .roster-list:hover,
-    .voice-stage:hover {
-      scrollbar-color: var(--line) transparent;
-    }
+  /* Paint a short mark inside the proportional thumb. Its whole native area
+     still handles dragging, even when the content only just overflows. */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
   }
-  .transcript::-webkit-scrollbar-thumb,
-  .rail-scroll::-webkit-scrollbar-thumb,
-  .roster-list::-webkit-scrollbar-thumb,
-  .voice-stage::-webkit-scrollbar-thumb {
-    background: transparent;
+  ::-webkit-scrollbar-button { display: none; width: 0; height: 0 }
+  ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent }
+  ::-webkit-scrollbar-thumb {
+    --thumb-ink: var(--line);
+    background: linear-gradient(var(--thumb-ink), var(--thumb-ink)) center / 3px min(100%, 48px) no-repeat;
   }
-  .transcript:hover::-webkit-scrollbar-thumb,
-  .rail-scroll:hover::-webkit-scrollbar-thumb,
-  .roster-list:hover::-webkit-scrollbar-thumb,
-  .voice-stage:hover::-webkit-scrollbar-thumb {
-    background: var(--line);
+  ::-webkit-scrollbar-thumb:horizontal {
+    background-size: min(100%, 48px) 3px;
   }
-  .transcript:hover::-webkit-scrollbar-thumb:hover,
-  .rail-scroll:hover::-webkit-scrollbar-thumb:hover,
-  .roster-list:hover::-webkit-scrollbar-thumb:hover,
-  .voice-stage:hover::-webkit-scrollbar-thumb:hover {
-    background: var(--line-strong);
+  :is(.transcript, .rail-scroll, .roster-list, .voice-stage):not(:hover):not(:focus-within)::-webkit-scrollbar-thumb {
+    --thumb-ink: transparent;
+  }
+  ::-webkit-scrollbar-thumb:hover, ::-webkit-scrollbar-thumb:active {
+    --thumb-ink: var(--line-strong);
+  }
+  @media (forced-colors: active) {
+    ::-webkit-scrollbar-thumb { background: ButtonText; border: 2px solid Canvas }
   }
 
   /*
