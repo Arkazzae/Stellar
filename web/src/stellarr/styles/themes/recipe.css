@@ -281,6 +281,9 @@
   --danger-edge: color-mix(in oklab, var(--danger-line) 55%, black);
   --live-edge: color-mix(in oklab, var(--live-line) 55%, black);
   --hang-edge: color-mix(in oklab, var(--hang) 55%, black);
+  /* Under the server column's tiles, which sit on the darkest surface: an edge
+     a step lighter than it, so the tile reads as raised off the column. */
+  --rail-edge: color-mix(in oklab, var(--surface-raised) 70%, var(--line-strong));
 
   /* Two caps, not one: 72ch keeps prose readable, 860px lets images breathe. */
   --room-max: 860px;
