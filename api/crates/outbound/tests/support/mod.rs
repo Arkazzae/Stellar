@@ -82,6 +82,14 @@ impl Conn {
         self.respond(&status, &[("Location", location)], b"").await;
     }
 
+    /// Reads another request after the previous body has been consumed.
+    pub async fn next_request(&mut self) -> Option<()> {
+        let (request, leftover) = read_head(&mut self.stream).await?;
+        self.request = request;
+        self.leftover = leftover;
+        Some(())
+    }
+
     /// The request body, by its `Content-Length`.
     pub async fn read_body(&mut self) -> Vec<u8> {
         let length: usize = self

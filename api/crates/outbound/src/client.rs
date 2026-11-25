@@ -1,25 +1,4 @@
 //! The client: one request, its redirects, and its answer.
-//!
-//! # One connection per request
-//!
-//! Every request opens its own connection and closes it with the answer
-//! (`Connection: close`). A pool was weighed and left out:
-//!
-//! - The busiest user is the long poll to the media server on loopback,
-//!   once every 25 seconds. A loopback connect costs microseconds; a pooled
-//!   connection would sit idle for 25 seconds, long enough for the other end
-//!   to have closed it, and the first write then fails on a connection that
-//!   looked healthy. Retrying that is safe for a GET and not for a POST.
-//! - The address check belongs to the connection. With none shared, a
-//!   connection judged for one request, with one set of credentials, can
-//!   never carry another's.
-//! - With one request per connection the size of the answer is exactly what
-//!   came over that socket, and abandoning a body is closing the socket.
-//! - The cost is a TLS handshake per request to the few hosts that are
-//!   called often (the mail provider, the chat import). rustls resumes
-//!   sessions from a cache that lives as long as the configuration, so the
-//!   repeat handshakes are short. If a profile shows otherwise, a pool keyed
-//!   by scheme, host, port and policy fits behind this same interface.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -32,15 +11,14 @@ use http::header::{
 };
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use hyper::body::Incoming;
-use hyper::client::conn::http1;
-use hyper_util::rt::TokioIo;
 use tokio::time::Instant;
 
 use crate::address::AddressPolicy;
-use crate::body::{Body, DriverGuard, Outgoing, ResponseBody};
+use crate::body::{Body, Outgoing, ResponseBody, describe};
 use crate::connect::{self, Resolve, SystemResolver};
 use crate::encoding::{self, Decoder};
 use crate::error::{Error, Result};
+use crate::pool::{Connection, Key, Lease, Pool};
 use crate::tls;
 use crate::url::Url;
 
@@ -126,8 +104,8 @@ impl Request {
         self
     }
 
-    /// How long resolving, connecting and the TLS handshake may take, for
-    /// each connection, so for each hop of a redirect chain.
+    /// How long resolving, connecting and the TLS handshake may take per
+    /// hop. A reused connection still goes through DNS and address policy.
     pub fn connect_timeout(mut self, timeout: Duration) -> Request {
         self.connect_timeout = timeout;
         self
@@ -278,9 +256,11 @@ enum Trust {
 struct Inner {
     trust: Trust,
     resolver: Arc<dyn Resolve>,
+    pool: Arc<Pool>,
 }
 
-/// The HTTP client. Cheap to clone; keep one for the process.
+/// The HTTP client. Clones share a pool of up to 32 idle connections, each
+/// retained for up to 30 seconds. Keep a client for a service's lifetime.
 ///
 /// No cookies are kept, no proxy is read from the environment, and
 /// nothing is logged that came from a URL's path or query or from a header.
@@ -316,6 +296,7 @@ impl Client {
             inner: Arc::new(Inner {
                 trust: self.inner.trust.clone(),
                 resolver,
+                pool: Arc::default(),
             }),
         }
     }
@@ -325,6 +306,7 @@ impl Client {
             inner: Arc::new(Inner {
                 trust,
                 resolver: Arc::new(SystemResolver),
+                pool: Arc::default(),
             }),
         }
     }
@@ -450,10 +432,8 @@ impl Client {
                 for name in [CONTENT_TYPE, CONTENT_ENCODING, CONTENT_LANGUAGE] {
                     headers.remove(name);
                 }
-            } else {
-                if spent {
-                    return Err(Error::BodyNotReplayable);
-                }
+            } else if spent {
+                return Err(Error::BodyNotReplayable);
             }
             strip_credentials(&mut headers, !url.same_origin(&next));
             url = next;
@@ -461,7 +441,7 @@ impl Client {
         }
     }
 
-    /// One request on one new connection.
+    /// One HTTP exchange, including the response head and its limits.
     #[allow(clippy::too_many_arguments)]
     async fn exchange(
         &self,
@@ -475,38 +455,9 @@ impl Client {
         decompress: bool,
         deadline: Instant,
     ) -> Result<Response> {
-        let connector = if url.is_https() {
-            Some(connect::connector(self.tls_config().await?))
-        } else {
-            None
-        };
-        let left = deadline.saturating_duration_since(Instant::now());
-        let stream = connect::open(
-            url,
-            policy,
-            self.inner.resolver.as_ref(),
-            connector.as_ref(),
-            connect_timeout.min(left),
-        )
-        .await
-        .map_err(|error| match error {
-            // The request's own time ran out, not the connect limit.
-            Error::ConnectTimeout { .. } if left <= connect_timeout => Error::Timeout,
-            other => other,
-        })?;
-
         let head_room = usize::try_from(ceiling)
             .unwrap_or(usize::MAX)
             .clamp(MIN_HEAD_BUFFER, MAX_HEAD_BUFFER);
-        let (mut sender, connection) = http1::Builder::new()
-            .max_buf_size(head_room)
-            .handshake::<_, Outgoing>(TokioIo::new(stream))
-            .await
-            .map_err(|error| Error::Protocol(crate::body::describe(&error)))?;
-        let driver = DriverGuard(tokio::spawn(async move {
-            // An error here shows up as the error of the request itself.
-            let _ = connection.await;
-        }));
 
         // A POST or PUT with nothing in it still says so: some servers
         // answer 411 to one that does not.
@@ -529,7 +480,6 @@ impl Client {
         if says_zero {
             headers_out.insert(CONTENT_LENGTH, HeaderValue::from_static("0"));
         }
-        headers_out.insert(CONNECTION, HeaderValue::from_static("close"));
         headers_out.insert(
             ACCEPT_ENCODING,
             HeaderValue::from_static(if decompress {
@@ -539,15 +489,10 @@ impl Client {
             }),
         );
 
-        let response = sender.send_request(request).await.map_err(|error| {
-            if error.to_string().contains("too large") {
-                Error::TooLarge
-            } else if error.is_user() {
-                Error::RequestBody(crate::body::describe(&error))
-            } else {
-                Error::Protocol(crate::body::describe(&error))
-            }
-        })?;
+        let upload_complete = request.body().completion();
+        let (response, connection) = self
+            .send_request(url, policy, connect_timeout, deadline, head_room, request)
+            .await?;
         let (parts, incoming): (_, Incoming) = response.into_parts();
 
         let head_bytes = head_size(&parts.status, &parts.headers);
@@ -568,13 +513,110 @@ impl Client {
             decompress,
             ceiling - head_bytes,
         );
-        let body = ResponseBody::new(incoming, decoder, head_bytes, ceiling, deadline, driver);
+        let lease = Lease {
+            connection,
+            pool: Arc::downgrade(&self.inner.pool),
+            upload_complete,
+        };
+        let body = ResponseBody::new(incoming, decoder, head_bytes, ceiling, deadline, lease);
         Ok(Response {
             status: parts.status,
             headers,
             url: url.clone(),
             body,
         })
+    }
+
+    async fn send_request(
+        &self,
+        url: &Url,
+        policy: AddressPolicy,
+        connect_timeout: Duration,
+        deadline: Instant,
+        head_room: usize,
+        request: http::Request<Outgoing>,
+    ) -> Result<(http::Response<Incoming>, Connection)> {
+        let connector = if url.is_https() {
+            Some(connect::connector(self.tls_config().await?))
+        } else {
+            None
+        };
+        let limit = Instant::now()
+            .checked_add(connect_timeout)
+            .map_or(deadline, |connect| connect.min(deadline));
+        let addresses = connect_before(
+            url,
+            limit,
+            deadline,
+            connect::allowed_addresses(url, policy, self.inner.resolver.as_ref()),
+        )
+        .await?;
+        let key = Key::new(url, policy, head_room);
+        let fresh = || {
+            connect_before(url, limit, deadline, async {
+                let (stream, peer) =
+                    connect::open(url, &addresses, connector.as_ref(), limit).await?;
+                Connection::handshake(stream, peer, key.clone()).await
+            })
+        };
+
+        let (mut connection, reused) = match self.inner.pool.take(&key, &addresses) {
+            Some(mut idle) => tokio::select! {
+                biased;
+                Ok(()) = idle.sender.ready() => (idle, true),
+                // Hyper may still be finishing the previous exchange. Give
+                // its driver a turn and allow a fresh connection in parallel.
+                opened = async { tokio::task::yield_now().await; fresh().await } => (opened?, false),
+            },
+            None => (fresh().await?, false),
+        };
+        let response = if reused {
+            match connection.sender.try_send_request(request).await {
+                Ok(response) => Ok(response),
+                Err(mut failure) => match failure.take_message() {
+                    // Hyper returns the original request only if it was
+                    // never sent, including when its body is a stream.
+                    Some(unsent) => {
+                        drop(connection);
+                        connection = fresh().await?;
+                        connection.sender.send_request(unsent).await
+                    }
+                    None => Err(failure.into_error()),
+                },
+            }
+        } else {
+            connection.sender.send_request(request).await
+        };
+        Ok((response.map_err(request_error)?, connection))
+    }
+}
+
+async fn connect_before<T>(
+    url: &Url,
+    limit: Instant,
+    deadline: Instant,
+    work: impl Future<Output = Result<T>>,
+) -> Result<T> {
+    let result = tokio::time::timeout_at(limit, work)
+        .await
+        .unwrap_or_else(|_| {
+            Err(Error::ConnectTimeout {
+                host: url.bare_host().to_owned(),
+            })
+        });
+    match result {
+        Err(Error::ConnectTimeout { .. }) if limit == deadline => Err(Error::Timeout),
+        other => other,
+    }
+}
+
+fn request_error(error: hyper::Error) -> Error {
+    if error.to_string().contains("too large") {
+        Error::TooLarge
+    } else if error.is_user() {
+        Error::RequestBody(describe(&error))
+    } else {
+        Error::Protocol(describe(&error))
     }
 }
 

@@ -15,7 +15,7 @@ workspace. One crate per folder of `crates/`:
 | `mentions` (`stellarr-mentions`) | Which accounts a message names with @username, read the way Stellarr's web client shows them. |
 | `messages` (`stellarr-messages`) | Everything the server says to people, in each language of the catalogue. No dependencies. |
 | `oidc` (`stellarr-oidc`) | OpenID Connect relying party: requests, state, callbacks and ID token checks, without network or storage. |
-| `outbound` (`stellarr-outbound`) | The HTTP client every outbound call of the API goes through: HTTP/1.1 over TCP or rustls, one connection per request. |
+| `outbound` (`stellarr-outbound`) | The HTTP client every outbound call of the API goes through: HTTP/1.1 over TCP or rustls with bounded connection pooling and per-request address checks. |
 | `s3` (`stellarr-s3`) | Requests and answers of the S3 calls Stellarr makes, with Signature Version 4, and no network I/O. |
 | `server` (`stellarr-api`) | The server: the library `stellarr_api` and the binary `stellarr-api`: settings, database, HTTP pipeline and the groups of endpoints. |
 | `smtp` (`stellarr-smtp`) | The mail the application sends: the message builder and an SMTP client. |

@@ -1,8 +1,9 @@
 //! The HTTP client every outbound call of the API goes through.
 //!
-//! Small on purpose: HTTP/1.1 over TCP or rustls, one connection per
-//! request, no cookies, no proxy from the environment. Answers compressed
-//! with `gzip` or `deflate` are decoded unless the request opts out.
+//! HTTP/1.1 over TCP or rustls with a bounded connection pool. The client
+//! keeps no cookies and reads no proxy settings from the environment.
+//! Answers compressed with `gzip` or `deflate` are decoded unless the
+//! request opts out.
 //! What each request states for itself is the method, the URL, the headers,
 //! a body, two timeouts, a ceiling on the size of the answer, how many
 //! redirects are followed, which addresses may be connected to and whether
@@ -34,6 +35,7 @@ mod client;
 mod connect;
 mod encoding;
 mod error;
+mod pool;
 pub mod tls;
 mod url;
 
