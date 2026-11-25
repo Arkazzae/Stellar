@@ -9,6 +9,7 @@
 | `packages/` | TypeScript, React | [`@stellarr/ui`](../../packages/stellarr-ui/README.md) components and `--ui-*` tokens, [`@stellarr/icons`](../../packages/stellarr-icons/README.md), and [`@stellarr/router`](../../packages/stellarr-router/README.md). |
 | [`media/`](../../media/README.md) | Rust (`str0m`, `axum`) | `stellarr-media` WebRTC SFU and the browser smoke suite in [`media/smoke/`](../../media/smoke/README.md). |
 | [`init/`](../../init/README.md) | Rust (`std`, `libc`) | `stellarr-init` PID 1 supervisor, readiness probes, and Unix control socket. |
+| [`installer/`](../../installer/README.md) | Rust (`std`, `libc`, `ureq`) | `stellarr-installer`, the host installer that the root `install.sh` downloads from a release and runs. |
 | [`infra/`](../../infra/README.md) | Shell, Nginx, coturn | `entrypoint.sh`, `settings.sh`, `stellarr-cli.sh`, `tls-maintenance.sh`, `nginx.conf`, and `infra/tests/`. |
 | [`artifacts/`](../../artifacts/README.md) | BuildKit, `wasi-sdk`, Emscripten | `manifest.json`, `assemble.mjs`, source [`recipes/`](../../artifacts/recipes/README.md) (`speex`, `rnnoise`, `bergamot`), `files/`, and `NOTICES`. |
 | `docs/` | VitePress, Mermaid | Documentation site (`navigation.ts` builds the nav and sidebar from `docs/README.md`). |
@@ -80,6 +81,7 @@ cd docs && npm test && npm run build
 cd website && npm run build
 bash infra/tests/setting-names.test.sh
 bash infra/tests/entrypoint.test.sh
+(cd installer && cargo test --features test-seams)
 bash infra/tests/install.test.sh
 
 docker build -t stellarr:ci .
