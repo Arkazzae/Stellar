@@ -664,36 +664,28 @@ code {
   border: 1px solid var(--line);
   border-radius: var(--r-s);
 }
-.mascot {
-  position: absolute;
-  z-index: 2;
-  pointer-events: none;
-}
-.mascot--chat {
-  right: 3%;
-  top: -130px;
-  width: clamp(120px, 13vw, 180px);
-}
-
 /* Scene panels: a brand scene with a list over its left half */
 .card__media--scene {
-  aspect-ratio: 16/9;
+  display: grid;
   background: var(--darkest);
 }
+.card__media--scene picture {
+  display: contents;
+}
+.card__media--scene .scene,
+.scene-list {
+  grid-area: 1 / 1;
+}
 .card__media--scene .scene {
-  position: absolute;
-  inset: 0;
+  align-self: stretch;
   width: 100%;
-  height: 100%;
   object-fit: cover;
-  object-position: left center;
 }
 .scene-list {
-  position: absolute;
-  left: 4%;
-  top: 50%;
-  transform: translateY(-50%);
+  position: relative;
+  align-self: center;
   width: min(48%, 320px);
+  margin: 16px 4%;
 }
 .offer {
   list-style: none;
@@ -1330,7 +1322,7 @@ code {
 
 /* Install */
 .install {
-  padding-top: var(--section);
+  padding-block: var(--section) var(--wave);
   text-align: center;
 }
 .install h2 {
@@ -1439,19 +1431,14 @@ code {
   gap: 16px 24px;
   margin-top: 40px;
 }
-.crew {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  justify-content: center;
-  align-items: flex-end;
-  gap: clamp(8px, 3vw, 56px);
-  margin-top: clamp(64px, 8vw, 120px);
-  margin-bottom: calc(var(--wave) * -0.55);
-  padding-inline: var(--gutter);
+.install__scene {
+  display: block;
+  margin-top: clamp(48px, 6vw, 88px);
+  border-radius: var(--r-l);
+  overflow: hidden;
 }
-.crew img {
-  width: clamp(96px, 14vw, 200px);
+.install__scene img {
+  width: 100%;
 }
 
 /* Footer */
@@ -1526,6 +1513,9 @@ code {
   }
   .feature--flip .card {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  }
+  .card--scene {
+    grid-template-columns: minmax(0, 1fr);
   }
   .call,
   .theme-lab {
@@ -1638,6 +1628,25 @@ code {
   }
 }
 
+@media (max-width: 620px) {
+  .card__media--scene .scene,
+  .scene-list {
+    grid-area: auto;
+  }
+  .card__media--scene .scene {
+    aspect-ratio: 16/9;
+  }
+  .scene-list {
+    width: auto;
+    margin: 0;
+    padding: 14px;
+  }
+  .offer li {
+    gap: 6px;
+    padding-inline: 8px;
+  }
+}
+
 @media (max-width: 560px) {
   .announce__in {
     flex-wrap: wrap;
@@ -1666,24 +1675,6 @@ code {
   .window--mirror {
     --tilt-base: rotateY(6deg) rotateX(4deg);
   }
-  .mascot {
-    display: none;
-  }
-  .card__media--scene {
-    aspect-ratio: auto;
-  }
-  .card__media--scene .scene {
-    position: relative;
-    inset: auto;
-    height: auto;
-    aspect-ratio: 16/9;
-  }
-  .scene-list {
-    position: static;
-    transform: none;
-    width: auto;
-    padding: 14px;
-  }
   .logins li {
     padding: 9px 12px;
     font-size: 14px;
@@ -1706,9 +1697,6 @@ code {
   }
   .command .btn {
     width: 100%;
-  }
-  .crew img:nth-child(n + 3) {
-    display: none;
   }
 }
 
