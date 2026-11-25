@@ -1399,6 +1399,7 @@ export const pl = {
   "attachment.timeOfTotal": "{current} z {duration}",
   "attachment.download": "Pobierz {name}",
   "attachment.cannotPlay": "Nie można odtworzyć {name}",
+  "attachment.fullscreenUnavailable": "Pełny ekran jest niedostępny.",
   "attachment.playbackError": "Błąd odtwarzania",
   "attachment.file": "Załącznik {name}",
   "attachment.uploading": "Przesyłanie…",

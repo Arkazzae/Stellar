@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { Icon } from "@stellarr/icons";
+import { Attachment } from "@/components/room/attachments/Attachment";
+import { LAZY_LINK_PREFIX } from "@/lib/messages/messageExport";
 import { placeholderStyle } from "@/components/room/attachments/placeholderStyle";
 import { formatFull } from "@/lib/format/format";
 import { useLanguage } from "@/state/hooks";
@@ -88,20 +90,31 @@ function VideoTile({
   );
 }
 
-/** An uploaded file or a voice note: a row that downloads, never a tile. */
-function FileRow({ item }: { item: RowItem }) {
+/** Recordings play in place and other files keep their download row. */
+function FileRow({ item, callbacks }: { item: RowItem; callbacks?: AttachmentCallbacks }) {
   const { locale, t } = useLanguage();
   const { part } = item;
-  const detail =
-    part.kind === "file" ? part.size : (part.duration ?? t("room.voiceRecording"));
+  if (part.kind === "audio") {
+    return (
+      <>
+        <Attachment part={part} callbacks={callbacks} />
+        <div className="cp-audio-origin">
+          {item.authorName} · {formatFull(item.timestamp, locale)}
+          {part.voiceMessage && part.url && !part.url.startsWith(LAZY_LINK_PREFIX) && (
+            <a href={part.url} download={part.name}>{t("common.download")}</a>
+          )}
+        </div>
+      </>
+    );
+  }
   const body = (
     <>
       <span className="cp-ext" aria-hidden="true">
-        {part.kind === "file" ? part.ext : "AUD"}
+        {part.ext}
       </span>
       <span className="cp-meta">
         <b>{part.name}</b>
-        <span>{detail}</span>
+        <span>{part.size}</span>
         <span>
           {item.authorName} · {formatFull(item.timestamp, locale)}
         </span>
@@ -114,13 +127,7 @@ function FileRow({ item }: { item: RowItem }) {
     return <span className="cp-row inert">{body}</span>;
   }
   return (
-    <a
-      className="cp-row"
-      href={part.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      download={part.name}
-    >
+    <a className="cp-row" href={part.url} target="_blank" rel="noopener noreferrer" download={part.name}>
       {body}
     </a>
   );
@@ -198,7 +205,7 @@ export function MediaTab({
           <ul className="cp-list">
             {rows.map((item) => (
               <li key={item.id}>
-                <FileRow item={item} />
+                <FileRow item={item} callbacks={callbacks} />
               </li>
             ))}
           </ul>

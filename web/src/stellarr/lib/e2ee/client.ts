@@ -644,6 +644,9 @@ export function createE2eeClient(options: E2eeClientOptions) {
       // Until it is ready (or if it fails) it is a file card without a link.
       return { ...base, contentType: OPAQUE_TYPE, url: "" };
     }
+    if (type.startsWith("audio/")) {
+      return { ...base, contentType: type, url: objectUrls.get(item.id) ?? `${LAZY_ATTACHMENT_PREFIX}${item.id}` };
+    }
     if (type.startsWith("video/")) {
       const posterUrl = pictureUrl(item.poster, messageId);
       return {

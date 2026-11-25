@@ -323,7 +323,7 @@ describe("ChannelPanel media", () => {
     expect(onPlayVideo).toHaveBeenCalledExactlyOnceWith(part);
   });
 
-  it("lists files and voice notes under the grid as rows that download", () => {
+  it("lists downloadable files and playable recordings under the grid", () => {
     const media: MediaItemVM[] = [
       photo("p1", "zachód"),
       {
@@ -344,7 +344,9 @@ describe("ChannelPanel media", () => {
     expect(file).toHaveAttribute("download", "raport.pdf");
     expect(file).toHaveTextContent("2 MB");
     const voice = screen.getByRole("link", { name: /notatka\.webm/ });
-    expect(voice).toHaveTextContent("0:19");
+    expect(voice).toHaveAttribute("download", "notatka.webm");
+    expect(screen.getByText("0:00 / 0:19")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Odtwórz notatka.webm" })).toBeEnabled();
     expect(screen.getByText("Pliki")).toBeInTheDocument();
   });
 
