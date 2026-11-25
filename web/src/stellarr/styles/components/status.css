@@ -70,10 +70,14 @@
     font-size: var(--text-12);
     font-weight: 550;
     white-space: nowrap;
+    /* What the notice asks of you stands on the website's edge. */
+    box-shadow: 0 2px 0 var(--neutral-edge);
     transition:
       border-color var(--dur-fast) var(--ease-standard),
       background var(--dur-fast) var(--ease-standard),
-      color var(--dur-fast) var(--ease-standard);
+      color var(--dur-fast) var(--ease-standard),
+      transform 100ms var(--ease-standard),
+      box-shadow 100ms var(--ease-standard);
   }
 
   .error-notice-action.primary {
@@ -89,6 +93,8 @@
 
   .error-notice-action:active {
     background: var(--surface-raised);
+    transform: translateY(2px);
+    box-shadow: 0 0 0 var(--neutral-edge);
   }
 
   .error-notice.compact {

@@ -299,6 +299,15 @@
     background: var(--accent);
     color: var(--on-accent);
     font-weight: 600;
+    box-shadow: 0 2px 0 var(--accent-edge);
+    transition: filter var(--dur-fast) var(--ease-standard),
+      transform 100ms var(--ease-standard),
+      box-shadow 100ms var(--ease-standard);
+  }
+
+  .notification-open.primary:active:not(:disabled) {
+    transform: translateY(2px);
+    box-shadow: 0 0 0 var(--accent-edge);
   }
 
   .notification-open.primary:hover:not(:disabled) {
