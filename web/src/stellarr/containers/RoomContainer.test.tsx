@@ -382,7 +382,7 @@ describe("RoomContainer attachments", () => {
 
     act(() =>
       seenTranscript().attachments?.onOpenImage?.(
-        [{ src: "/a.png", alt: "a" }, { src: "/b.png", alt: "b" }],
+        [{ src: "/assets/a.png", alt: "a" }, { src: "/assets/b.png", alt: "b" }],
         1,
       ),
     );

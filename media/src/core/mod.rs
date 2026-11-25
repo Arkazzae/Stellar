@@ -42,6 +42,11 @@ use session::{Counter, OutState, PendingOffer, PtCache, Published, RoomKey, Sess
 pub const MAX_SDP_BYTES: usize = 128 * 1024;
 /// How many tracks one session may publish at a time.
 pub const MAX_PUBLISHED: usize = 8;
+/// Cumulative publication budget, including tracks withdrawn and added again.
+const MAX_PUBLICATIONS: usize = 32;
+/// Bounds accumulated outgoing sections for a single receiver, including when
+/// publishers reconnect or a series of different publishers joins the room.
+const MAX_OUT_SECTIONS: usize = 48;
 /// How long a new session has to connect.
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long a connection that was up may stay down.
@@ -666,6 +671,13 @@ impl Core {
         let room_sessions = self.rooms[&room].sessions.clone();
         for other in &room_sessions {
             if let Some(publisher) = self.sessions.get(other) {
+                let count = publisher.published.len();
+                if !session.can_add_publications(&publisher.user_id, count) {
+                    return Err(ApiError::LimitExceeded(
+                        "The room has too many published tracks.".into(),
+                    ));
+                }
+                session.count_publications(&publisher.user_id, count);
                 for track in &publisher.published {
                     session.add_out(
                         TrackKey {
@@ -1277,6 +1289,29 @@ impl Core {
             }
         }
         s.published.retain(|t| !withdrawn.contains(&t.mid));
+        let publisher = s.user_id.clone();
+        let room = s.room;
+        let others = self
+            .rooms
+            .get(&room)
+            .map_or_else(Vec::new, |r| r.sessions.clone());
+        let receiver_at_limit = !added.is_empty()
+            && others.iter().any(|other| {
+                *other != key
+                    && self.sessions.get(other).is_some_and(|receiver| {
+                        !receiver.can_add_publications(&publisher, added.len())
+                    })
+            });
+        let s = &self.sessions[&key];
+        if receiver_at_limit {
+            self.work.push_back(Work::Close {
+                key,
+                reason: CloseReason::Error,
+            });
+            return Err(ApiError::LimitExceeded(
+                "The room's track publication budget was exceeded.".into(),
+            ));
+        }
         info!(
             session = %s.id,
             published = s.published.len(),
@@ -1297,15 +1332,11 @@ impl Core {
             json!({ "type": "answer", "sdp": answer_sdp }),
         );
 
-        let room = self.sessions[&key].room;
-        let others: Vec<SessionKey> = self
-            .rooms
-            .get(&room)
-            .map_or(Vec::new(), |r| r.sessions.clone());
         for other in others.into_iter().filter(|o| *o != key) {
             let Some(o) = self.sessions.get_mut(&other) else {
                 continue;
             };
+            o.count_publications(&publisher, added.len());
             let mut changed = false;
             for (mid, kind) in &added {
                 changed |= o.add_out(

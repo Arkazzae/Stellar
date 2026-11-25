@@ -13,6 +13,7 @@ use serde_json::Value;
 
 /// How many events the media server keeps for a poll that falls behind.
 pub const RETAINED_EVENTS: usize = 4096;
+const RETAINED_BYTES: usize = 16 * 1024 * 1024;
 
 /// The most events one poll returns.
 pub const MAX_EVENTS_PER_POLL: usize = 256;
@@ -71,7 +72,8 @@ pub struct Poll {
 pub struct EventLog {
     epoch: String,
     last_seq: u64,
-    events: VecDeque<Arc<Event>>,
+    events: VecDeque<(Arc<Event>, usize)>,
+    retained_bytes: usize,
 }
 
 impl EventLog {
@@ -80,6 +82,7 @@ impl EventLog {
             epoch,
             last_seq: 0,
             events: VecDeque::with_capacity(RETAINED_EVENTS),
+            retained_bytes: 0,
         }
     }
 
@@ -94,13 +97,18 @@ impl EventLog {
 
     pub fn push(&mut self, body: EventBody) -> u64 {
         self.last_seq += 1;
-        if self.events.len() == RETAINED_EVENTS {
-            self.events.pop_front();
-        }
-        self.events.push_back(Arc::new(Event {
+        let event = Event {
             seq: self.last_seq,
             body,
-        }));
+        };
+        let bytes = serde_json::to_vec(&event).map_or(RETAINED_BYTES, |json| json.len());
+        self.retained_bytes += bytes;
+        self.events.push_back((Arc::new(event), bytes));
+        while self.events.len() > RETAINED_EVENTS || self.retained_bytes > RETAINED_BYTES {
+            if let Some((_, bytes)) = self.events.pop_front() {
+                self.retained_bytes -= bytes;
+            }
+        }
         self.last_seq
     }
 
@@ -114,7 +122,10 @@ impl EventLog {
     /// cannot leave it waiting for a sequence number that will mean something
     /// else when it arrives.
     pub fn read(&self, epoch: Option<&str>, after: u64) -> Poll {
-        let first_kept = self.events.front().map_or(self.last_seq + 1, |e| e.seq);
+        let first_kept = self
+            .events
+            .front()
+            .map_or(self.last_seq + 1, |(event, _)| event.seq);
         let reset =
             epoch != Some(self.epoch.as_str()) || after > self.last_seq || after + 1 < first_kept;
 
@@ -126,7 +137,7 @@ impl EventLog {
                 .iter()
                 .skip(skip)
                 .take(MAX_EVENTS_PER_POLL)
-                .cloned()
+                .map(|(event, _)| Arc::clone(event))
                 .collect()
         };
 

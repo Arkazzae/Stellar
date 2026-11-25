@@ -565,7 +565,15 @@
     transition: background var(--dur-fast) var(--ease-standard);
   }
 
-  a.cp-row:hover {
+  button.cp-row {
+    width: 100%;
+    background: transparent;
+    border: 0;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  :is(a, button).cp-row:hover {
     background: var(--surface-overlay);
   }
 

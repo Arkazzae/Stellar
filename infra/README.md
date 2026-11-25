@@ -10,7 +10,7 @@ Startup scripts, configuration templates, and container contract tests shipped i
 | `settings.sh` | `/usr/local/lib/stellarr/settings.sh` | Shared `STELLARR_*` parser, validator, default table, and `public_url` derivation sourced by both `entrypoint.sh` and `stellarr-cli.sh`. |
 | `stellarr-cli.sh` | `/usr/local/bin/stellarr` | Wrapper around `/opt/stellarr/cli/stellarr` for `docker exec`. Sources `settings.sh` so `Operations__PublicUrl` and `Desktop__CanonicalOrigin` match the running API; prints a warning without blocking the CLI if `.env` has a broken setting so offline repair still works. |
 | `tls-maintenance.sh` | `/usr/local/bin/stellarr-tls-maintenance` | Manages `/data/stellarr/tls/{fullchain,privkey}.pem`. Runs once in `prepare` mode at boot and continuously in `watch` mode (every 12 hours by default) under `stellarr-init`. |
-| `nginx.conf` | `/etc/nginx/nginx.conf` (rendered) | Terminates TLS (`443`), redirects plain HTTP (`80`) unless `X-Forwarded-Proto: https` is set, serves pre-compressed static web assets from `/opt/stellarr/web`, and proxies API and WebSocket traffic to `127.0.0.1:5000`. |
+| `nginx.conf` | `/etc/nginx/nginx.conf` (rendered) | Terminates TLS (`443`), redirects plain HTTP (`80`) unless a trusted proxy sends `X-Forwarded-Proto: https`, serves pre-compressed static web assets from `/opt/stellarr/web`, and proxies API and WebSocket traffic to `127.0.0.1:5000`. |
 | `turnserver.conf.template` | `/etc/turnserver.conf` (rendered) | `coturn` configuration for STUN/TURN (`3478`), optional TURNS (`5349`), UDP relay range (`49160-49200`), and `use-auth-secret` HMAC credentials. |
 
 ## Startup sequence (`entrypoint.sh`)

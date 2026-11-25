@@ -35,8 +35,9 @@ jobs:
       installer: ${{ steps.filter.outputs.installer }}
       image: ${{ steps.filter.outputs.image }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 0
       - id: filter
         env:
@@ -108,7 +109,9 @@ jobs:
       run:
         working-directory: api
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - run: rustup toolchain install stable --profile minimal --component rustfmt,clippy && rustup default stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -141,7 +144,9 @@ jobs:
     # Room for a cold build of the slowest recipe.
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build the recipes
         uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
@@ -173,14 +178,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       # Every npm script below assembles the browser's binaries first, the
       # recipes' outputs among them.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: recipe-outputs
           path: artifacts/recipes/
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 26
           cache: npm
@@ -236,8 +243,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 26
           cache: npm
@@ -287,7 +296,9 @@ jobs:
       run:
         working-directory: media
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       # The runner image ships rustup. This moves it to the current stable
       # release, the one the image build takes from rust:1-slim-bookworm.
       - run: rustup toolchain install stable --profile minimal --component rustfmt,clippy && rustup default stable
@@ -314,7 +325,9 @@ jobs:
       # reach it: the runner's home folder is closed to other users.
       CARGO_TARGET_DIR: /tmp/init-target
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - run: rustup toolchain install stable --profile minimal --component rustfmt,clippy && rustup default stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -343,8 +356,10 @@ jobs:
       run:
         working-directory: website
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 26
           cache: npm
@@ -363,6 +378,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    environment: website-production
     defaults:
       run:
         working-directory: website
@@ -370,16 +386,18 @@ jobs:
       group: website-deploy
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 26
           cache: npm
           cache-dependency-path: website/package-lock.json
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npm run build
       - run: cmp dist/install.sh ../install.sh
-      - run: npx --yes wrangler@4.164.0 pages deploy dist --project-name stellarr --branch main --commit-hash ${{ github.sha }}
+      - run: ./node_modules/.bin/wrangler pages deploy dist --project-name stellarr --branch main --commit-hash ${{ github.sha }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -402,7 +420,9 @@ jobs:
     env:
       STELLARR_INSTALLER_TEST_BIN: init/installer/target/x86_64-unknown-linux-musl/debug/stellarr-installer
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - run: rustup toolchain install stable --profile minimal --component rustfmt,clippy --target x86_64-unknown-linux-musl && rustup default stable
       - run: sudo apt-get update && sudo apt-get install -y musl-tools
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
@@ -466,7 +486,9 @@ jobs:
     # and the web client, before it starts the image.
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Check TLS certificate renewal
         run: bash infra/tests/tls-maintenance.test.sh
       # The entrypoint writes to /etc and /run, so its test runs as root in a

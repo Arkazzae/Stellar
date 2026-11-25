@@ -2,7 +2,7 @@
 
 use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io::{self, Write};
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt, symlink};
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 
 const STAGE: &str = ".stellarr-install-stage";
@@ -23,12 +23,24 @@ fn path_id(identity: &[u8]) -> u64 {
 }
 
 pub fn lock(scope: &str, identity: &[u8]) -> io::Result<File> {
-    let id = path_id(identity);
-    let directory = PathBuf::from("/tmp");
+    // SAFETY: geteuid has no preconditions. Test seams can simulate a different
+    // user for install planning, but locks always belong to the real caller.
+    let uid = unsafe { libc::geteuid() };
     #[cfg(feature = "test-seams")]
-    let directory = std::env::var_os("STELLARR_INSTALLER_TEST_LOCKS")
-        .map(PathBuf::from)
-        .unwrap_or(directory);
+    let test_directory = std::env::var_os("STELLARR_INSTALLER_TEST_LOCKS").map(PathBuf::from);
+    #[cfg(not(feature = "test-seams"))]
+    let test_directory: Option<PathBuf> = None;
+    let directory = match test_directory {
+        Some(directory) => directory,
+        None => lock_directory(uid)?,
+    };
+    match fs::DirBuilder::new().mode(0o700).create(&directory) {
+        Err(error) if error.kind() != io::ErrorKind::AlreadyExists => return Err(error),
+        _ => {}
+    }
+    check_lock_parent(&directory, uid, 0o077)?;
+
+    let id = path_id(identity);
     let path = directory.join(format!("stellarr-installer-{scope}-{id:016x}.lock"));
     let mut options = OpenOptions::new();
     options
@@ -41,11 +53,11 @@ pub fn lock(scope: &str, identity: &[u8]) -> io::Result<File> {
                 .clone()
                 .write(true)
                 .create_new(true)
-                .mode(0o644)
+                .mode(0o600)
                 .open(&path)
             {
                 Ok(file) => {
-                    file.set_permissions(fs::Permissions::from_mode(0o644))?;
+                    file.set_permissions(fs::Permissions::from_mode(0o600))?;
                     file
                 }
                 Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
@@ -56,8 +68,11 @@ pub fn lock(scope: &str, identity: &[u8]) -> io::Result<File> {
         }
         Err(error) => return Err(error),
     };
-    if !file.metadata()?.is_file() {
-        return Err(io::Error::other("installer lock is not a regular file"));
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || metadata.uid() != uid || metadata.mode() & 0o777 != 0o600 {
+        return Err(io::Error::other(
+            "installer lock must be a private file owned by the installer user",
+        ));
     }
     match file.try_lock() {
         Ok(()) => {}
@@ -70,6 +85,37 @@ pub fn lock(scope: &str, identity: &[u8]) -> io::Result<File> {
         Err(TryLockError::Error(error)) => return Err(error),
     }
     Ok(file)
+}
+
+fn lock_directory(uid: u32) -> io::Result<PathBuf> {
+    if uid == 0 {
+        return Ok(PathBuf::from("/run/stellarr-installer"));
+    }
+    if let Some(runtime) = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from)
+        && check_lock_parent(&runtime, uid, 0o077).is_ok()
+    {
+        return Ok(runtime.join("stellarr-installer"));
+    }
+    let home = std::env::var_os("HOME").map(PathBuf::from).ok_or_else(|| {
+        io::Error::other("HOME is required for the installer's private lock directory")
+    })?;
+    check_lock_parent(&home, uid, 0o022)?;
+    Ok(home.join(".stellarr-installer"))
+}
+
+fn check_lock_parent(path: &Path, uid: u32, prohibited: u32) -> io::Result<()> {
+    let metadata = fs::symlink_metadata(path)?;
+    if !path.is_absolute()
+        || !metadata.is_dir()
+        || metadata.uid() != uid
+        || metadata.mode() & prohibited != 0
+    {
+        return Err(io::Error::other(format!(
+            "{} is not a private installer directory",
+            path.display()
+        )));
+    }
+    Ok(())
 }
 
 pub struct InstallPlan {

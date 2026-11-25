@@ -328,19 +328,19 @@ describe("ChannelPanel media", () => {
       photo("p1", "zachód"),
       {
         id: "f1",
-        part: { kind: "file", name: "raport.pdf", ext: "PDF", size: "2 MB", url: "/files/f1" },
+        part: { kind: "file", name: "raport.pdf", ext: "PDF", size: "2 MB", url: "/assets/f1" },
         ...origin,
       },
       {
         id: "a1",
-        part: { kind: "audio", name: "notatka.webm", duration: "0:19", url: "/files/a1" },
+        part: { kind: "audio", name: "notatka.webm", duration: "0:19", url: "/assets/a1" },
         ...origin,
       },
     ];
     render(panel({ tab: "media", media }));
 
     const file = screen.getByRole("link", { name: /raport\.pdf/ });
-    expect(file).toHaveAttribute("href", "/files/f1");
+    expect(file).toHaveAttribute("href", "/assets/f1");
     expect(file).toHaveAttribute("download", "raport.pdf");
     expect(file).toHaveTextContent("2 MB");
     const voice = screen.getByRole("link", { name: /notatka\.webm/ });
@@ -382,7 +382,7 @@ describe("ChannelPanel links", () => {
             href: "https://example.com/brief",
             title: "Brief",
             domain: "example.com",
-            thumb: "/thumbs/l1.png",
+            thumb: "/assets/l1.png",
             ...origin,
           },
           {
@@ -402,7 +402,7 @@ describe("ChannelPanel links", () => {
     expect(brief.getAttribute("rel")).toContain("noopener");
     expect(brief).toHaveTextContent("example.com");
     expect(brief).toHaveTextContent("Ada");
-    expect(brief.querySelector("img")).toHaveAttribute("src", "/thumbs/l1.png");
+    expect(brief.querySelector("img")).toHaveAttribute("src", "/assets/l1.png");
     expect(screen.getByRole("link", { name: /example\.org/ }).querySelector("img")).toBeNull();
   });
 });

@@ -95,6 +95,45 @@ impl AdmissionGate {
         user: Id,
         bytes: i64,
     ) -> Result<Result<Lease, Refusal>, DbError> {
+        self.reserve(
+            database,
+            user,
+            bytes,
+            self.inner.limits.max_stored_bytes_per_user,
+        )
+        .await
+    }
+
+    pub async fn enter_previews(
+        &self,
+        database: &Database,
+        bytes: i64,
+    ) -> Result<Result<Lease, Refusal>, DbError> {
+        // Existing previews are already charged to this shared bucket. Keep
+        // most of the instance quota available for user uploads.
+        const PREVIEW_BYTES: i64 = 256 * 1024 * 1024;
+        let quotas = &self.inner.limits;
+        let mut limit = PREVIEW_BYTES;
+        if quotas.max_stored_bytes_per_user > 0 {
+            limit = limit.min(quotas.max_stored_bytes_per_user);
+        }
+        if quotas.max_stored_bytes > 0 {
+            limit = limit.min(quotas.max_stored_bytes / 10);
+        }
+        if limit == 0 {
+            return Ok(Err(Refusal::UserQuota));
+        }
+        self.reserve(database, crate::link_previews::NOBODY, bytes, limit)
+            .await
+    }
+
+    async fn reserve(
+        &self,
+        database: &Database,
+        user: Id,
+        bytes: i64,
+        user_limit: i64,
+    ) -> Result<Result<Lease, Refusal>, DbError> {
         let inner = &self.inner;
         let slot = Arc::clone(&inner.slots)
             .acquire_owned()
@@ -112,12 +151,7 @@ impl AdmissionGate {
             )
         };
         let limits = &inner.limits;
-        if would_exceed(
-            stored.user,
-            user_reserved,
-            bytes,
-            limits.max_stored_bytes_per_user,
-        ) {
+        if would_exceed(stored.user, user_reserved, bytes, user_limit) {
             return Ok(Err(Refusal::UserQuota));
         }
         if would_exceed(stored.total, total_reserved, bytes, limits.max_stored_bytes) {

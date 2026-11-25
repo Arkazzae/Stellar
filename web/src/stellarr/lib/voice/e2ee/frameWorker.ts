@@ -111,11 +111,9 @@ export type Transform = (
 const FAILING_AFTER_MS = 1_000;
 const KEYFRAME_REQUEST_MS = 1_000;
 const EPOCH_REQUEST_MS = 1_000;
-
-interface ReceiveKey {
-  key: FrameKey;
-  window: ReplayWindow;
-}
+const RECEIVE_KEYS = 32;
+const REPLAY_WINDOWS = 256;
+const DERIVATIONS_PER_SECOND = 32;
 
 const noDrops = (): Record<DropReason, number> => ({
   plain: 0,
@@ -137,11 +135,14 @@ export function createFrameCrypto(post: (message: FrameWorkerEvent) => void, now
   const epochs = new Map<number, WorkerEpoch>();
   /** The 16-bit sequence senders seal under, or null. */
   let sending: number | null = null;
-  /** Receiver keys by sender and key id, derived once. */
-  const receiveKeys = new Map<string, Promise<ReceiveKey | null>>();
+  /** Only keys that opened a frame are cached. Replay state survives LRU eviction. */
+  const receiveKeys = new Map<string, FrameKey>();
+  const replayWindows = new Map<string, ReplayWindow>();
+  let derivationsLeft = DERIVATIONS_PER_SECOND;
+  let lastRefill = now();
   const binds = new Map<string, string>();
   const codecs = new Map<string, string>();
-  const epochAsked = new Map<number, number>();
+  let lastEpochRequest = Number.NEGATIVE_INFINITY;
   const allStats: TransformStats[] = [];
 
   function newStats(options: TransformOptions): TransformStats {
@@ -174,8 +175,8 @@ export function createFrameCrypto(post: (message: FrameWorkerEvent) => void, now
 
   function askForEpoch(sequence: number): void {
     const at = now();
-    if (at - (epochAsked.get(sequence) ?? Number.NEGATIVE_INFINITY) < EPOCH_REQUEST_MS) return;
-    epochAsked.set(sequence, at);
+    if (at - lastEpochRequest < EPOCH_REQUEST_MS) return;
+    lastEpochRequest = at;
     post({ type: "need-epoch", sequence });
   }
 
@@ -242,8 +243,6 @@ export function createFrameCrypto(post: (message: FrameWorkerEvent) => void, now
     let lastOpened = Number.NEGATIVE_INFINITY;
     let lastRequest = Number.NEGATIVE_INFINITY;
     let needKeyframe = false;
-    let cachedKid: KeyId | null = null;
-    let cached: ReceiveKey | null = null;
 
     function setFailing(failing: boolean): void {
       if (stats.failing === failing) return;
@@ -269,20 +268,6 @@ export function createFrameCrypto(post: (message: FrameWorkerEvent) => void, now
       requestKeyframe();
     }
 
-    function keyFor(senderId: string, kid: KeyId): Promise<ReceiveKey | null> | null {
-      const id = `${senderId}|${keyIdHex(kid)}`;
-      const known = receiveKeys.get(id);
-      if (known !== undefined) return known;
-      const epoch = epochs.get(epochOfKeyId(kid));
-      if (epoch === undefined) return null;
-      const derived = deriveFrameKey(epoch.base, { epochId: epoch.epochId, conversationId, senderId }, kid, "decrypt").then(
-        (key) => ({ key, window: new ReplayWindow() }),
-        () => null,
-      );
-      receiveKeys.set(id, derived);
-      return derived;
-    }
-
     return async (frame, controller) => {
       const data = new Uint8Array(frame.data);
       count(stats, data.length);
@@ -296,36 +281,64 @@ export function createFrameCrypto(post: (message: FrameWorkerEvent) => void, now
         drop("plain");
         return;
       }
-      let entry: ReceiveKey | null;
-      if (cached !== null && cachedKid !== null && cachedKid.hi === parsed.kid.hi && cachedKid.lo === parsed.kid.lo) {
-        entry = cached;
-      } else {
-        const pending = keyFor(senderId, parsed.kid);
-        if (pending === null) {
-          askForEpoch(epochOfKeyId(parsed.kid));
-          drop("unknown-epoch");
-          return;
-        }
-        entry = await pending;
-        if (entry === null) {
-          drop("failed");
-          return;
-        }
-        cachedKid = parsed.kid;
-        cached = entry;
+      const sequence = epochOfKeyId(parsed.kid);
+      const epoch = epochs.get(sequence);
+      if (epoch === undefined) {
+        askForEpoch(sequence);
+        drop("unknown-epoch");
+        return;
       }
-      if (!entry.window.accepts(parsed.counter)) {
+      const id = `${epoch.epochId}|${senderId}|${keyIdHex(parsed.kid)}`;
+      let replay = replayWindows.get(id);
+      if (replay && !replay.accepts(parsed.counter)) {
         drop("replay");
         return;
       }
+      let key = receiveKeys.get(id);
       let opened: ArrayBuffer;
       try {
-        opened = await openFrame(entry.key, parsed, data);
+        if (key === undefined) {
+          const at = now();
+          if (at - lastRefill >= 1_000) {
+            derivationsLeft = DERIVATIONS_PER_SECOND;
+            lastRefill = at;
+          }
+          if (derivationsLeft === 0 || (!replay && replayWindows.size >= REPLAY_WINDOWS)) {
+            drop("failed");
+            return;
+          }
+          derivationsLeft -= 1;
+          key = await deriveFrameKey(
+            epoch.base, { epochId: epoch.epochId, conversationId, senderId }, parsed.kid, "decrypt",
+          );
+        }
+        opened = await openFrame(key, parsed, data);
       } catch {
         drop("failed");
         return;
       }
-      entry.window.mark(parsed.counter);
+
+      // Another transform may have opened this key or counter in the meantime.
+      replay = replayWindows.get(id);
+      if (replay === undefined) {
+        if (replayWindows.size >= REPLAY_WINDOWS) {
+          drop("failed");
+          return;
+        }
+        replay = new ReplayWindow();
+        replayWindows.set(id, replay);
+      }
+      if (!replay.accepts(parsed.counter)) {
+        drop("replay");
+        return;
+      }
+      replay.mark(parsed.counter);
+      receiveKeys.delete(id);
+      receiveKeys.set(id, key);
+      if (receiveKeys.size > RECEIVE_KEYS) {
+        const oldest = receiveKeys.keys().next().value;
+        if (oldest !== undefined) receiveKeys.delete(oldest);
+      }
       frame.data = opened;
       lastOpened = now();
       stats.passed += 1;
@@ -377,7 +390,7 @@ export function createFrameCrypto(post: (message: FrameWorkerEvent) => void, now
       case "epochs":
         for (const epoch of message.epochs) {
           epochs.set(epoch.sequence & 0xffff, epoch);
-          epochAsked.delete(epoch.sequence & 0xffff);
+
         }
         return;
       case "send":

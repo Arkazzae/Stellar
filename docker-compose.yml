@@ -26,6 +26,16 @@ services:
     pids_limit: ${STELLARR_CONTAINER_PIDS_LIMIT:-512}
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - KILL
+      - NET_BIND_SERVICE
+      - SETGID
+      - SETUID
     env_file:
       - path: .env
         required: false

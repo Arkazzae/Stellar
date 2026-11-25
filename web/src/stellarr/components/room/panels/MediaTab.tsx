@@ -4,6 +4,7 @@ import { Attachment } from "@/components/room/attachments/Attachment";
 import { LAZY_LINK_PREFIX } from "@/lib/messages/messageExport";
 import { placeholderStyle } from "@/components/room/attachments/placeholderStyle";
 import { formatFull } from "@/lib/format/format";
+import { safeAssetUrl, safeAttachmentUrl } from "@/lib/format/safeUrl";
 import { useLanguage } from "@/state/hooks";
 
 import type { MediaItemVM } from "./channelPanelModel";
@@ -35,7 +36,7 @@ function ImageTile({
   onOpen(): void;
 }) {
   const { t } = useLanguage();
-  const shown = part.preview ?? part.src;
+  const shown = safeAssetUrl(part.preview) ?? safeAttachmentUrl(part.src);
   const [settled, setSettled] = useState<string | null>(null);
   return (
     <button
@@ -45,14 +46,14 @@ function ImageTile({
       aria-label={t("room.zoomImage", { alt: part.alt, when })}
       onClick={onOpen}
     >
-      <img
+      {shown && !shown.startsWith(LAZY_LINK_PREFIX) && <img
         style={settled === shown ? undefined : placeholderStyle(part.placeholder)}
         src={shown}
         alt={part.alt}
         loading="lazy"
         onLoad={() => setSettled(shown)}
         onError={() => setSettled(shown)}
-      />
+      />}
     </button>
   );
 }
@@ -67,6 +68,7 @@ function VideoTile({
   onPlay?(part: VideoPart): void;
 }) {
   const { t } = useLanguage();
+  const poster = safeAttachmentUrl(part.thumb);
   return (
     <button
       type="button"
@@ -75,10 +77,10 @@ function VideoTile({
       aria-label={t("room.playRecording", { name: part.name ?? t("room.recording"), when })}
       onClick={() => onPlay?.(part)}
     >
-      {part.thumb === undefined ? (
+      {poster === undefined || poster.startsWith(LAZY_LINK_PREFIX) ? (
         <span className="cp-noposter" aria-hidden="true" />
       ) : (
-        <img src={part.thumb} alt="" loading="lazy" />
+        <img src={poster} alt="" loading="lazy" />
       )}
       <span className="cp-play" aria-hidden="true">
         <span>
@@ -94,14 +96,16 @@ function VideoTile({
 function FileRow({ item, callbacks }: { item: RowItem; callbacks?: AttachmentCallbacks }) {
   const { locale, t } = useLanguage();
   const { part } = item;
+  const url = safeAttachmentUrl(part.url);
+  const encrypted = url?.startsWith(LAZY_LINK_PREFIX);
   if (part.kind === "audio") {
     return (
       <>
-        <Attachment part={part} callbacks={callbacks} />
+        <Attachment part={{ ...part, url }} callbacks={callbacks} />
         <div className="cp-audio-origin">
           {item.authorName} · {formatFull(item.timestamp, locale)}
-          {part.voiceMessage && part.url && !part.url.startsWith(LAZY_LINK_PREFIX) && (
-            <a href={part.url} download={part.name}>{t("common.download")}</a>
+          {part.voiceMessage && url && !encrypted && (
+            <a href={url} download={part.name}>{t("common.download")}</a>
           )}
         </div>
       </>
@@ -122,12 +126,19 @@ function FileRow({ item, callbacks }: { item: RowItem; callbacks?: AttachmentCal
     </>
   );
 
-  // A file without a URL is an upload still in flight: listed, but not yet a link.
-  if (part.url === undefined || part.url.length === 0) {
+  if (encrypted && callbacks?.onDownloadFile) {
+    return (
+      <button className="cp-row" type="button" onClick={() => callbacks.onDownloadFile?.(part)}>
+        {body}
+      </button>
+    );
+  }
+  // An upload in flight or an unavailable file is listed without a link.
+  if (url === undefined || encrypted) {
     return <span className="cp-row inert">{body}</span>;
   }
   return (
-    <a className="cp-row" href={part.url} target="_blank" rel="noopener noreferrer" download={part.name}>
+    <a className="cp-row" href={url} target="_blank" rel="noopener noreferrer" download={part.name}>
       {body}
     </a>
   );

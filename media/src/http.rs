@@ -134,9 +134,17 @@ async fn authorize(
     request: Request,
     next: Next,
 ) -> Response {
-    // An empty secret is only possible on a loopback address, where the
-    // configuration accepted it, and then nothing is asked of the caller.
-    if !state.secret.is_empty() {
+    if state.secret.is_empty() {
+        // Only loopback listeners can be secretless. State changes are for
+        // local tools, so reject browser-originated requests without a bearer.
+        if !request.method().is_safe() && headers.contains_key(header::ORIGIN) {
+            return error(
+                StatusCode::FORBIDDEN,
+                "browser-origin-refused",
+                "Control requests from browsers require a bearer secret.",
+            );
+        }
+    } else {
         let presented = headers
             .get(header::AUTHORIZATION)
             .and_then(|v| v.as_bytes().strip_prefix(b"Bearer "))

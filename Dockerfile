@@ -88,7 +88,7 @@ COPY --from=recipe-rnnoise-build /out/ /
 # installs only web/, which links the shared packages it depends on. The
 # manifests come before the sources, so that editing a source file keeps the
 # install layer cached.
-FROM --platform=$BUILDPLATFORM node:26-bookworm-slim AS web-build
+FROM --platform=$BUILDPLATFORM node:26-bookworm-slim@sha256:0042e17d232a87a2cd485be1da7900fca4d10a4ad11b29e9285da1d2e54798c9 AS web-build
 WORKDIR /src
 COPY package.json package-lock.json ./
 COPY web/package.json web/
@@ -114,13 +114,27 @@ WORKDIR /src/web
 RUN npm run build \
     && find dist -type f \( -name '*.html' -o -name '*.js' -o -name '*.css' -o -name '*.json' \
          -o -name '*.svg' -o -name '*.wasm' \) -exec gzip -9 -k -n {} +
+RUN mkdir -p /out
+RUN node --input-type=module > /out/stellarr-csp-script-hashes <<'EOF'
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+
+const hashes = new Set();
+for (const file of ["dist/index.html", "dist/cockpit/index.html"]) {
+  const html = readFileSync(file, "utf8").replaceAll("\r\n", "\n");
+  for (const [, source] of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) {
+    hashes.add("'sha256-" + createHash("sha256").update(source).digest("base64") + "'");
+  }
+}
+console.log([...hashes].join(" "));
+EOF
 
 # The media crate with every Rust file replaced by an empty stub. It changes
 # only when the manifest, the lockfile or the set of files changes, so the
 # dependencies compiled from it stay cached across source edits. Stubbing every
 # file, not only src/main.rs, keeps targets that Cargo.toml names explicitly
 # (a [[test]] with harness = false, say) from failing the manifest check.
-FROM --platform=$BUILDPLATFORM rust:1-slim-bookworm AS media-skeleton
+FROM --platform=$BUILDPLATFORM rust:1-slim-bookworm@sha256:bb875b0f8ce726053e259034848c471840e96bfe591fd52556178ae9a05e6126 AS media-skeleton
 WORKDIR /src/media
 COPY media/ ./
 RUN <<'EOF'
@@ -139,7 +153,7 @@ EOF
 # which link both binaries and which aws-lc-rs, the crypto backend of str0m,
 # compiles with. Bookworm's glibc 2.36 is older than the 2.39 of the final
 # image, so every symbol the binaries link against is there at run time.
-FROM --platform=$BUILDPLATFORM rust:1-slim-bookworm AS rust-cross
+FROM --platform=$BUILDPLATFORM rust:1-slim-bookworm@sha256:bb875b0f8ce726053e259034848c471840e96bfe591fd52556178ae9a05e6126 AS rust-cross
 ARG BUILDARCH
 ARG TARGETARCH
 # RUSTUP_TOOLCHAIN pins the image's own toolchain even if the crate later adds
@@ -183,7 +197,7 @@ RUN cargo build --release --locked --target "$(cat /etc/rust-target)" \
 # The API's workspace with every Rust file replaced by an empty stub, like the
 # media crate's above. A change to one crate's source then leaves the
 # third-party dependencies cached.
-FROM --platform=$BUILDPLATFORM rust:1-slim-bookworm AS api-skeleton
+FROM --platform=$BUILDPLATFORM rust:1-slim-bookworm@sha256:bb875b0f8ce726053e259034848c471840e96bfe591fd52556178ae9a05e6126 AS api-skeleton
 WORKDIR /src/api
 COPY api/ ./
 RUN <<'EOF'
@@ -239,7 +253,7 @@ RUN cargo build --release --locked --target "$(cat /etc/rust-target)" --bin stel
 # services. Each is a target of infra/compose/dev.yml that rebuilds and
 # restarts its bind-mounted crate. The stack mounts its own volume over the
 # registry, so the copy left by the install is dropped.
-FROM rust:1-slim-bookworm AS rust-watch
+FROM rust:1-slim-bookworm@sha256:bb875b0f8ce726053e259034848c471840e96bfe591fd52556178ae9a05e6126 AS rust-watch
 RUN cargo install --locked watchexec-cli@2.8.0 \
     && rm -rf "$CARGO_HOME/registry"
 WORKDIR /app
@@ -260,8 +274,9 @@ FROM ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da0
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-         ca-certificates coturn nginx openssl tzdata \
-    && rm -rf /var/lib/apt/lists/*
+         ca-certificates coturn nginx openssl tzdata util-linux \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --user-group --no-create-home --shell /usr/sbin/nologin stellarr
 
 COPY infra/nginx.conf /etc/nginx/nginx.conf.template
 COPY infra/turnserver.conf.template /etc/turnserver.conf.template
@@ -279,6 +294,7 @@ COPY --from=api-build /out/cli/stellarr /opt/stellarr/cli/stellarr
 # Cockpit's in cockpit/, the build's own files in static/, and the folders of
 # web/public/ beside them.
 COPY --from=web-build /src/web/dist /opt/stellarr/web
+COPY --from=web-build /out/stellarr-csp-script-hashes /etc/nginx/stellarr-csp-script-hashes
 COPY --from=media-build /out/stellarr-media /opt/stellarr/media/stellarr-media
 # The origin, hash and licence of every prebuilt browser file travel with the
 # image, next to the notices they refer to.

@@ -197,7 +197,9 @@ describe("RoomContainer in a call", () => {
 
     render(<RoomContainer />);
 
-    expect(mocks.joinFromPopoutLink).toHaveBeenCalledWith(mocks.ui.joinVoiceChannel);
+    expect(mocks.joinFromPopoutLink).toHaveBeenCalledWith(
+      mocks.ui.joinVoiceChannel, mocks.directory.server.id, mocks.directory.channels,
+    );
   });
 
   it("asks for full screen on the whole room, not on the stage", async () => {

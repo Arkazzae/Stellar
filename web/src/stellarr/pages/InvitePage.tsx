@@ -1,6 +1,6 @@
 import { Icon } from "@stellarr/icons";
 import { Link, useParams, useRouter } from "@stellarr/router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import controls from "@/components/auth/AuthControls.module.css";
 import { AuthFrame } from "@/components/auth/AuthFrame";
@@ -39,11 +39,14 @@ function InviteUnusable({ signedIn }: { signedIn: boolean }) {
 }
 
 /**
- * What a signed-out visitor sees of an invite: whose server, who asks, which
- * channel and for how long, and the three ways in. Each remembers the invite
- * for this tab, so it is joined as soon as there is a session.
+ * Shows who invited the visitor, where the link leads, and how to accept it.
  */
-function InviteDetails({ code, invite }: { code: string; invite: InvitePreview }) {
+function InviteDetails({ code, invite, join, joining }: {
+  code: string;
+  invite: InvitePreview;
+  join?: () => void;
+  joining: boolean;
+}) {
   const { t, locale } = useLanguage();
   const router = useRouter();
   const providers = useSignInProviders();
@@ -89,45 +92,55 @@ function InviteDetails({ code, invite }: { code: string; invite: InvitePreview }
           )}
         </ul>
       ) : null}
-      <div className={controls.stack}>
+      {join ? (
         <button
           type="button"
           className={`${controls.button} ${controls.primary} ${controls.wide}`}
-          onClick={() => go("/register")}
+          onClick={join}
+          disabled={joining}
         >
-          {t("auth.invite.register")}
+          {t("auth.invite.join")}
         </button>
-        <button
-          type="button"
-          className={`${controls.button} ${controls.secondary} ${controls.wide}`}
-          onClick={() => go("/login")}
-        >
-          {t("auth.invite.login")}
-        </button>
-        {providers.map((provider) => (
-          // The provider sends the visitor back here, signed in, and the page
-          // joins. A second step on the way ends at /login, which takes the
-          // remembered invite instead.
-          <a
-            key={provider.loginUrl}
-            className={`${controls.button} ${controls.secondary} ${controls.wide}`}
-            href={`${provider.loginUrl}?returnUrl=${encodeURIComponent(back)}`}
-            onClick={() => rememberPendingInvite(code)}
-          >
-            <Icon name="login" size={20} />
-            <span>{t("auth.invite.provider", { provider: provider.displayName })}</span>
-          </a>
-        ))}
-      </div>
-      <p className={controls.hint}>{t("auth.invite.after", { server: invite.server.name })}</p>
+      ) : (
+        <>
+          <div className={controls.stack}>
+            <button
+              type="button"
+              className={`${controls.button} ${controls.primary} ${controls.wide}`}
+              onClick={() => go("/register")}
+            >
+              {t("auth.invite.register")}
+            </button>
+            <button
+              type="button"
+              className={`${controls.button} ${controls.secondary} ${controls.wide}`}
+              onClick={() => go("/login")}
+            >
+              {t("auth.invite.login")}
+            </button>
+            {providers.map((provider) => (
+              // The provider returns the visitor to this invite after sign-in.
+              <a
+                key={provider.loginUrl}
+                className={`${controls.button} ${controls.secondary} ${controls.wide}`}
+                href={`${provider.loginUrl}?returnUrl=${encodeURIComponent(back)}`}
+                onClick={() => rememberPendingInvite(code)}
+              >
+                <Icon name="login" size={20} />
+                <span>{t("auth.invite.provider", { provider: provider.displayName })}</span>
+              </a>
+            ))}
+          </div>
+          <p className={controls.hint}>{t("auth.invite.after", { server: invite.server.name })}</p>
+        </>
+      )}
     </AuthFrame>
   );
 }
 
 /**
- * Where an invite link leads. Signed in, it joins the server and opens the
- * app, as before; signed out, it shows where the link leads and lets the
- * visitor create an account, log in or use an identity provider.
+ * An invite shows a preview before joining. A signed-in visitor confirms
+ * here, and a signed-out visitor can choose how to sign in.
  *
  * The code is the last segment of the address, decoded, as the way back
  * from sign-in encodes it; an address whose code cannot be decoded fails like
@@ -138,7 +151,8 @@ export default function InvitePage() {
   const router = useRouter();
   const ports = usePorts();
   const { phase, reload } = useSession();
-  const [joinFailed, setJoinFailed] = useState(false);
+  const [joinStatus, setJoinStatus] = useState<{ code: string; state: "joining" | "failed" } | null>(null);
+  const pendingJoin = useRef<AbortController | null>(null);
   const [attempt, setAttempt] = useState(0);
   const asked = `${code ?? ""}#${attempt}`;
   const [answer, setAnswer] = useState<{ asked: string; preview: Preview } | null>(null);
@@ -147,36 +161,37 @@ export default function InvitePage() {
   // Signed in, an invite ends in the app.
   usePrefetchApp(phase !== "loading");
 
-  useEffect(() => {
-    if (code === null || phase !== "ready") return;
-    let active = true;
-    // A visitor back from an identity provider lands here with the invite
-    // still remembered; once it is answered, the next login must not bring
-    // the tab back to it.
+  useEffect(() => () => {
+    pendingJoin.current?.abort();
+    pendingJoin.current = null;
+  }, [code]);
+
+  async function joinInvite() {
+    if (code === null || phase !== "ready" || pendingJoin.current !== null) return;
+    const current = new AbortController();
+    pendingJoin.current = current;
+    setJoinStatus({ code, state: "joining" });
     const forget = () => {
       if (pendingInvite() === code) takePendingInvite();
     };
-    ports.directory.joinInvite(code).then(
-      (server) => {
-        if (!active) return;
-        forget();
-        ports.directory.selectServer(server.id);
-        router.replace("/");
-        reload();
-      },
-      () => {
-        if (!active) return;
-        forget();
-        setJoinFailed(true);
-      },
-    );
-    return () => {
-      active = false;
-    };
-  }, [code, phase, ports, reload, router]);
+    try {
+      const server = await ports.directory.joinInvite(code);
+      if (current.signal.aborted) return;
+      forget();
+      ports.directory.selectServer(server.id);
+      router.replace("/");
+      reload();
+    } catch {
+      if (current.signal.aborted) return;
+      forget();
+      setJoinStatus({ code, state: "failed" });
+    } finally {
+      if (pendingJoin.current === current) pendingJoin.current = null;
+    }
+  }
 
   useEffect(() => {
-    if (code === null || phase !== "anonymous") return;
+    if (code === null || (phase !== "anonymous" && phase !== "ready")) return;
     let active = true;
     ports.session.invitePreview(code).then(
       (invite) => active && setAnswer({ asked, preview: { state: "ready", invite } }),
@@ -195,14 +210,20 @@ export default function InvitePage() {
 
   if (phase === "error") return <ServerUnreachable t={t} onRetry={reload} />;
   if (code === null) return <InviteUnusable signedIn={phase === "ready"} />;
-  if (phase === "ready") return joinFailed ? <InviteUnusable signedIn /> : <AppSkeleton />;
-  if (phase !== "anonymous") return <AppSkeleton />;
+  if (phase !== "anonymous" && phase !== "ready") return <AppSkeleton />;
+  const signedIn = phase === "ready";
+  if (joinStatus?.code === code && joinStatus.state === "failed") return <InviteUnusable signedIn />;
 
   switch (preview.state) {
     case "ready":
-      return <InviteDetails code={code} invite={preview.invite} />;
+      return <InviteDetails
+        code={code}
+        invite={preview.invite}
+        join={signedIn ? () => void joinInvite() : undefined}
+        joining={joinStatus?.code === code && joinStatus.state === "joining"}
+      />;
     case "unusable":
-      return <InviteUnusable signedIn={false} />;
+      return <InviteUnusable signedIn={signedIn} />;
     case "failed":
       return <ServerUnreachable t={t} onRetry={() => setAttempt((count) => count + 1)} />;
     case "loading":
