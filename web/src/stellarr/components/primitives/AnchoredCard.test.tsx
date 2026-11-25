@@ -6,7 +6,7 @@ describe("placeAnchoredCard", () => {
   it("clamps an oversized card inside every safe-area edge", () => {
     expect(
       placeAnchoredCard(
-        { left: 10, right: 58, top: 500 },
+        { left: 10, right: 58, top: 500, bottom: 544 },
         { width: 390, height: 600 },
         {
           width: 320,
@@ -30,7 +30,7 @@ describe("placeAnchoredCard", () => {
   it("uses visual-viewport offsets while the page is zoomed or panned", () => {
     expect(
       placeAnchoredCard(
-        { left: 430, right: 474, top: 320 },
+        { left: 430, right: 474, top: 320, bottom: 364 },
         { width: 200, height: 100 },
         {
           width: 360,
@@ -54,7 +54,7 @@ describe("placeAnchoredCard", () => {
   it("opens beside the anchor when there is room", () => {
     expect(
       placeAnchoredCard(
-        { left: 20, right: 64, top: 100 },
+        { left: 20, right: 64, top: 100, bottom: 144 },
         { width: 320, height: 200 },
         {
           width: 640,
@@ -74,4 +74,16 @@ describe("placeAnchoredCard", () => {
       maxHeight: 336,
     });
   });
+  it.each([
+    [100, 152],
+    [550, 342],
+  ])("opens outside a wide identity row at y=%i", (top, expectedTop) => {
+    const placement = placeAnchoredCard(
+      { left: 80, right: 780, top, bottom: top + 44 },
+      { width: 320, height: 200 },
+      { width: 1280, height: 720, offsetLeft: 0, offsetTop: 0, insetTop: 0, insetRight: 0, insetBottom: 0, insetLeft: 0 },
+    );
+    expect(placement).toMatchObject({ left: 80, top: expectedTop });
+  });
+
 });
