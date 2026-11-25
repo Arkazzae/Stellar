@@ -346,13 +346,15 @@ expect_line /etc/nginx/stellarr-trusted-proxies.conf 'fd00::1 1;'
 
 # The other settings it shares with the API or hands to the media server.
 run transports-and-language "${image_env[@]}" STELLARR_TURN_ENABLED=true STELLARR_TURN_TCP_ENABLED=true STELLARR_TURNS_ENABLED=true \
-  STELLARR_LANGUAGE=pl STELLARR_MEDIA_PORT=49010 STELLARR_MEDIA_ADVERTISE=127.0.0.1:49100 STELLARR_MEDIA_LOG=debug
+  STELLARR_LANGUAGE=pl STELLARR_MEDIA_PORT=49010 STELLARR_MEDIA_LAN_IP=192.168.1.4 \
+  STELLARR_MEDIA_ADVERTISE=127.0.0.1:49100 STELLARR_MEDIA_LOG=debug
 expect_started
 expect_export STELLARR_TURN_TCP_ENABLED true
 expect_export STELLARR_TURNS_ENABLED true
 expect_export STELLARR_LANGUAGE pl
 expect_export STELLARR_MEDIA_PORT 49010
 expect_export STELLARR_MEDIA_PUBLIC_PORT 49010
+expect_export STELLARR_MEDIA_LAN_IP 192.168.1.4
 expect_export STELLARR_MEDIA_ADVERTISE 127.0.0.1:49100
 expect_export STELLARR_MEDIA_LOG debug
 expect_no_line /etc/turnserver.conf 'no-tcp'

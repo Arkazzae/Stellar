@@ -13,9 +13,17 @@ wget -O /boot/config/plugins/dockerMan/templates-user/my-Stellarr.xml \
 
 Open **Docker → Add Container**, select **Stellarr** under **Template**, and review the settings below before clicking **Apply**.
 
+If the registry rejects the pull or a stable image has yet to be published, build from a checked-out copy of the repository on Unraid:
+
+```bash
+docker buildx build --load --tag stellarr-local:dev .
+```
+
+Set **Repository** to `stellarr-local:dev` in the user template.
+
 ## 2. Configure required settings
 
-1. **Domain and Public IP**: Set **Domain** (`STELLARR_DOMAIN`) to the address users open. If it is already the IPv4 address that browsers can reach for media, direct calls can use it. Otherwise set **Public IP** (`STELLARR_PUBLIC_IP`) to the Unraid LAN IPv4 for LAN-only calls, or a reachable public IPv4 / `auto` for internet access.
+1. **Domain and Public IP**: Set **Domain** (`STELLARR_DOMAIN`) to the address users open. If it is already the IPv4 address that browsers can reach for media, direct calls can use it. Otherwise set **Public IP** (`STELLARR_PUBLIC_IP`) to the Unraid LAN IPv4 for LAN-only calls, or a reachable public IPv4 / `auto` for internet access. Set **LAN IP for voice** to the Unraid LAN address if callers in the local network cannot reach the public media port through the router.
 2. **Ports**: Unraid uses ports `80` and `443` for its own web UI, so the template defaults to `8443/tcp` for HTTPS. Whenever you change a host port mapping in Unraid, update its matching environment variable to the same port number:
 
    | Port mapping | Matching variable |
@@ -33,6 +41,22 @@ Open **Docker → Add Container**, select **Stellarr** under **Template**, and r
 Start the container and click **WebUI** from its menu on the Docker tab. Accept the self-signed certificate warning, then complete the three-step `/setup` wizard as described in the [Quick start](quick-start.md#4-create-the-owner-account-and-first-server). Retrieve the required setup code by clicking **Logs** in the container's menu on the Docker tab and copying the latest `Setup code:` line.
 
 For a browser-trusted TLS certificate or reverse proxy configuration, see [Reverse proxy and TLS](reverse-proxy-and-tls.md).
+
+## Nginx Proxy Manager on the same Unraid host
+
+Place both containers on a user-defined Docker bridge. Reuse Nginx Proxy Manager’s bridge if it already has one. Otherwise create one with a subnet that is available on your host:
+
+```bash
+docker network create --subnet 172.29.35.0/24 stellarr-proxy
+```
+
+Set **Network Type** in both Unraid templates to the shared bridge. Save a fixed address for Nginx Proxy Manager in its template so the address survives container recreation. On a bridge such as the example above, use `--ip=172.29.35.10` in Nginx Proxy Manager’s **Extra Parameters** if there is no IP field. Preserve any other networks that its existing upstreams need.
+
+1. In the Stellarr template, set **Domain** to the public hostname, **Public HTTPS port** to `443`, and **Trusted proxies** to the fixed Nginx Proxy Manager address.
+2. In Nginx Proxy Manager, create a **Proxy Host** for the domain. Set **Scheme** to `http`, **Forward Hostname** to `Stellarr`, and **Forward Port** to `80`. Enable **Websockets Support** and select a TLS certificate on the **SSL** tab.
+3. Point the public HTTPS forwarding rule at Nginx Proxy Manager. Forward the voice port `49000` on UDP and TCP directly to the Unraid host so the browser can reach Stellarr Media. The proxy reaches port `80` over the shared bridge without a host port mapping. Use the proxy’s IP as the trusted address so Stellarr can distinguish it from other connections.
+
+See [proxy requirements](reverse-proxy-and-tls.md#proxy-requirements) for upload limits and timeouts.
 
 ## Stopping, backups, and CLI
 

@@ -24,7 +24,7 @@ On first start the container creates a self-signed certificate, so the browser s
   <WebUI>https://[IP]:[PORT:443]/</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/Arkazzae/Stellarr/main/deploy/unraid/stellarr.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/Arkazzae/Stellarr/main/branding/logo/tile.png</Icon>
-  <ExtraParams>--memory=4g --cpus=4 --pids-limit=512 --security-opt=no-new-privileges:true --stop-timeout=75</ExtraParams>
+  <ExtraParams>--memory=4g --cpus=4 --pids-limit=512 --security-opt=no-new-privileges:true --cap-drop=ALL --cap-add=CHOWN --cap-add=DAC_OVERRIDE --cap-add=FOWNER --cap-add=KILL --cap-add=NET_BIND_SERVICE --cap-add=SETGID --cap-add=SETUID --stop-timeout=75</ExtraParams>
   <PostArgs/>
   <CPUset/>
   <DateInstalled/>
@@ -39,6 +39,7 @@ On first start the container creates a self-signed certificate, so the browser s
 
   <Config Name="Domain" Target="STELLARR_DOMAIN" Default="" Mode="" Description="The name or IPv4 address people open Stellarr at, for example chat.example.com or 192.168.1.10. The certificate and public address use it. Empty means localhost, which only the Unraid server itself can use." Type="Variable" Display="always" Required="false" Mask="false"></Config>
   <Config Name="Public IP" Target="STELLARR_PUBLIC_IP" Default="" Mode="" Description="The IPv4 address browsers reach this server at: its LAN address for calls at home, your public address for calls over the internet, or auto to resolve the domain. If empty, an IPv4 address entered as Domain is used." Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="LAN IP for voice" Target="STELLARR_MEDIA_LAN_IP" Default="" Mode="" Description="Optional Unraid LAN IPv4 for people calling from the local network. Advertised alongside the public address on the voice media host port. Useful when the router does not loop traffic back through its public address." Type="Variable" Display="always" Required="false" Mask="false"></Config>
   <Config Name="HTTPS host port" Target="STELLARR_HTTPS_PORT" Default="8443" Mode="" Description="The host side of the HTTPS port mapping above. The instance's public address uses it." Type="Variable" Display="always" Required="true" Mask="false">8443</Config>
   <Config Name="Voice media host port" Target="STELLARR_MEDIA_PORT" Default="49000" Mode="" Description="The host side of the voice media port mapping above. The media server tells browsers this port." Type="Variable" Display="always" Required="true" Mask="false">49000</Config>
   <Config Name="Language" Target="STELLARR_LANGUAGE" Default="" Mode="" Description="en or pl, English when empty: the web client's default language, and that of server messages, mail and the names of a new server's roles and channels." Type="Variable" Display="always" Required="false" Mask="false"></Config>
@@ -46,6 +47,7 @@ On first start the container creates a self-signed certificate, so the browser s
   <Config Name="Public HTTPS port" Target="STELLARR_PUBLIC_PORT" Default="" Mode="" Description="The HTTPS port browsers use, when it differs from the host port: 443 behind a reverse proxy. Empty means the HTTPS host port." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="Public URL" Target="STELLARR_PUBLIC_URL" Default="" Mode="" Description="The full address for mail links and desktop clients, for example https://chat.example.com. Overrides the address built from the domain and port." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="Trusted proxies" Target="STELLARR_TRUSTED_PROXIES" Default="" Mode="" Description="The reverse proxy in front of Stellarr, as the container sees it, for example 172.18.0.5: then each person's own address is recorded and rate-limited, not the proxy's. IPv4 and IPv6 addresses and networks, separated by commas. See the reverse proxy documentation for which address to list." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="Explicit voice media addresses" Target="STELLARR_MEDIA_ADVERTISE" Default="" Mode="" Description="Optional comma-separated IPv4 ip:port pairs for direct voice and video. Overrides the derived public, LAN and container addresses." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 
   <Config Name="GIPHY key" Target="STELLARR_GIPHY_API_KEY" Default="" Mode="" Description="Public GIPHY web key for GIF search. It can also be set in Cockpit under Integrations, which wins over this one." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 
