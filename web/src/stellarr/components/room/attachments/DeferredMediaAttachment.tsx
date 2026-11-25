@@ -6,6 +6,7 @@ import type { AttachmentCallbacks, AudioPart, VideoPart } from "@/lib/messages/p
 
 import { AudioAttachment } from "./AudioAttachment";
 import { VideoAttachment } from "./VideoAttachment";
+import { videoAspectRatio, videoFrameStyle } from "./videoGeometry";
 
 /** Private originals are fetched and decrypted only when the reader presses Play. */
 export function DeferredMediaAttachment({ part, resolveOriginal }: {
@@ -39,17 +40,18 @@ export function DeferredMediaAttachment({ part, resolveOriginal }: {
     setStatus("failed");
   }
 
+  const style = video ? videoFrameStyle(videoAspectRatio(part.width, part.height)) : undefined;
   return (
-    <div className={video ? "att att-video deferred" : "att att-audio"}>
+    <div className={video ? "att att-video deferred" : "att att-audio"} style={style}>
       {video && part.thumb && <img src={part.thumb} alt="" />}
       <button
         type="button"
-        className={video ? "overlay-play" : "play-btn"}
+        className={video ? "video-surface" : "play-btn"}
         aria-label={t("attachment.play", { name })}
         disabled={!resolveOriginal || status === "loading"}
         onClick={() => void open()}
       >
-        <span><Icon name="play" size={16} /></span>
+        <span className={video ? "video-play-mark" : undefined}><Icon name="play" size={video ? 25 : 16} /></span>
       </button>
       {!video && <span className="au-meta"><b>{name}</b></span>}
       {status !== "idle" && (

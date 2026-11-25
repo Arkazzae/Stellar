@@ -3,7 +3,7 @@ import { useId, useRef, useState } from "react";
 import { Button, Spinner } from "@stellarr/ui";
 import { Icon } from "@stellarr/icons";
 import { useConfirm } from "@/components/primitives/ConfirmDialog";
-import { WALLPAPER_BLUR_MAX, type ThemePreference } from "@/design/themes";
+import { WALLPAPER_BLUR_MAX, WALLPAPER_SHADE_DEFAULT, type ThemePreference } from "@/design/themes";
 import { useLanguage } from "@/state/hooks";
 
 import styles from "./AppearancePane.module.css";
@@ -82,6 +82,17 @@ export function WallpaperSection({ theme, onChange, wallpaper }: WallpaperSectio
               </span>
             </span>
             <div className={`frm-ctl ap-end ${styles.actions}`}>
+              {hasPicture && settings === null ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => onChange({ wallpaper: { shade: WALLPAPER_SHADE_DEFAULT, blur: 0 } })}
+                >
+                  {t("theme.wallpaper.show")}
+                </Button>
+              ) : null}
               <Button type="button" variant="secondary" size="sm" disabled={busy} onClick={() => input.current?.click()}>
                 {busy ? <Spinner /> : <Icon name="image" size={15} />}
                 {hasPicture ? t("theme.wallpaper.change") : t("theme.wallpaper.choose")}

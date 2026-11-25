@@ -1,9 +1,9 @@
-import { screen, within } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { renderInConfirm as render } from "@/test/confirm";
-import { DEFAULT_THEME, FONTS } from "@/design/themes";
+import { DEFAULT_THEME, FONTS, normaliseTheme, type ThemePreference } from "@/design/themes";
 
 import { AppearancePane, type AppearancePaneProps } from "./AppearancePane";
 
@@ -18,6 +18,47 @@ function props(overrides: Partial<AppearancePaneProps> = {}): AppearancePaneProp
 }
 
 describe("AppearancePane controls", () => {
+  it("hides wallpaper when Midnight is picked and enables reset with only wallpaper active", async () => {
+    const user = userEvent.setup();
+    const p = props({ theme: { ...DEFAULT_THEME, wallpaper: { shade: 20, blur: 5 } } });
+    render(<AppearancePane {...p} />);
+
+    expect(screen.getByRole("button", { name: "Przywróć domyślne" })).toBeEnabled();
+    await user.click(screen.getByRole("radio", { name: "Midnight" }));
+    expect(p.onChange).toHaveBeenLastCalledWith({
+      palette: "midnight",
+      accent: DEFAULT_THEME.accent,
+      wallpaper: null,
+    });
+  });
+
+  it("validates pasted CSS, applies recognised tokens and reopens the saved source", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn<(patch: Partial<ThemePreference>) => void>();
+    const p = props({ onChange });
+    const { rerender } = render(<AppearancePane {...p} />);
+    const open = screen.getByRole("button", { name: "Edytuj CSS" });
+    await user.click(open);
+    const dialog = screen.getByRole("dialog", { name: "Własny motyw CSS" });
+    const input = within(dialog).getByRole("textbox", { name: "CSS motywu" });
+    const save = within(dialog).getByRole("button", { name: "Zapisz" });
+    fireEvent.change(input, { target: { value: ":root { --palette-accent: url(other.css); }" } });
+    await user.click(save);
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("--palette-accent");
+    expect(onChange).not.toHaveBeenCalled();
+
+    const css = "/* Lagoon */\n:root { --palette-accent: #4ba; --palette-background-primary: #123a; }";
+    fireEvent.change(input, { target: { value: css } });
+    await user.click(save);
+    const saved = normaliseTheme({ ...p.theme, ...onChange.mock.lastCall?.[0] });
+    expect(saved.palette).toBe("custom");
+    expect(saved.accent).toBe("#44bbaa");
+    expect(saved.custom?.colors.backgrounds.primary).toBe("#112233aa");
+    rerender(<AppearancePane {...p} theme={saved} />);
+    await user.click(open);
+    expect(screen.getByRole("textbox", { name: "CSS motywu" })).toHaveValue(css);
+  });
+
   it("reports brightness, contrast, face and text size as separate patches", async () => {
     const user = userEvent.setup();
     const p = props();

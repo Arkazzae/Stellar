@@ -1,10 +1,11 @@
-import { useRef, type CSSProperties, type RefObject } from "react";
+import { useRef, type CSSProperties } from "react";
 
 import { Icon } from "@stellarr/icons";
 import { Avatar } from "@/components/primitives/Avatar";
 import { ProfileBioText } from "@/components/profile/ProfileBio";
+import { AvatarUpload } from "@/components/settings/AvatarUpload";
 import { defaultIdentityArt, hueFor } from "@/design/identity";
-import type { Account, CustomEmoji, ImageKind } from "@/ports";
+import type { Account, CustomEmoji } from "@/ports";
 import { useLanguage } from "@/state/hooks";
 
 interface ProfileCardPreviewProps {
@@ -14,7 +15,8 @@ interface ProfileCardPreviewProps {
   /** The same for the pronouns, printed beside the handle as the card does. */
   pronouns?: string;
   customEmoji: readonly CustomEmoji[];
-  onPickImage: (kind: ImageKind, file: File) => void;
+  onPickAvatar: (file: File) => Promise<void> | void;
+  onPickBanner: (file: File) => void;
 }
 
 /**
@@ -27,10 +29,10 @@ export function ProfileCardPreview({
   bio,
   pronouns = "",
   customEmoji,
-  onPickImage,
+  onPickAvatar,
+  onPickBanner,
 }: ProfileCardPreviewProps) {
   const { t } = useLanguage();
-  const avatarInput = useRef<HTMLInputElement>(null);
   const bannerInput = useRef<HTMLInputElement>(null);
 
   const openPicker = (input: HTMLInputElement | null) => {
@@ -68,10 +70,11 @@ export function ProfileCardPreview({
         </button>
 
         <div className="pf-face">
-          <button
-            type="button"
-            className="pf-shot pf-shot-av"
-            onClick={() => openPicker(avatarInput.current)}
+          <AvatarUpload
+            className="pf-shot-av"
+            label={hasAvatar ? t("account.changeAvatar") : t("account.addAvatar")}
+            shape="circle"
+            onSave={onPickAvatar}
           >
             <Avatar
               id={account.id}
@@ -79,13 +82,7 @@ export function ProfileCardPreview({
               {...(account.avatarUrl ? { avatarUrl: account.avatarUrl } : {})}
               size="xl"
             />
-            <span className="pf-veil">
-              <Icon name="camera" size={16} />
-              <span className="sr-only">
-                {hasAvatar ? t("account.changeAvatar") : t("account.addAvatar")}
-              </span>
-            </span>
-          </button>
+          </AvatarUpload>
 
           {/* The name as it will read on the card, so the field below has a
               visible result and does not need to repeat it. */}
@@ -107,37 +104,17 @@ export function ProfileCardPreview({
         )}
       </section>
 
-      {/* A styled `<input type="file">` is the one control that cannot be made
-          to match the rest without losing its keyboard behaviour, so each
-          picture gets a hidden input behind its button. */}
-      <PictureInput kind="avatar" inputRef={avatarInput} onPick={onPickImage} />
-      <PictureInput kind="banner" inputRef={bannerInput} onPick={onPickImage} />
+      <input
+        ref={bannerInput}
+        type="file"
+        accept="image/png,image/jpeg,image/gif,image/webp"
+        hidden
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0];
+          event.currentTarget.value = "";
+          if (file !== undefined) onPickBanner(file);
+        }}
+      />
     </>
-  );
-}
-
-function PictureInput({
-  kind,
-  inputRef,
-  onPick,
-}: {
-  kind: ImageKind;
-  inputRef: RefObject<HTMLInputElement | null>;
-  onPick: (kind: ImageKind, file: File) => void;
-}) {
-  return (
-    <input
-      ref={inputRef}
-      type="file"
-      accept="image/png,image/jpeg,image/gif,image/webp"
-      className="sr-only"
-      tabIndex={-1}
-      onChange={(event) => {
-        const file = event.currentTarget.files?.[0];
-        // Cleared synchronously, before an upload can re-render the pane.
-        event.currentTarget.value = "";
-        if (file !== undefined) onPick(kind, file);
-      }}
-    />
   );
 }

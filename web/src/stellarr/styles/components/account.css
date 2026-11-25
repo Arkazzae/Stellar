@@ -613,10 +613,6 @@
     box-shadow: 0 0 0 6px var(--surface-raised);
   }
 
-  .pf-shot-av .pf-veil {
-    border-radius: 50%;
-  }
-
   .pf-face-txt {
     min-width: 0;
     display: flex;
@@ -2050,12 +2046,6 @@
       background: linear-gradient(180deg, transparent 38%, oklch(0 0 0 / 0.72));
     }
 
-    .pf-shot-av:not(:disabled) .pf-veil {
-      align-items: center;
-      justify-content: center;
-      padding: 0;
-      background: oklch(0 0 0 / 0.46);
-    }
   }
 
   @media (pointer: coarse) {

@@ -17,7 +17,6 @@ function props(overrides: Partial<OverviewPaneProps> = {}): OverviewPaneProps {
     isPublic: false,
     onSave: vi.fn().mockResolvedValue(undefined),
     onPickIcon: vi.fn().mockResolvedValue(undefined),
-    onRemoveIcon: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -55,29 +54,39 @@ describe("OverviewPane", () => {
     expect(screen.getByText("9/280")).toBeVisible();
   });
 
-  it("uploads a supported image from the card's icon", async () => {
+  it("uploads a square crop only after the icon is framed and saved", async () => {
     const user = userEvent.setup();
     const p = props();
     const { container } = render(<OverviewPane {...p} />);
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(["png"], "orbit.png", { type: "image/png" });
+    const drawImage = vi.fn();
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue({ drawImage } as unknown as CanvasRenderingContext2D);
+    vi.spyOn(HTMLCanvasElement.prototype, "toBlob")
+      .mockImplementation((done) => done(new Blob(["cropped"], { type: "image/webp" })));
 
     await user.upload(input, file);
+    const dialog = screen.getByRole("dialog", { name: "Ustaw kadr awatara" });
+    const image = dialog.querySelector("img")!;
+    Object.defineProperties(image, { naturalWidth: { value: 600 }, naturalHeight: { value: 400 } });
+    fireEvent.load(image);
+    expect(p.onPickIcon).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "Zapisz" }));
 
-    await waitFor(() => expect(p.onPickIcon).toHaveBeenCalledWith(file));
+    await waitFor(() => expect(p.onPickIcon).toHaveBeenCalledWith(expect.objectContaining({ type: "image/webp" })));
+    expect(drawImage).toHaveBeenCalledWith(image, 100, 0, 400, 400, 0, 0, 400, 400);
     expect(URL.createObjectURL).toHaveBeenCalledWith(file);
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:server-icon");
   });
 
-  it("shows the persisted icon and lets a manager remove it", async () => {
-    const user = userEvent.setup();
+  it("shows the persisted icon with its change action", () => {
     const p = props({ iconUrl: "/assets/server-icon" });
     const { container } = render(<OverviewPane {...p} />);
 
     expect(container.querySelector(".ss-meet-card img")).toHaveAttribute("src", "/assets/server-icon");
-    await user.click(screen.getByRole("button", { name: "Usuń" }));
-
-    expect(p.onRemoveIcon).toHaveBeenCalledOnce();
+    expect(screen.getByRole("button", { name: "Zmień ikonę serwera" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Usuń" })).not.toBeInTheDocument();
   });
 
   it("rejects an unsupported file before calling the backend", () => {
@@ -89,14 +98,14 @@ describe("OverviewPane", () => {
       target: { files: [new File(["text"], "notes.txt", { type: "text/plain" })] },
     });
 
-    expect(screen.getByRole("alert")).toHaveTextContent("Ikona musi być plikiem JPEG, PNG, GIF lub WebP.");
+    expect(screen.getByRole("alert")).toHaveTextContent("Wybierz obraz JPEG, PNG, GIF lub WebP.");
     expect(p.onPickIcon).not.toHaveBeenCalled();
   });
 
   it("keeps icon actions disabled without manage-server support", () => {
     render(<OverviewPane {...props({ iconSupported: false })} />);
 
-    expect(screen.getByRole("button", { name: "Wgraj obraz" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Dodaj ikonę serwera" })).toBeDisabled();
   });
 
   it("saves the name and description through the save bar", async () => {
