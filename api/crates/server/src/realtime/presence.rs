@@ -20,7 +20,7 @@ use tokio::sync::Notify;
 use self::seats::{Closes, Seat};
 pub use self::seats::{
     MAX_PENDING_CLOSES, MediaSession, SeatedMediaSession, VoiceDeparture, VoiceDisplacement,
-    VoiceJoin, VoiceMove, VoiceParticipant, VoiceSnapshot,
+    VoiceJoin, VoiceMove, VoiceParticipant, VoiceSeatState, VoiceSnapshot,
 };
 
 use crate::values::Id;

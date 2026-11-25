@@ -15,7 +15,7 @@ export interface VoiceStageProps extends ParticipantTilesProps {
   /** Every screen in the call, this user's own first. */
   shares: readonly ScreenShareVM[];
   /** Who watches each screen, by its key, when the call knows. */
-  viewersOf?: (shareKey: string) => readonly PersonVM[];
+  viewers?: ReadonlyMap<string, readonly PersonVM[]>;
   onWatchShare: (key: string) => void;
   onStopWatchingShare: () => void;
   /** Stops this user's own share, from its tile. */
@@ -105,7 +105,7 @@ function useEndedShares(shares: readonly ScreenShareVM[]): ScreenShareVM[] {
  */
 export function VoiceStage({
   shares,
-  viewersOf,
+  viewers,
   onWatchShare,
   onStopWatchingShare,
   onStopSharing,
@@ -172,7 +172,7 @@ export function VoiceStage({
               share={tile.share}
               ended={tile.ended}
               focused={tile === focused}
-              viewers={viewersOf?.(tile.key)}
+              viewers={viewers?.get(tile.key)}
               volume={sources.participantVolumes?.get(tile.share.ownerId)}
               onVolumeChange={
                 sources.onParticipantVolumeChange &&

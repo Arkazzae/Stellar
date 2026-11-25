@@ -156,6 +156,8 @@ export class WebRtcVoiceClient implements VoiceClient {
   private channelId: ChannelId | null = null;
   private settings: VoiceSettings;
   private selfSpeaking = false;
+  /** The screen this side watches, as last told to the others. */
+  private watching: { userId: UserId; streamId: string } | null = null;
   private disposed = false;
   private deviceSnapshot: VoiceDeviceSnapshot | null = null;
   /**
@@ -335,7 +337,19 @@ export class WebRtcVoiceClient implements VoiceClient {
   getSnapshot = (): VoiceState => this.store.getSnapshot();
 
   setReceivePreferences(preferences: VoiceReceivePreferences): void {
-    if (!this.disposed) this.topology.setReceivePreferences(preferences);
+    if (this.disposed) return;
+    this.topology.setReceivePreferences(preferences);
+    // The others in the call learn which screen this side watches, so the
+    // sharer and the other viewers can see who watches.
+    const watching = preferences.screen;
+    const before = this.watching;
+    if (
+      watching?.userId !== before?.userId ||
+      watching?.streamId !== before?.streamId
+    ) {
+      this.watching = watching === null ? null : { ...watching };
+      void this.broadcastState();
+    }
   }
 
   subscribe = (listener: () => void): (() => void) => this.store.subscribe(listener);
@@ -982,6 +996,7 @@ export class WebRtcVoiceClient implements VoiceClient {
       screenStreamId: this.screen.streamId,
       cameraStreamId: this.camera.streamId,
       encrypted: this.crypto !== null,
+      ...(this.watching === null ? {} : { watching: this.watching }),
     });
   }
 
@@ -1234,6 +1249,7 @@ export class WebRtcVoiceClient implements VoiceClient {
             self: false,
             screen: person.media.screen,
             camera: person.media.camera,
+            ...(person.watching === null ? {} : { watching: person.watching }),
             ...(undecryptable === undefined ? {} : { undecryptable }),
           };
         }),

@@ -362,6 +362,25 @@ describe("deriveVoiceView", () => {
       expect(shares[0]).toMatchObject({ local: true, ownerName: "Me", stream: own });
     });
 
+    it("says who watches each screen, the viewer included, and who watches yours", () => {
+      const state = stateWith({
+        channelId: "voice",
+        connection: "connected",
+        localScreen: { streamId: "mine", hasAudio: false, stream: null },
+        peers: [
+          peer("ada", { screen: remoteScreen, watching: { userId: "me", streamId: "mine" } }),
+          peer("bo", { watching: { userId: "ada", streamId: "s" } }),
+          // An old stream of Ada's is not the one on show.
+          peer("cy", { watching: { userId: "ada", streamId: "old" } }),
+        ],
+      });
+
+      const viewers = deriveVoiceView(inputFor(state, { watchedKey: KEY })).viewers;
+
+      expect(viewers.get(KEY)?.map((person) => person.id)).toEqual(["me", "bo"]);
+      expect(viewers.get("local:me:mine")?.map((person) => person.id)).toEqual(["ada"]);
+    });
+
     it("is empty when nobody shares", () => {
       const state = stateWith({ channelId: "voice", connection: "connected", peers: [peer("ada")] });
 

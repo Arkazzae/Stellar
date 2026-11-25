@@ -375,6 +375,13 @@
   .voice-occupants li.muted{color:var(--text-faint)}
   .voice-occupants li.muted .av{opacity:0.65}
   .occ-mic{margin-left:auto;flex:none;display:inline-flex;color:var(--danger-text)}
+  /* What they show: a camera, and a screen as the stage's own live mark. The
+     first of the marks takes the row's free space, the rest follow it. */
+  .occ-camera{margin-left:auto;flex:none;display:inline-flex;color:var(--text-faint)}
+  .occ-live{margin-left:auto}
+  .occ-camera ~ .occ-live,
+  .occ-camera ~ .occ-mic,
+  .occ-live ~ .occ-mic{margin-left:0}
   .rail-move-error{
     margin:6px 4px 0;padding:7px 8px;border-radius:var(--radius-sm);
     background:var(--danger-soft);color:var(--danger-text);font-size:var(--text-12);line-height:1.35;

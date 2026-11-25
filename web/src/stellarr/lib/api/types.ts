@@ -670,6 +670,10 @@ export interface VoiceOccupant {
   userId: UserId;
   displayName: string;
   muted: boolean;
+  /** They share a screen. Absent from servers that predate it. */
+  sharing?: boolean;
+  /** Their camera is on. Absent from servers that predate it. */
+  camera?: boolean;
 }
 
 export interface IceServerConfig {

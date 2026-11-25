@@ -68,6 +68,12 @@ export interface RtcStatePayload {
    * encryption; absent on the wire means false.
    */
   encrypted: boolean;
+  /**
+   * The one screen this side watches, by its owner and stream. Present only
+   * while it watches one, so clients that predate it see nothing new; the
+   * hub relays it to the call's own people and nobody else.
+   */
+  watching?: { userId: string; streamId: string };
 }
 
 /**
@@ -178,12 +184,24 @@ export function decodeRtcState(payload: string): RtcStatePayload | null {
   const record = parseRecord(payload);
   if (record === null) return null;
 
-  const { muted, screenStreamId, cameraStreamId = null, encrypted = false } = record;
+  const { muted, screenStreamId, cameraStreamId = null, encrypted = false, watching } = record;
   if (typeof muted !== "boolean") return null;
   if (screenStreamId !== null && typeof screenStreamId !== "string") return null;
   if (cameraStreamId !== null && typeof cameraStreamId !== "string") return null;
   if (typeof encrypted !== "boolean") return null;
-  return { muted, screenStreamId, cameraStreamId, encrypted };
+  const state: RtcStatePayload = { muted, screenStreamId, cameraStreamId, encrypted };
+  // A malformed `watching` is dropped rather than the whole state: it only
+  // feeds who-watches-whom, never what plays.
+  if (
+    typeof watching === "object" &&
+    watching !== null &&
+    typeof (watching as Record<string, unknown>).userId === "string" &&
+    typeof (watching as Record<string, unknown>).streamId === "string"
+  ) {
+    const { userId, streamId } = watching as { userId: string; streamId: string };
+    state.watching = { userId, streamId };
+  }
+  return state;
 }
 
 // The payloads of the `MediaSignal` envelope, one encoder and one decoder per

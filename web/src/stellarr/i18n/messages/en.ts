@@ -1855,6 +1855,7 @@ export const en = {
   "shell.dragHandle": "draggable item",
   "shell.moving": "Moving",
   "shell.muted": "Muted",
+  "shell.cameraOn": "Camera on",
   "shell.movingUser": "Moving user {name}.",
   "shell.movedUser": "Moved user {name}.",
   "shell.moveFailed": "Could not move user {name}.",

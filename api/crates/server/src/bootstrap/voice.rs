@@ -14,6 +14,8 @@ use crate::voice::turn;
 pub struct Seat {
     pub user: Id,
     pub muted: bool,
+    pub sharing: bool,
+    pub camera: bool,
 }
 
 /// Who sits in a room. Without a tracker (a server started without the hub)
@@ -24,7 +26,12 @@ pub fn seats(tracker: Option<&PresenceTracker>, channel: Id) -> Vec<Seat> {
             tracker
                 .voice_users(channel)
                 .into_iter()
-                .map(|seat| Seat { user: seat.user, muted: seat.muted })
+                .map(|seat| Seat {
+                    user: seat.user,
+                    muted: seat.muted,
+                    sharing: seat.sharing,
+                    camera: seat.camera,
+                })
                 .collect()
         })
         .unwrap_or_default()

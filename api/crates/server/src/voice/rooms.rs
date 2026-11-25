@@ -129,6 +129,9 @@ struct Occupant {
     user_id: Id,
     display_name: String,
     muted: bool,
+    /// They share a screen; the channel list marks them live.
+    sharing: bool,
+    camera: bool,
 }
 
 #[derive(Serialize)]
@@ -216,6 +219,8 @@ pub async fn broadcast_snapshot(state: &AppState, room: Id) -> Result<(), DbErro
                     user_id: participant.user,
                     display_name: name.clone(),
                     muted: participant.muted,
+                    sharing: participant.sharing,
+                    camera: participant.camera,
                 })
             })
             .collect(),

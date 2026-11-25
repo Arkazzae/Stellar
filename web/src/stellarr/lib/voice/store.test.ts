@@ -69,6 +69,18 @@ describe("VoiceStateStore", () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
+  it("notices which screen a peer watches", () => {
+    const store = new VoiceStateStore();
+    store.set({ peers: [peer()] });
+    const listener = subscribed(store);
+
+    store.set({ peers: [peer({ watching: { userId: "u2" as UserId, streamId: "s1" } })] });
+    store.set({ peers: [peer({ watching: { userId: "u2" as UserId, streamId: "s1" } })] });
+    store.set({ peers: [peer({ watching: { userId: "u2" as UserId, streamId: "s2" } })] });
+
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+
   it("notices a peer joining or leaving", () => {
     const store = new VoiceStateStore();
     store.set({ peers: [peer()] });

@@ -108,6 +108,8 @@ export interface VoicePeer {
   screen: VoiceScreenShare | null;
   /** Null when the participant's camera is off. */
   camera: VoiceCamera | null;
+  /** The screen this person says they watch, by owner and stream; absent when none. */
+  watching?: { userId: UserId; streamId: string };
   /**
    * In an encrypted call: this person's sound or picture reaches this side
    * but does not decrypt, so nothing of it is played. Absent when all is well.

@@ -682,7 +682,7 @@ async fn a_payload_of_exactly_the_limit_is_relayed() {
 }
 
 #[tokio::test]
-async fn a_state_signal_with_muted_changes_the_occupancy_others_see() {
+async fn a_state_signal_changes_the_occupancy_others_see() {
     let rig = Rig::start().await;
     let (jo, maja, ada) = (rig.person("jonas").await, rig.person("maja").await, rig.person("ada").await);
     let mut observer = rig.connect(&jo).await;
@@ -702,7 +702,25 @@ async fn a_state_signal_with_muted_changes_the_occupancy_others_see() {
         .await;
     assert_eq!(receiver.next("VoiceSignal").await["payload"], "{\"muted\":false}");
 
-    // A state that says nothing about muting is relayed and changes no seat.
+    // A screen in the state marks its sender as sharing for everyone who sees
+    // the room, and a camera as on.
+    observer.settle().await;
+    observer.drain("VoiceParticipantChanged").await;
+    sender.state(rig.salon, "{\"screenStreamId\":\"s1\",\"cameraStreamId\":\"c1\"}", None).await;
+    assert_eq!(
+        receiver.next("VoiceSignal").await["payload"],
+        "{\"screenStreamId\":\"s1\",\"cameraStreamId\":\"c1\"}"
+    );
+    let who = maja.id.clone();
+    let live = observer
+        .next_where("VoiceParticipantChanged", move |s| {
+            s["participants"].as_array().unwrap().iter().any(|p| p["userId"] == who.as_str() && p["sharing"] == true)
+        })
+        .await;
+    let seat = live["participants"].as_array().unwrap().iter().find(|p| p["userId"] == maja.id.as_str()).unwrap().clone();
+    assert_eq!(seat["camera"], true);
+
+    // A state that says nothing new about the seat is relayed and changes nothing.
     observer.settle().await;
     observer.drain("VoiceParticipantChanged").await;
     sender.state(rig.salon, "{\"screenStreamId\":\"s1\"}", None).await;

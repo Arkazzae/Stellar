@@ -1853,6 +1853,7 @@ export const pl = {
   "shell.dragHandle": "element do przeciągnięcia",
   "shell.moving": "Przenoszenie",
   "shell.muted": "Wyciszony",
+  "shell.cameraOn": "Kamera włączona",
   "shell.movingUser": "Przenoszenie użytkownika {name}.",
   "shell.movedUser": "Przeniesiono użytkownika {name}.",
   "shell.moveFailed": "Nie udało się przenieść użytkownika {name}.",

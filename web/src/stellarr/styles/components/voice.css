@@ -516,11 +516,13 @@
     .tile.screen.is-focus .st-chrome{opacity:1}
     [data-chrome="idle"] .tile.screen.is-focus:not(:focus-within) .st-chrome{opacity:0}
   }
-  /* As a tile: only its own actions, at the top, on hover. */
-  .tile.screen:not(.is-focus) .st-chrome{justify-content:flex-start;padding:8px}
-  .tile.screen:not(.is-focus) .st-row.top,
+  /* As a tile: who watches and its own actions, along the top, on hover. */
+  .tile.screen:not(.is-focus) .st-chrome{
+    flex-direction:row;justify-content:space-between;align-items:flex-start;padding:8px;
+  }
+  .tile.screen:not(.is-focus) .st-row{flex:none}
+  .tile.screen:not(.is-focus) .st-row.top > .st-group:first-child > .st-chip:not(.st-viewers),
   .tile.screen:not(.is-focus) .st-row.bottom > .st-group:first-child{display:none}
-  .tile.screen:not(.is-focus) .st-row.bottom{justify-content:flex-end}
   .tile.screen:not(.is-focus):hover .st-chrome{opacity:1}
   .voice-stage[data-layout="focus"] .tile.screen:not(.is-focus) .st-chrome{display:none}
   .st-chip{
@@ -547,15 +549,9 @@
   .st-volume input[type="range"]:focus-visible{outline:2px solid var(--accent-quiet);outline-offset:2px}
   .st-volume output{min-width:36px;font-size:var(--text-11);text-align:right;font-variant-numeric:tabular-nums}
   .st-faces{display:inline-flex;align-items:center}
-  .st-faces > *{
-    width:20px;height:20px;border-radius:50%;margin-left:-6px;
-    box-shadow:0 0 0 2px var(--veil-strong);object-fit:cover;
-  }
-  .st-faces > :first-child{margin-left:0}
-  .st-face-initials{
-    display:inline-flex;align-items:center;justify-content:center;
-    background:var(--surface-active);color:var(--text);font-size:9px;font-weight:650;
-  }
+  .st-face{display:inline-flex;margin-left:-6px;border-radius:50%;box-shadow:0 0 0 2px var(--veil-strong)}
+  .st-face:first-child{margin-left:0}
+  .st-face .av{--av-size:20px}
   /* A narrow picture keeps its controls as icons; each still names itself. */
   @container tile (max-width:560px){
     .tile.screen .st-chip-text{display:none}
