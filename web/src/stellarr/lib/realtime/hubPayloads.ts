@@ -158,13 +158,15 @@ const decodeVoiceParticipants: HubDecoder<"VoiceParticipantChanged"> = (payload)
     ...(typeof sequence === "number" ? { sequence } : {}),
     participants: participants.flatMap((item) => {
       if (!isRecord(item)) return [];
-      const { userId, displayName, muted } = item;
+      const { userId, displayName, muted, sharing, camera } = item;
       if (typeof userId !== "string") return [];
       return [
         {
           userId,
           displayName: typeof displayName === "string" ? displayName : userId,
           muted: muted === true,
+          ...(sharing === true ? { sharing: true } : {}),
+          ...(camera === true ? { camera: true } : {}),
         },
       ];
     }),

@@ -178,6 +178,8 @@ export interface VoiceView {
   people: PersonVM[];
   applySpeaking: (people: PersonVM[]) => PersonVM[];
   shares: ScreenShareVM[];
+  /** Who watches each screen, by its key: the people in the call who said so. */
+  viewers: ReadonlyMap<string, readonly PersonVM[]>;
   privateCall: boolean;
   cameraStreams: ReadonlyMap<string, MediaStream>;
   /** People whose camera is on but held back for this side's downlink. */
@@ -194,11 +196,13 @@ export function deriveVoiceView(input: VoiceViewInput): VoiceView {
   const privateCall = channelId !== null && room?.privateCall === true;
   const applySpeaking = speakingApplier(state.peers);
 
+  const people = derivePeople(input, applySpeaking);
   return {
     call: deriveCall(input, privateCall),
-    people: derivePeople(input, applySpeaking),
+    people,
     applySpeaking,
     shares: deriveShares(input),
+    viewers: deriveViewers(input, people),
     privateCall,
     cameraStreams: cameraStreamsOf(state, userId),
     heldCameras: heldCamerasOf(state),
@@ -261,6 +265,47 @@ function derivePeople(
       }),
     );
   return [...listed, ...negotiated];
+}
+
+const NO_VIEWERS: ReadonlyMap<string, readonly PersonVM[]> = new Map();
+
+/**
+ * Who watches which screen. Each person in the call says which screen they
+ * watch in their own state; this side knows its own choice. Your own screen
+ * has no "you" among its viewers.
+ */
+function deriveViewers(input: VoiceViewInput, people: readonly PersonVM[]): ReadonlyMap<string, readonly PersonVM[]> {
+  const { state, sources, userId } = input;
+  if (sources.length === 0) return NO_VIEWERS;
+  const byId = new Map(people.map((person) => [person.id, person]));
+  const personOf = (id: string, name: string): PersonVM =>
+    byId.get(id) ?? { id, displayName: name, initials: initials(name), presence: "online" };
+
+  const viewers = new Map<string, PersonVM[]>();
+  for (const source of sources) {
+    const screen =
+      source.remote === null
+        ? state.localScreen === null
+          ? null
+          : { userId: source.ownerId, streamId: state.localScreen.streamId }
+        : source.remote.screen === null
+          ? null
+          : { userId: source.remote.userId, streamId: source.remote.screen.streamId };
+    if (screen === null) continue;
+    const watching = state.peers
+      .filter(
+        (peer) =>
+          !peer.self &&
+          peer.watching?.userId === screen.userId &&
+          peer.watching.streamId === screen.streamId,
+      )
+      .map((peer) => personOf(peer.userId, peer.displayName));
+    if (source.remote !== null && input.watchedKey === source.key && userId !== null) {
+      watching.unshift(personOf(userId, input.displayName));
+    }
+    if (watching.length > 0) viewers.set(source.key, watching);
+  }
+  return viewers.size > 0 ? viewers : NO_VIEWERS;
 }
 
 function deriveShares(input: VoiceViewInput): ScreenShareVM[] {

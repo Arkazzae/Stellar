@@ -86,6 +86,7 @@ export function DmCallContainer({ fullscreenTarget }: DmCallContainerProps) {
       {...(statusKey === null ? {} : { status: t(statusKey) })}
       encrypted={voice.state.encrypted}
       shares={voice.shares}
+      viewers={voice.viewers}
       onWatchShare={voice.watchShare}
       onStopWatchingShare={voice.stopWatchingShare}
       onStopSharing={voice.toggleShare}

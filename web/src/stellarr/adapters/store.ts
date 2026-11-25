@@ -394,7 +394,9 @@ function sameOccupants(a: readonly VoiceOccupant[], b: readonly VoiceOccupant[])
         other !== undefined &&
         occupant.userId === other.userId &&
         occupant.displayName === other.displayName &&
-        occupant.muted === other.muted
+        occupant.muted === other.muted &&
+        (occupant.sharing === true) === (other.sharing === true) &&
+        (occupant.camera === true) === (other.camera === true)
       );
     })
   );

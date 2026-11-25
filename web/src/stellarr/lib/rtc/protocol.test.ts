@@ -89,6 +89,28 @@ describe("Stellarr RTC protocol v1", () => {
   });
 });
 
+describe("watching in the participant state", () => {
+  it("carries the screen a side watches, only while it watches one", () => {
+    const state = {
+      muted: false,
+      screenStreamId: null,
+      cameraStreamId: null,
+      encrypted: false,
+      watching: { userId: "u-ola", streamId: "share-ola" },
+    };
+    expect(decodeRtcState(encodeRtcState(state))).toEqual(state);
+    expect(
+      encodeRtcState({ muted: false, screenStreamId: null, cameraStreamId: null, encrypted: false }),
+    ).not.toContain("watching");
+  });
+
+  it("drops a malformed watching rather than the whole state", () => {
+    expect(
+      decodeRtcState('{"muted":true,"screenStreamId":null,"watching":{"userId":7}}'),
+    ).toEqual({ muted: true, screenStreamId: null, cameraStreamId: null, encrypted: false });
+  });
+});
+
 describe("Stellarr Media hub leg", () => {
   const mic: MediaTrack = { mid: "4", userId: "u-ola", kind: "audio", streamId: "mic-ola", heldBack: false };
   const share: MediaTrack = { mid: "5", userId: "u-ola", kind: "video", streamId: "share-ola", heldBack: true };

@@ -33,7 +33,7 @@ describe("VoiceSeats", () => {
     seats.take([peer("ada", { speaking: true }), peer("bo", { displayName: "Bo", playbackVolume: 40 })]);
 
     expect(ada).toHaveBeenCalledTimes(1);
-    expect(seats.get("ada")).toEqual({ speaking: true, muted: false });
+    expect(seats.get("ada")).toEqual({ speaking: true, muted: false, sharing: false, camera: false });
     expect(bo).not.toHaveBeenCalled();
     expect(seats.get("bo")).toBe(before);
   });

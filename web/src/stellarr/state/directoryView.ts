@@ -126,6 +126,8 @@ function occupantToPerson(
     // microphone in place of their presence anyway.
     presence: "online",
     muted: occupant.muted,
+    ...(occupant.sharing === true ? { sharing: true } : {}),
+    ...(occupant.camera === true ? { camera: true } : {}),
     ...(avatarUrl === undefined ? {} : { avatarUrl }),
   };
 }
@@ -152,6 +154,8 @@ function sameOccupantVM(a: PersonVM, b: PersonVM): boolean {
     a.id === b.id &&
     a.displayName === b.displayName &&
     a.muted === b.muted &&
+    a.sharing === b.sharing &&
+    a.camera === b.camera &&
     a.avatarUrl === b.avatarUrl
   );
 }

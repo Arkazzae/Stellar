@@ -57,6 +57,8 @@ struct Occupant {
     user_id: Id,
     display_name: String,
     muted: bool,
+    sharing: bool,
+    camera: bool,
 }
 
 impl Serialize for Rooms {
@@ -165,6 +167,8 @@ pub fn read(
                         user_id: seat.user,
                         display_name: (*name).to_string(),
                         muted: seat.muted,
+                        sharing: seat.sharing,
+                        camera: seat.camera,
                     })
                 })
                 .collect();

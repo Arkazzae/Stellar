@@ -53,6 +53,19 @@ pub struct VoiceDeparture {
 pub struct VoiceParticipant {
     pub user: Id,
     pub muted: bool,
+    /// They share a screen, by their own state.
+    pub sharing: bool,
+    /// Their camera is on, by their own state.
+    pub camera: bool,
+}
+
+/// What a connection's own state says about it. A member left out says
+/// nothing, and the seat keeps what it had.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct VoiceSeatState {
+    pub muted: Option<bool>,
+    pub sharing: Option<bool>,
+    pub camera: Option<bool>,
 }
 
 /// One ordered occupancy frame of a room. The lookups and sends that follow
@@ -93,6 +106,8 @@ pub(super) struct Seat {
     user: Id,
     channel: Id,
     muted: bool,
+    sharing: bool,
+    camera: bool,
     media: Option<MediaSession>,
 }
 
@@ -165,6 +180,8 @@ fn occupants(state: &State, channel: Id) -> Vec<VoiceParticipant> {
         .map(|seat| VoiceParticipant {
             user: seat.user,
             muted: seat.muted,
+            sharing: seat.sharing,
+            camera: seat.camera,
         })
         .collect();
     found.sort_by_key(|participant| participant.user);
@@ -240,6 +257,8 @@ impl PresenceTracker {
                 user,
                 channel,
                 muted: false,
+                sharing: false,
+                camera: false,
                 media: None,
             };
             set_seat(&mut state, connection, Some(seat));
@@ -314,10 +333,33 @@ impl PresenceTracker {
     }
 
     pub fn set_voice_muted(&self, connection: &str, muted: bool) {
+        self.set_voice_state(
+            connection,
+            VoiceSeatState {
+                muted: Some(muted),
+                ..VoiceSeatState::default()
+            },
+        );
+    }
+
+    /// Takes what the connection's own state says about its seat; whether
+    /// anything of the seat changed.
+    pub fn set_voice_state(&self, connection: &str, said: VoiceSeatState) -> bool {
         let mut state = self.state();
-        if let Some(seat) = state.seats.get(connection).cloned() {
-            set_seat(&mut state, connection, Some(Seat { muted, ..seat }));
+        let Some(seat) = state.seats.get(connection).cloned() else {
+            return false;
+        };
+        let next = Seat {
+            muted: said.muted.unwrap_or(seat.muted),
+            sharing: said.sharing.unwrap_or(seat.sharing),
+            camera: said.camera.unwrap_or(seat.camera),
+            ..seat.clone()
+        };
+        if next == seat {
+            return false;
         }
+        set_seat(&mut state, connection, Some(next));
+        true
     }
 
     /// The account's connections that actually sit in this room.

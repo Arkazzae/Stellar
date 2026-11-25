@@ -34,13 +34,19 @@ export class VoiceSeats implements VoiceSeatSource {
   take(peers: readonly VoicePeer[]): void {
     const previous = this.#seats;
     const next = new Map<string, VoiceSeatVM>();
-    for (const { userId, speaking, muted } of peers) {
+    for (const { userId, speaking, muted, screen, camera: video } of peers) {
       const seat = previous.get(userId);
+      const sharing = screen !== null;
+      const camera = video !== null;
       next.set(
         userId,
-        seat !== undefined && seat.speaking === speaking && seat.muted === muted
+        seat !== undefined &&
+          seat.speaking === speaking &&
+          seat.muted === muted &&
+          seat.sharing === sharing &&
+          seat.camera === camera
           ? seat
-          : Object.freeze({ speaking, muted }),
+          : Object.freeze({ speaking, muted, sharing, camera }),
       );
     }
     this.#seats = next;
