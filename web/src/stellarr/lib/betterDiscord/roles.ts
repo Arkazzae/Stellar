@@ -1,5 +1,5 @@
-import { flatten, relativeLuminance, toHex, type Rgba } from "@/design/colour";
-import { getPalette, type ColourGroup, type PaletteColors } from "@/design/themes";
+import { deriveFaint, flatten, parseHex, relativeLuminance, toHex, type Rgba } from "@/design/colour";
+import { getPalette, readableTextOn, type ColourGroup, type PaletteColors } from "@/design/themes";
 
 /**
  * Which of Discord's variables paints what our palette's roles paint, in
@@ -8,41 +8,48 @@ import { getPalette, type ColourGroup, type PaletteColors } from "@/design/theme
  * midnight's remap block, which says what each variable colours.
  */
 export const DISCORD_ROLES = {
-  accent: ["--brand-500", "--brand-experiment", "--control-brand-foreground", "--text-brand", "--brand-560", "--text-link"],
+  accent: [
+    "--brand-500", "--brand-experiment", "--control-brand-foreground", "--text-brand", "--brand-560",
+    "--dplus-accent-ui", "--main-theme-color", "--darkplus-sec", "--themeColor1", "--mainColor",
+    "--primary1-colour", "--ocean-color1", "--accent", "--primary-color", "--text-link",
+  ],
   backgrounds: {
     // The frame around everything: the server list, the title bar.
-    darkest: ["--background-base-lowest", "--background-tertiary", "--app-frame-background"],
+    darkest: ["--background-base-lowest", "--background-tertiary", "--app-frame-background", "--app-background", "--app-bg", "--darkplus-bg", "--backgroundColor02", "--stellarr-frame"],
     // The channel list and the member list.
-    dark: ["--background-base-lower", "--background-secondary"],
+    dark: ["--background-base-lower", "--background-secondary", "--sidebar-panel-color", "--bg-secondary", "--darkplus-bg2", "--stellarr-sidebar"],
     // The chat itself.
-    primary: ["--background-base-low", "--chat-background-default", "--background-primary"],
-    secondary: ["--background-base-lower", "--background-secondary"],
+    primary: ["--background-base-low", "--chat-background-default", "--background-primary", "--chat-color", "--app-foreground", "--dplus-bgc-ui-base", "--bg-primary", "--darkplus-bg", "--backgroundColor01", "--ocean-bg", "--stellarr-chat"],
+    secondary: ["--background-base-lower", "--background-secondary", "--sidebar-panel-color", "--bg-secondary", "--darkplus-bg2", "--stellarr-sidebar"],
     // Fields: the message box and inputs.
-    tertiary: ["--input-background-default", "--channeltextarea-background", "--background-surface-high", "--background-secondary-alt"],
-    hover: ["--background-mod-subtle", "--interactive-background-hover", "--background-modifier-hover"],
+    tertiary: ["--input-background-default", "--channeltextarea-background", "--background-surface-high", "--background-secondary-alt", "--main-textarea-color", "--textbox-background", "--textarea-background", "--message-box-transparency", "--stellarr-input"],
+    hover: ["--background-mod-subtle", "--interactive-background-hover", "--background-modifier-hover", "--message-color-hover", "--hover-color"],
     active: ["--background-mod-normal", "--interactive-background-selected", "--background-modifier-selected", "--background-modifier-active"],
     // Popouts, menus and cards.
-    floating: ["--background-surface-higher", "--background-surface-high", "--background-floating", "--card-background-default"],
+    floating: ["--background-surface-higher", "--background-surface-high", "--background-floating", "--card-background-default", "--popout-color", "--dplus-bgc-popout", "--tooltip-color"],
   },
   text: {
-    normal: ["--text-default", "--text-normal"],
+    normal: ["--text-default", "--text-normal", "--chat-font-color", "--text-color", "--xp-txt-color", "--header-primary", "--stellarr-message"],
     // Channel names, icons, secondary lines.
-    muted: ["--text-subtle", "--channels-default", "--interactive-normal", "--interactive-text-default", "--header-secondary"],
+    muted: ["--text-subtle", "--channels-default", "--interactive-normal", "--interactive-text-default", "--header-secondary", "--chat-subtext-color", "--inactivetext-colour"],
     // Timestamps and muted channels: Discord's dimmest tier.
-    faint: ["--text-muted", "--channel-text-area-placeholder", "--interactive-muted"],
+    faint: ["--text-muted", "--channel-text-area-placeholder", "--interactive-muted", "--input-placeholder-color"],
   },
   borders: {
-    subtle: ["--border-subtle", "--border-muted", "--background-modifier-accent"],
-    default: ["--border-normal", "--border-subtle", "--background-modifier-accent"],
+    subtle: ["--border-subtle", "--border-muted", "--background-modifier-accent", "--separator-color", "--border-color"],
+    default: ["--border-normal", "--border-subtle", "--background-modifier-accent", "--separator-color", "--border-color"],
     strong: ["--border-strong", "--border-normal"],
   },
   semantic: {
-    success: ["--status-positive", "--text-feedback-positive", "--status-online", "--green-360"],
-    warning: ["--status-warning", "--text-feedback-warning", "--status-idle", "--yellow-300"],
-    danger: ["--status-danger", "--text-feedback-critical", "--status-dnd", "--red-400"],
+    success: ["--status-positive", "--text-feedback-positive", "--status-online", "--green-360", "--rs-online-color", "--green-color", "--online-color"],
+    warning: ["--status-warning", "--text-feedback-warning", "--status-idle", "--yellow-300", "--rs-idle-color", "--yellow-color", "--idle-color"],
+    danger: ["--status-danger", "--text-feedback-critical", "--status-dnd", "--red-400", "--rs-dnd-color", "--red-color", "--dnd-color"],
     info: ["--text-feedback-info", "--text-link", "--info-help-foreground"],
   },
 } as const;
+
+/** Shading over the wallpaper in themes that set a transparent chat surface. */
+export const SHADING_VARIABLES = ["--background-shading", "--middle-shading", "--theme-transparency", "--backgroundColor"] as const;
 
 /** Every variable the table may read, for the evaluator to resolve. */
 export const DISCORD_VARIABLES: readonly string[] = [
@@ -52,7 +59,7 @@ export const DISCORD_VARIABLES: readonly string[] = [
     ...Object.values(DISCORD_ROLES.text).flat(),
     ...Object.values(DISCORD_ROLES.borders).flat(),
     ...Object.values(DISCORD_ROLES.semantic).flat(),
-    "--background-shading",
+    ...SHADING_VARIABLES,
   ]),
 ];
 
@@ -75,9 +82,6 @@ export interface MappedTheme {
   backgroundsFromShading?: boolean;
 }
 
-/** The variable a wallpaper theme shades its picture with, which its panels are. */
-export const SHADING_VARIABLE = "--background-shading";
-
 /** Resolved colours of Discord's variables, by name; a missing one was not set. */
 export type ResolvedVariables = ReadonlyMap<string, Rgba>;
 
@@ -98,19 +102,9 @@ const mix = (a: Rgba, b: Rgba, amount: number): Rgba => [
 const withAlpha = (colour: Rgba, alpha: number): Rgba => [colour[0], colour[1], colour[2], alpha];
 
 /**
- * Discord's variables as our palette. The core is the chat's background, a
- * darker frame or sidebar, and the normal text: without those there is no
- * palette that looks like the theme, and nothing is made up in its place.
- * Around a core that came across, a role the theme left out is filled in
- * from the ones it set, and says so. Translucent backgrounds are flattened
- * onto the theme's own darker background; a translucent hover or selection
- * onto the chat's background, which it is drawn over.
- *
- * A theme whose panels are a picture under shading (ClearVision,
- * Translucence) leaves the chat's background unset or transparent. When it
- * names a picture, `withWallpaper`, what its panels are is the picture under
- * its shading, or under black when none can be read, and that stands in for the
- * chat (and the frame, if the theme sets none), said as such.
+ * Keep the paint the theme defines, then fill in neighboring roles from a
+ * real surface or wallpaper. A theme that only changes accent or type
+ * stays a partial import.
  */
 export function mapDiscordTheme(resolved: ResolvedVariables, withWallpaper = false): MappedTheme {
   const roles: RoleSource[] = [];
@@ -128,26 +122,27 @@ export function mapDiscordTheme(resolved: ResolvedVariables, withWallpaper = fal
   // A picture theme leaves the chat's background unset or transparent: what
   // is there is the picture under its shading, or under black, which is then
   // ours and said to be filled in.
-  const fromShading = withWallpaper && pick(DISCORD_ROLES.backgrounds.primary) === undefined;
-  const shading: Found | undefined = fromShading ? (pick([SHADING_VARIABLE]) ?? { colour: BLACK }) : undefined;
+  const chat = pick(DISCORD_ROLES.backgrounds.primary);
+  const fromShading = withWallpaper && chat === undefined;
+  const shading: Found | undefined = fromShading ? (pick(SHADING_VARIABLES) ?? { colour: BLACK }) : undefined;
   const darkest = pick(DISCORD_ROLES.backgrounds.darkest) ?? shading;
   const sidebar = pick(DISCORD_ROLES.backgrounds.dark);
-  const primary = shading ?? pick(DISCORD_ROLES.backgrounds.primary);
+  const primary = chat ?? shading;
   const normal = pick(DISCORD_ROLES.text.normal);
   const missingCore = [
     ...(primary === undefined ? ["backgrounds.primary"] : []),
     ...(darkest === undefined && sidebar === undefined ? ["backgrounds.darkest"] : []),
     ...(normal === undefined ? ["text.normal"] : []),
   ];
-  if (primary === undefined || normal === undefined || (darkest === undefined && sidebar === undefined)) {
+  const surface = primary ?? sidebar ?? darkest;
+  if (surface === undefined) {
     if (accentHex !== undefined) roles.push({ group: "accent", role: "accent", from: accent?.name });
     return { ...(accentHex === undefined ? {} : { accent: accentHex }), roles, missingCore };
   }
 
   // The frame first, onto black; everything else onto the frame.
-  const frameSource = darkest ?? sidebar!;
-  const frame = opaque(frameSource.colour, BLACK);
-  const room = opaque(primary.colour, frame);
+  const frame = opaque((darkest ?? sidebar ?? surface).colour, BLACK);
+  const room = opaque(surface.colour, frame);
   const fallback = getPalette("midnight").colors;
   const colours: Record<string, Record<string, string>> = { backgrounds: {}, text: {}, borders: {}, semantic: {} };
   const take = (group: ColourGroup, role: string, found: Found | undefined, filled: () => Rgba, under: Rgba) => {
@@ -156,20 +151,24 @@ export function mapDiscordTheme(resolved: ResolvedVariables, withWallpaper = fal
     roles.push({ group, role, ...(found?.name === undefined ? {} : { from: found.name }) });
   };
 
-  const textColour = opaque(normal.colour, room);
+  const roomHex = toHex(room);
+  const safeText = readableTextOn(roomHex);
+  const textColour = normal === undefined
+    ? parseHex(safeText)
+    : parseHex(deriveFaint(toHex(normal.colour), safeText, [roomHex]));
   const lighter = relativeLuminance(textColour) > relativeLuminance(room);
   const step = (amount: number): Rgba => mix(room, textColour, amount);
 
-  take("backgrounds", "darkest", darkest ?? undefined, () => frame, BLACK);
+  take("backgrounds", "darkest", darkest, () => frame, BLACK);
   take("backgrounds", "dark", sidebar, () => mix(frame, room, 0.5), frame);
   take("backgrounds", "primary", primary, () => room, frame);
   take("backgrounds", "secondary", pick(DISCORD_ROLES.backgrounds.secondary), () => mix(frame, room, 0.5), frame);
-  take("backgrounds", "tertiary", pick(DISCORD_ROLES.backgrounds.tertiary), () => step(0.04), frame);
+  take("backgrounds", "tertiary", pick(DISCORD_ROLES.backgrounds.tertiary), () => step(0.04), room);
   take("backgrounds", "hover", pick(DISCORD_ROLES.backgrounds.hover), () => step(0.06), room);
   take("backgrounds", "active", pick(DISCORD_ROLES.backgrounds.active), () => step(0.12), room);
   take("backgrounds", "floating", pick(DISCORD_ROLES.backgrounds.floating), () => frame, frame);
 
-  take("text", "normal", normal, () => textColour, room);
+  take("text", "normal", normal === undefined ? undefined : { ...normal, colour: textColour }, () => textColour, room);
   take("text", "muted", pick(DISCORD_ROLES.text.muted), () => step(0.75), room);
   take("text", "faint", pick(DISCORD_ROLES.text.faint), () => step(0.5), room);
 

@@ -27,5 +27,6 @@ groups! {
     moderation,
     roles,
     second_step,
+    theme_sources,
     voice,
 }

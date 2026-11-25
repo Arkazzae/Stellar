@@ -466,6 +466,8 @@ export function paletteCssVariables(
     variables[name] = (palette.colors[group] as Record<string, string>)[role] ?? "";
   }
   if (palette.neutral !== undefined) {
+    variables["--palette-on-background"] = readableTextOn(palette.colors.backgrounds.primary);
+    variables["--palette-on-danger"] = readableTextOn(palette.colors.semantic.danger);
     variables["--h-neutral"] = String(palette.neutral.hue);
     variables["--c-neutral"] = String(palette.neutral.chroma);
   }
@@ -635,6 +637,8 @@ export function applyThemeAttributes(
 
   const palette = resolvePalette(theme);
   const accent = normaliseHex(theme.accent) ?? palette.colors.accent;
+  style.removeProperty("--palette-on-background");
+  style.removeProperty("--palette-on-danger");
   style.removeProperty("--h-neutral");
   style.removeProperty("--c-neutral");
   for (const [name, value] of Object.entries(

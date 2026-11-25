@@ -94,12 +94,11 @@ A theme file carries only `colors`, `accent`, `font`, and an optional embedded `
 
 ### BetterDiscord `.theme.css` converter
 
-`web/src/stellarr/lib/betterDiscord/` (loaded via dynamic `import()`) converts BetterDiscord `.theme.css` files from disk or a direct HTTPS URL:
+`web/src/stellarr/lib/betterDiscord/` converts local CSS files, direct HTTPS stylesheets, BetterDiscord theme and download pages, and public GitHub file or repository links. The dialog searches BetterDiscord's theme catalog and GitHub repositories by name. A repository with several `.theme.css` files opens a file picker. GitHub search and repository discovery share GitHub's unauthenticated request limit for the instance.
 
-1. Reads `@name`, `@author`, and `@source` metadata and inlines `@import` stylesheets.
-2. Strips every `url(…)` from CSS rules and extracts any background image URL separately (fetched only if the user confirms).
-3. Evaluates Discord CSS variables (`roles.ts`) inside an isolated document (`evaluate.ts`), unwrapping `@container style(…)` blocks when needed, and maps them to `PaletteColors` (`convert.ts`).
-4. Matches `--font`, `--font-primary`, `--font-display`, `--font-headline`, or Google Fonts imports to one of Stellarr's 28 self-hosted fonts when available.
+1. Reads the theme's metadata and loads its CSS imports relative to each stylesheet's final URL. The authenticated Stellarr API fetches public HTTPS resources with limits on size and time.
+2. Evaluates the sanitized CSS in an isolated document. It reads both modern and legacy Discord variables, selected colors from Discord's main surfaces, and wallpaper references. Stellarr fills missing roles when the theme supplies a background or wallpaper.
+3. Shows the resulting palette, available font, wallpaper host and any skipped imports before applying. Only installed Stellarr fonts can be selected. A wallpaper is fetched when the user chooses to include it.
 
 ## Persistence and pre-paint script
 

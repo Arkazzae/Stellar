@@ -1,22 +1,21 @@
 import { matchFont } from "@/design/fontLabels";
 import type { FontId, PaletteColors } from "@/design/themes";
 
-import type { Evaluator } from "./evaluate";
-import { DISCORD_VARIABLES, SHADING_VARIABLE, mapDiscordTheme, type RoleSource } from "./roles";
+import type { DiscordVariant, Evaluator } from "./evaluate";
+import { DISCORD_VARIABLES, SHADING_VARIABLES, mapDiscordTheme, type RoleSource } from "./roles";
 import {
   inlineImports,
   readMeta,
   styleQueryNames,
   unwrapStyleQueries,
-  wallpaperAddressOf,
-  withoutAddresses,
+  wallpaperValues,
   type FetchStylesheet,
   type Inlined,
   type ThemeMeta,
 } from "./text";
 
 /** Where a theme's face is set, in the order a theme's own choice wins. */
-const FONT_VARIABLES = ["--font", "--font-primary", "--font-display", "--font-headline"] as const;
+const FONT_VARIABLES = ["--font", "--app-font", "--font-primary", "--font-display", "--font-headline", "--dplus-font-ui", "--main-font"] as const;
 
 export interface Conversion {
   meta: ThemeMeta;
@@ -65,28 +64,38 @@ export function firstFamily(value: string): string {
 export async function convertTheme(text: string, from: string | null, options: ConvertOptions): Promise<Conversion> {
   const meta = readMeta(text);
   const inlined = await inlineImports(text, from, options.fetchSheet);
-  const picture = wallpaperAddressOf(inlined.css);
-  const clean = withoutAddresses(inlined.css);
+  const wallpaper = wallpaperValues(inlined.css);
+  const clean = wallpaper.css;
   const queried = styleQueryNames(clean);
-  const valueNames = [...queried, ...FONT_VARIABLES];
+  const valueNames = [...queried, ...FONT_VARIABLES, ...wallpaper.names];
 
-  let evaluation = await options.evaluator.evaluate(clean, DISCORD_VARIABLES, valueNames);
-  let styleQueries: Conversion["styleQueries"] = queried.length === 0 ? "none" : "native";
-  let undecided = 0;
-  if (queried.length > 0 && (!evaluation.styleQueries || options.forceUnwrap === true)) {
-    const first = evaluation;
-    const unwrapped = unwrapStyleQueries(clean, (name, container) =>
-      (container === "body" ? first.containers.body : first.containers.root).get(name) ?? first.values.get(name),
-    );
-    undecided = unwrapped.undecided;
-    evaluation = await options.evaluator.evaluate(unwrapped.css, DISCORD_VARIABLES, valueNames);
-    styleQueries = "unwrapped";
+  const evaluate = async (variant: DiscordVariant) => {
+    let evaluation = await options.evaluator.evaluate(clean, DISCORD_VARIABLES, valueNames, variant);
+    let styleQueries: Conversion["styleQueries"] = queried.length === 0 ? "none" : "native";
+    let undecided = 0;
+    if (queried.length > 0 && (!evaluation.styleQueries || options.forceUnwrap === true)) {
+      const first = evaluation;
+      const unwrapped = unwrapStyleQueries(clean, (name, container) =>
+        (container === "body" ? first.containers.body : first.containers.root).get(name) ?? first.values.get(name),
+      );
+      undecided = unwrapped.undecided;
+      evaluation = await options.evaluator.evaluate(unwrapped.css, DISCORD_VARIABLES, valueNames, variant);
+      styleQueries = "unwrapped";
+    }
+    const picture = wallpaper.read(evaluation.values);
+    return { evaluation, picture, mapped: mapDiscordTheme(evaluation.colours, picture !== null), styleQueries, undecided };
+  };
+
+  let result = await evaluate("dark");
+  for (const variant of ["midnight", "light"] as const) {
+    if (result.mapped.colors !== undefined || !clean.includes(`.theme-${variant}`)) continue;
+    const candidate = await evaluate(variant);
+    if (candidate.mapped.colors !== undefined) result = candidate;
   }
-
-  const mapped = mapDiscordTheme(evaluation.colours, picture !== null);
+  const { evaluation, picture, mapped, styleQueries, undecided } = result;
   const declared = FONT_VARIABLES.map((name) => evaluation.values.get(name)).find((value) => value !== undefined && firstFamily(value) !== "");
   const family = declared === undefined ? inlined.googleFonts[0] : firstFamily(declared);
-  const shading = evaluation.colours.get(SHADING_VARIABLE);
+  const shading = SHADING_VARIABLES.map((name) => evaluation.colours.get(name)).find((value) => value !== undefined);
 
   return {
     meta,
@@ -110,62 +119,4 @@ export async function convertTheme(text: string, from: string | null, options: C
     skipped: inlined.skipped,
     fetched: inlined.fetched,
   };
-}
-
-/** What may be fetched for a theme, and how much of it. */
-export const FETCH_TIMEOUT_MS = 10_000;
-
-/**
- * Reads an address the way a theme's parts are read: https only, without
- * cookies or a referrer, within a time and a size, and failing on anything
- * but a success.
- */
-export async function fetchCapped(url: string, maxBytes: number): Promise<Blob> {
-  if (new URL(url).protocol !== "https:") throw new Error("Only https addresses are read.");
-  const response = await fetch(url, {
-    credentials: "omit",
-    referrerPolicy: "no-referrer",
-    mode: "cors",
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
-  if (!response.ok || response.body === null) throw new Error(`${url} answered ${response.status}.`);
-  const declared = Number(response.headers.get("content-length") ?? "0");
-  if (declared > maxBytes) throw new Error(`${url} is larger than ${maxBytes} bytes.`);
-  const reader = response.body.getReader();
-  const parts: Uint8Array[] = [];
-  let size = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > maxBytes) {
-      await reader.cancel();
-      throw new Error(`${url} is larger than ${maxBytes} bytes.`);
-    }
-    parts.push(value);
-  }
-  return new Blob(parts as BlobPart[], { type: response.headers.get("content-type") ?? "" });
-}
-
-/**
- * An address a person pasted, as the stylesheet to read: a GitHub page of a
- * file becomes the file itself. betterdiscord.app does not let another site
- * read its downloads, which is said rather than tried.
- */
-export function stylesheetAddress(input: string): { url: string } | { problem: "notHttps" | "betterDiscordSite" | "invalid" } {
-  let url: URL;
-  try {
-    url = new URL(input.trim());
-  } catch {
-    return { problem: "invalid" };
-  }
-  if (url.protocol !== "https:") return { problem: "notHttps" };
-  if (url.hostname === "betterdiscord.app" || url.hostname.endsWith(".betterdiscord.app")) {
-    return { problem: "betterDiscordSite" };
-  }
-  const blob = /^\/([^/]+)\/([^/]+)\/blob\/(.+)$/.exec(url.pathname);
-  if (url.hostname === "github.com" && blob !== null) {
-    return { url: `https://raw.githubusercontent.com/${blob[1]}/${blob[2]}/${blob[3]}` };
-  }
-  return { url: url.href };
 }

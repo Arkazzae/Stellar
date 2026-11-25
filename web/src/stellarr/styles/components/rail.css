@@ -365,7 +365,7 @@
     width:190px;height:34px;padding:0 8px;border-radius:var(--radius-sm);
     display:flex;align-items:center;gap:8px;
     background:var(--surface-pop);border:1px solid var(--line);color:var(--text);
-    box-shadow:0 8px 24px oklch(0 0 0 / 0.42);
+    box-shadow:var(--elev-drawer);
     font-size:var(--text-13);cursor:grabbing;
   }
   .voice-occupant-overlay .av{flex:none;aspect-ratio:1}
