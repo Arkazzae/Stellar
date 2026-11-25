@@ -36,17 +36,28 @@ interface Fence {
   source: string;
 }
 
+/** A longer opening run can still be a legacy triple fence with extra info. */
+function lastFenceClosings(content: string): Map<number, number> {
+  const closings = new Map<number, number>();
+  for (const match of content.matchAll(/^`{4,}(?=[ \t]*$)/gm)) {
+    closings.set(match[0].length, match.index);
+  }
+  return closings;
+}
+
 /**
- * The fenced blocks of a body, in order. A fence is ```<info> at the start of
- * a line, up to the first later line that is ``` and nothing but spaces or
- * tabs; one that never closes is prose.
+ * The fenced blocks of a body, in order. A fence is at least three backticks
+ * and an info string at the start of a line. Its closing line uses the same
+ * number of backticks followed by optional spaces or tabs. Older messages
+ * with extra opening backticks and a triple closing fence still render.
  *
  * Read line by line rather than with a lazy pattern, which would look for a
  * closing line once per opening one. Here a fence that finds no closing line
  * ends the search: no later fence could find one either.
  */
-function fences(content: string): Fence[] {
+export function fences(content: string): Fence[] {
   const found: Fence[] = [];
+  let closings: Map<number, number> | undefined;
   let line = 0;
   while (line < content.length) {
     const infoEnd = lineEnd(content, line);
@@ -55,10 +66,17 @@ function fences(content: string): Fence[] {
       continue;
     }
 
+    let markerEnd = line + 3;
+    while (content[markerEnd] === "`") markerEnd += 1;
+    if (markerEnd > line + 3) {
+      closings ??= lastFenceClosings(content);
+      if ((closings.get(markerEnd - line) ?? -1) <= line) markerEnd = line + 3;
+    }
+    const marker = content.slice(line, markerEnd);
     const sourceStart = infoEnd + 1;
     let closing = sourceStart;
     let closingEnd = lineEnd(content, closing);
-    while (!(content.startsWith("```", closing) && /^[ \t]*$/.test(content.slice(closing + 3, closingEnd)))) {
+    while (!(content.startsWith(marker, closing) && /^[ \t]*$/.test(content.slice(closing + marker.length, closingEnd)))) {
       if (closingEnd >= content.length) return found;
       closing = closingEnd + 1;
       closingEnd = lineEnd(content, closing);
@@ -69,7 +87,7 @@ function fences(content: string): Fence[] {
     found.push({
       start: line,
       end: closingEnd,
-      info: content.slice(line + 3, infoEnd),
+      info: content.slice(markerEnd, infoEnd),
       source: content.slice(sourceStart, sourceEnd),
     });
     line = closingEnd + 1;

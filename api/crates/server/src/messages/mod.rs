@@ -19,9 +19,26 @@ mod history;
 pub mod mentions;
 pub mod post;
 
-/// The most a message may say, in UTF-16 units: room for a pasted listing, yet
-/// bounded for storage, realtime fan-out and transcript rendering.
+/// The most prose a message may contain, in UTF-16 units.
 pub const MAX_CONTENT_UNITS: usize = 20_000;
+/// A larger bound for pasted code, including the fences and any surrounding prose.
+pub(crate) const MAX_CODE_CONTENT_UNITS: usize = 100_000;
+
+pub(crate) fn content_limit(content: &str, length: usize) -> usize {
+    if length <= MAX_CONTENT_UNITS {
+        return MAX_CONTENT_UNITS;
+    }
+    let text: Vec<u16> = content.encode_utf16().collect();
+    let code_units: usize = stellarr_mentions::fenced_ranges(&text)
+        .into_iter()
+        .map(|(start, end)| end - start)
+        .sum();
+    if length - code_units <= MAX_CONTENT_UNITS {
+        MAX_CODE_CONTENT_UNITS
+    } else {
+        MAX_CONTENT_UNITS
+    }
+}
 
 pub fn routes() -> Endpoints {
     Endpoints::new()

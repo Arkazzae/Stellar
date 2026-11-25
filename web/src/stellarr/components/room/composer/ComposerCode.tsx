@@ -10,14 +10,14 @@ import {
 } from "@/components/room/code/CodeLanguagePicker";
 import { pluralForm } from "@/lib/format/format";
 import { tokenizeCode, type CodeLanguageId } from "@/lib/messages/codeLanguages";
-import { MESSAGE_MAX_LENGTH } from "@/lib/messages/messageLimits";
+import { CODE_MESSAGE_MAX_LENGTH } from "@/lib/messages/messageLimits";
 
 import css from "./ComposerCode.module.css";
 
 export { css as composerCodeStyles };
 
 /** The counter shows once less than a tenth of the limit is left. */
-const WARN_BELOW = MESSAGE_MAX_LENGTH / 10;
+const WARN_BELOW = CODE_MESSAGE_MAX_LENGTH / 10;
 
 /** Whether the keyboard's send chord is written with ⌘ rather than Ctrl. */
 function onApplePlatform(): boolean {
@@ -34,7 +34,7 @@ export interface ComposerCodeHeadProps {
   guess: CodeLanguageId | null;
   /** Characters the code may still grow by; below zero it is over the limit. */
   room: number;
-  onDisable(): void;
+  onDisable?: (() => void) | undefined;
   /** A language was picked in the open list; the code is where the next keys belong. */
   onPicked(): void;
   /** Ids the field points `aria-describedby` at. */
@@ -116,15 +116,17 @@ export function ComposerCodeHead({
       <span id={helpId} className="sr-only">
         {t("composer.codeKeysHelp", { send: sendKey })}
       </span>
-      <button
-        type="button"
-        className={css.close}
-        aria-label={t("composer.disableCode")}
-        title={t("composer.disableCode")}
-        onClick={onDisable}
-      >
-        <Icon name="x" size={16} />
-      </button>
+      {onDisable === undefined ? null : (
+        <button
+          type="button"
+          className={css.close}
+          aria-label={t("composer.disableCode")}
+          title={t("composer.disableCode")}
+          onClick={onDisable}
+        >
+          <Icon name="x" size={16} />
+        </button>
+      )}
     </div>
   );
 }

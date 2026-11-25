@@ -313,6 +313,8 @@ async fn what_may_be_posted_is_bounded_and_a_body_must_be_an_object_with_exact_n
     assert_eq!(send(c, &conversation, json!({ "content": "x".repeat(20_000) })).await.status, 201);
     // Counted in UTF-16 units: an astral character is two.
     assert_eq!(send(c, &conversation, json!({ "content": "😀".repeat(10_000) })).await.status, 201);
+    let long_code = format!("```plaintext\n{}\n```", "x".repeat(99_983));
+    assert_eq!(send(c, &conversation, json!({ "content": long_code })).await.status, 201);
     for content in ["x".repeat(20_001), "😀".repeat(10_001), "".into(), "  \n ".into()] {
         let response = send(c, &conversation, json!({ "content": content })).await;
         assert_eq!(response.status, 400);
@@ -682,7 +684,7 @@ async fn an_encrypted_message_is_bounded_at_every_length() {
 
     for (iv, ciphertext, want) in [
         (12, 17, 201), (12, 16, 400), (12, 1, 400), (11, 40, 400), (13, 40, 400), (0, 40, 400),
-        (12, 262_144, 201), (12, 262_145, 400),
+        (12, 6 * 100_000 + 128 * 1024, 201), (12, 6 * 100_000 + 128 * 1024 + 1, 400),
     ] {
         let response = post(with(encrypted(sealed.epoch, iv, ciphertext))).await;
         assert_eq!(response.status, want, "iv {iv} ciphertext {ciphertext}: {}", response.text().chars().take(200).collect::<String>());

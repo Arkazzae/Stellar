@@ -72,12 +72,28 @@ describe("Composer sending", () => {
     const { user, field } = setup({ onSubmit });
 
     await user.click(screen.getByRole("button", { name: "Wyślij jako kod" }));
-    fireEvent.change(field, { target: { value: "x".repeat(19_995) } });
+    const draft = "x".repeat(99_995);
+    fireEvent.change(field, { target: { value: draft } });
     await user.click(screen.getByRole("button", { name: "Wyślij" }));
 
-    expect(screen.getByRole("alert")).toHaveTextContent(/Blok kodu może mieć maksymalnie 20\s000 znaków/);
+    expect(screen.getByRole("alert")).toHaveTextContent(/Blok kodu może mieć maksymalnie 100\s000 znaków/);
     expect(onSubmit).not.toHaveBeenCalled();
-    expect(field).toHaveValue("x".repeat(19_995));
+    expect(field).toHaveValue(draft);
+  });
+
+  it("turns a long paste into a code message and preserves literal fence lines", async () => {
+    const onSubmit = vi.fn();
+    const { user, field } = setup({ onSubmit });
+    const draft = `  ${"x".repeat(21_000)}\n\`\`\`\n@ada\n`;
+
+    await user.click(field);
+    await user.paste(draft);
+
+    expect(field).toHaveFocus();
+    expect(field).toHaveValue(draft);
+    expect(screen.getByRole("combobox", { name: "Język kodu wiadomości" })).toBeInTheDocument();
+    await user.keyboard("{Control>}{Enter}{/Control}");
+    expect(onSubmit).toHaveBeenCalledWith(`\`\`\`\`plaintext\n${draft}\n\`\`\`\``);
   });
 
   it("sends a message on Enter but breaks the line on Shift+Enter", async () => {
