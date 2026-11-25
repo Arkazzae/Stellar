@@ -396,18 +396,11 @@ describe("UserSettings", () => {
     const avatar = new File(["avatar"], "avatar.png", { type: "image/png" });
 
     await user.upload(avatarInput!, avatar);
+    expect(screen.getByRole("dialog", { name: "Ustaw kadr awatara" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Anuluj" }));
     await user.upload(avatarInput!, avatar);
-
-    expect(props.accountPane.onPickImage).toHaveBeenNthCalledWith(
-      1,
-      "avatar",
-      avatar,
-    );
-    expect(props.accountPane.onPickImage).toHaveBeenNthCalledWith(
-      2,
-      "avatar",
-      avatar,
-    );
+    expect(screen.getByRole("dialog", { name: "Ustaw kadr awatara" })).toBeInTheDocument();
+    expect(props.accountPane.onPickImage).not.toHaveBeenCalled();
   });
 
   it("will not change a password until both new fields agree", async () => {

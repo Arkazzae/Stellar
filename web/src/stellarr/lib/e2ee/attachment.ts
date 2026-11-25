@@ -49,6 +49,7 @@ const SHOWN_TYPES: ReadonlySet<string> = new Set([
   "image/avif",
   "video/mp4",
   "video/webm",
+  "video/ogg",
   "video/quicktime",
   "audio/mpeg",
   "audio/mp4",
@@ -64,5 +65,6 @@ export const OPAQUE_TYPE = "application/octet-stream";
 
 export function shownType(type: string): string {
   const bare = type.split(";")[0]?.trim().toLowerCase() ?? "";
+  if (bare === "video/x-m4v") return "video/mp4";
   return SHOWN_TYPES.has(bare) ? bare : OPAQUE_TYPE;
 }

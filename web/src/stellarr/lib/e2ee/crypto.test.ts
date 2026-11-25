@@ -134,6 +134,8 @@ describe("file encryption", () => {
   it("shows only kinds the page draws itself, never one that can carry script", () => {
     expect(shownType("image/png")).toBe("image/png");
     expect(shownType("video/mp4; codecs=avc1")).toBe("video/mp4");
+    expect(shownType("video/x-m4v")).toBe("video/mp4");
+    expect(shownType("video/ogg")).toBe("video/ogg");
     expect(shownType("image/svg+xml")).toBe(OPAQUE_TYPE);
     expect(shownType("text/html")).toBe(OPAQUE_TYPE);
     expect(shownType("")).toBe(OPAQUE_TYPE);

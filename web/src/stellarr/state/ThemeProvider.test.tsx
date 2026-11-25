@@ -160,6 +160,10 @@ describe("ThemeProvider", () => {
 
   it("resets every axis with a single write", async () => {
     const user = userEvent.setup();
+    localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify({
+      ...DEFAULT_THEME,
+      wallpaper: { shade: 20, blur: 5 },
+    }));
     renderProvider();
     await user.click(screen.getByRole("button", { name: "evergreen" }));
     const setItem = vi.spyOn(localStorage, "setItem");

@@ -214,7 +214,12 @@ export function PaletteBoard({ theme, onChange }: PaletteBoardProps) {
       return;
     }
     const back = getPalette(custom.basedOn ?? (DEFAULT_THEME.palette as PaletteId));
-    onChange({ palette: back.id, accent: back.colors.accent, custom: null });
+    onChange({
+      palette: back.id,
+      accent: back.colors.accent,
+      custom: null,
+      ...(back.id === DEFAULT_THEME.palette ? { wallpaper: null } : {}),
+    });
   };
 
   const label = own !== null ? customThemeName(own, t("theme.custom.untitled")) : getPalette(theme.palette as PaletteId).label;

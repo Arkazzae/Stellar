@@ -23,7 +23,6 @@ function props(overrides: Partial<ServerSettingsProps> = {}): ServerSettingsProp
       isPublic: false,
       onSave: vi.fn().mockResolvedValue(undefined),
       onPickIcon: vi.fn().mockResolvedValue(undefined),
-      onRemoveIcon: vi.fn().mockResolvedValue(undefined),
     },
     channels: {
       supported: true,
