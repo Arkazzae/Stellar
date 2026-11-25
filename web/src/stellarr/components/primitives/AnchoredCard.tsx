@@ -61,12 +61,11 @@ interface ViewportBox {
  * Beside the anchor rather than under it: what raises a card (a member row, an
  * avatar in the transcript) sits in a narrow column at the edge of the window,
  * and a card below it would cover the list it came from. It opens to the right,
- * flips to the left when the right cannot hold it, and only then falls back to
- * clamping inside the window. Vertically it aligns with the top of the anchor
- * and is pushed back inside; a card taller than the window scrolls internally.
+ * flips left near the right edge and uses the space below or above a wide
+ * row. A card taller than the viewport scrolls internally.
  */
 export function placeAnchoredCard(
-  anchor: Pick<DOMRect, "left" | "right" | "top">,
+  anchor: Pick<DOMRect, "left" | "right" | "top" | "bottom">,
   card: { width: number; height: number },
   view: ViewportBox,
 ): Placement {
@@ -82,14 +81,27 @@ export function placeAnchoredCard(
 
   const right = anchor.right + GAP;
   const left = anchor.left - GAP - width;
-  let x: number;
-  if (right + width <= maxRight) x = right;
-  else if (left >= minLeft) x = left;
-  else x = Math.max(minLeft, Math.min(anchor.left, maxRight - width));
+  const fitsBesideRow = anchor.right - anchor.left <= width;
+  let x = anchor.left;
+  let y = anchor.top;
+  if (fitsBesideRow && right + width <= maxRight) {
+    x = right;
+  } else if (fitsBesideRow && left >= minLeft) {
+    x = left;
+  } else {
+    const below = anchor.bottom + GAP;
+    const above = anchor.top - GAP - height;
+    const roomBelow = maxBottom - below;
+    const roomAbove = anchor.top - GAP - minTop;
+    y = roomBelow >= height || roomBelow >= roomAbove ? below : above;
+  }
 
-  const y = Math.max(minTop, Math.min(anchor.top, maxBottom - height));
-
-  return { left: x, top: y, maxWidth, maxHeight };
+  return {
+    left: Math.max(minLeft, Math.min(x, maxRight - width)),
+    top: Math.max(minTop, Math.min(y, maxBottom - height)),
+    maxWidth,
+    maxHeight,
+  };
 }
 
 function cssPixels(style: CSSStyleDeclaration, property: string): number {
@@ -121,7 +133,7 @@ export function AnchoredCard({
   const cardRef = useRef<HTMLDivElement>(null);
   const [placement, setPlacement] = useState<Placement | null>(null);
 
-  const reposition = useCallback(() => {
+  const reposition = useCallback((rect = anchor.getBoundingClientRect()) => {
     const card = cardRef.current;
     if (card === null) return;
     // The anchor is gone (its message was recycled, the person left the call),
@@ -133,7 +145,7 @@ export function AnchoredCard({
     const style = window.getComputedStyle(card);
     const viewport = window.visualViewport;
     const next = placeAnchoredCard(
-      anchor.getBoundingClientRect(),
+      rect,
       { width: card.offsetWidth, height: card.offsetHeight },
       {
         width: viewport?.width ?? window.innerWidth,
@@ -160,32 +172,57 @@ export function AnchoredCard({
 
   // Measure before the first paint: the card renders hidden until it has a
   // placement, and measuring after paint would flash it in the corner.
-  useLayoutEffect(reposition, [reposition]);
+  useLayoutEffect(() => reposition(), [reposition]);
 
   useEffect(() => {
-    // Captured, so scrolling any ancestor (the roster, the transcript) moves
-    // the card and not just scrolling the window.
-    window.addEventListener("scroll", reposition, { capture: true, passive: true });
-    window.addEventListener("resize", reposition);
-    window.visualViewport?.addEventListener("scroll", reposition);
-    window.visualViewport?.addEventListener("resize", reposition);
-    const observer = new ResizeObserver(reposition);
-    if (cardRef.current !== null) observer.observe(cardRef.current);
-    return () => {
-      window.removeEventListener("scroll", reposition, { capture: true });
-      window.removeEventListener("resize", reposition);
-      window.visualViewport?.removeEventListener("scroll", reposition);
-      window.visualViewport?.removeEventListener("resize", reposition);
-      observer.disconnect();
+    // Images loading above a message and animated drawers move the trigger
+    // without resizing it or firing a scroll event. Read just its bounds while
+    // the card is open and measure the card again only when something moved.
+    let previous = anchor.getBoundingClientRect();
+    let frame: number;
+    const follow = () => {
+      if (!anchor.isConnected) {
+        onClose();
+        return;
+      }
+      const rect = anchor.getBoundingClientRect();
+      if (rect.left !== previous.left || rect.right !== previous.right ||
+          rect.top !== previous.top || rect.bottom !== previous.bottom) {
+        reposition(rect);
+        previous = rect;
+      }
+      frame = requestAnimationFrame(follow);
     };
-  }, [reposition]);
+    frame = requestAnimationFrame(follow);
+    const update = () => reposition();
+    window.addEventListener("resize", update);
+    const viewport = window.visualViewport;
+    viewport?.addEventListener("scroll", update);
+    viewport?.addEventListener("resize", update);
+    const observer = new ResizeObserver(update);
+    if (cardRef.current !== null) observer.observe(cardRef.current);
+    const visibility = typeof IntersectionObserver === "undefined"
+      ? null
+      : new IntersectionObserver(([entry]) => {
+          if (entry && !entry.isIntersecting) onClose();
+        });
+    visibility?.observe(anchor);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", update);
+      viewport?.removeEventListener("scroll", update);
+      viewport?.removeEventListener("resize", update);
+      observer.disconnect();
+      visibility?.disconnect();
+    };
+  }, [anchor, onClose, reposition]);
 
   useEffect(() => {
-    if (autoFocus) focusWithin(cardRef.current);
+    if (autoFocus) focusWithin(cardRef.current, { preventScroll: true });
     return () => {
       // If the anchor left the page, focus stays on <body> rather than moving
       // somewhere arbitrary.
-      if (anchor.isConnected) anchor.focus();
+      if (anchor.isConnected) anchor.focus({ preventScroll: true });
     };
   }, [anchor, autoFocus]);
 

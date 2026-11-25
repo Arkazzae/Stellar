@@ -9,8 +9,8 @@ import { FOCUSABLE, trapTab as sharedTrapTab } from "@stellarr/ui/behavior";
 export { FOCUSABLE };
 
 /** Focuses the first tab stop in `container`, or the container when it has none. */
-export function focusWithin(container: HTMLElement | null): void {
-  (container?.querySelector<HTMLElement>(FOCUSABLE) ?? container)?.focus();
+export function focusWithin(container: HTMLElement | null, options?: FocusOptions): void {
+  (container?.querySelector<HTMLElement>(FOCUSABLE) ?? container)?.focus(options);
 }
 
 /**

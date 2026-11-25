@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -116,6 +116,23 @@ describe("AnchoredCard", () => {
     await user.click(screen.getByRole("button", { name: "Elsewhere" }));
     expect(onClose).toHaveBeenCalledOnce();
     expect(card()).toBeNull();
+  });
+
+  it("follows a layout shift without a scroll and closes when the row disappears", async () => {
+    const anchor = document.body.appendChild(document.createElement("button"));
+    const onClose = vi.fn();
+    let top = 80;
+    vi.spyOn(anchor, "getBoundingClientRect").mockImplementation(() => new DOMRect(40, top, 32, 32));
+    try {
+      render(<AnchoredCard anchor={anchor} label="Profile" onClose={onClose}>Maja</AnchoredCard>);
+      const initialTop = Number.parseFloat(card()!.style.top);
+      top = 128;
+      await waitFor(() => expect(card()).toHaveStyle({ top: `${initialTop + 48}px` }));
+      anchor.remove();
+      await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    } finally {
+      anchor.remove();
+    }
   });
 
   it("closes at once when its anchor is no longer on the page", () => {
