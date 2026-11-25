@@ -48,6 +48,7 @@ export const RailVoiceDock = memo(function RailVoiceDock() {
   return (
     <VoiceDock
       call={voice.call}
+      others={voice.others}
       ringing={ringing}
       collapsed={callViewOpen}
       sounds={voice.sounds}

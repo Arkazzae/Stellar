@@ -1,7 +1,8 @@
-import { useState, type KeyboardEvent } from "react";
+import { useCallback, useContext, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 
 import { Icon, type IconName } from "@stellarr/icons";
-import type { CallVM } from "@/components/view-models";
+import { Avatar } from "@/components/primitives/Avatar";
+import type { CallVM, PersonVM } from "@/components/view-models";
 import { SoundboardPopover } from "@/components/voice/SoundboardPopover";
 import type { MessageKey } from "@/i18n";
 import type { Sound, SoundboardLive, SuppressorDownload, VoiceSettings } from "@/ports";
@@ -10,6 +11,7 @@ import { useLanguage } from "@/state/hooks";
 import { CallClock } from "./CallClock";
 import { MicMenu } from "./MicMenu";
 import { IDLE_SOUNDBOARD } from "./soundboardLive";
+import { VoiceSeatContext } from "./useVoiceSeat";
 
 /** How a status word is coloured: waiting, a warning, a failure, or your own share. */
 type Tone = "busy" | "warn" | "bad" | "acc";
@@ -42,38 +44,11 @@ const QUALITY: Record<Exclude<CallVM["connectionQuality"], "unknown">, MessageKe
   poor: "shell.voiceQualityPoor",
 };
 
-/** The logo's three bars: how many are lit, and in which colour, by state. */
-type Bars = "q3" | "q2" | "q1" | "busy" | "off" | "screen";
-
-const QUALITY_BARS: Record<CallVM["connectionQuality"], Bars> = {
-  good: "q3",
-  fair: "q2",
-  poor: "q1",
-  unknown: "busy",
-};
-
-function barsFor(headline: CallVM["headline"], quality: CallVM["connectionQuality"]): Bars {
-  switch (headline) {
-    case "screen":
-      return "screen";
-    case "connecting":
-    case "requesting-mic":
-      return "busy";
-    case "reconnecting":
-    case "failed":
-      return "off";
-    // Unsteady media is a warning whatever the last reading said: green bars
-    // beside the warning words would contradict them.
-    case "degraded":
-      return "q2";
-    default:
-      return QUALITY_BARS[quality];
-  }
-}
-
 export interface VoiceDockProps {
   /** No call means the dock is present but `.hidden`, as in the mockup. */
   call: CallVM | null;
+  /** The other people in the call, whose faces lead the status line. */
+  others?: readonly PersonVM[];
   /**
    * A private call the other person has not joined yet. Once connected, the
    * dock says it is calling them, and keeps no time: nothing has started.
@@ -260,15 +235,69 @@ function DockControls({
   );
 }
 
+const NO_ONE: readonly PersonVM[] = [];
+
+/**
+ * The faces of the others in the call, three at most and "+N" for the rest,
+ * whoever speaks first and ringed. Who speaks is read from the seats here,
+ * so a word renders these faces and nothing else of the dock.
+ */
+function DockFaces({ people, faded }: { people: readonly PersonVM[]; faded: boolean }) {
+  const seats = useContext(VoiceSeatContext);
+  const key = people.map((person) => person.id).join("\u0000");
+  const subscribe = useCallback(
+    (listener: () => void) => {
+      if (seats === null || key === "") return () => undefined;
+      const stops = key.split("\u0000").map((id) => seats.subscribe(id, listener));
+      return () => {
+        for (const stop of stops) stop();
+      };
+    },
+    [seats, key],
+  );
+  const read = () =>
+    seats === null || key === ""
+      ? ""
+      : key
+          .split("\u0000")
+          .filter((id) => seats.get(id)?.speaking === true)
+          .join("\u0000");
+  const speakingKey = useSyncExternalStore(subscribe, read, read);
+  if (people.length === 0) return null;
+
+  const speaking = new Set(speakingKey === "" ? [] : speakingKey.split("\u0000"));
+  const ordered = [
+    ...people.filter((person) => speaking.has(person.id)),
+    ...people.filter((person) => !speaking.has(person.id)),
+  ];
+  const shown = ordered.slice(0, 3);
+  const more = people.length - shown.length;
+  return (
+    <span className={faded ? "ds-faces faded" : "ds-faces"} aria-hidden="true">
+      {shown.map((person) => (
+        <span key={person.id} className={speaking.has(person.id) ? "ds-face speaking" : "ds-face"}>
+          <Avatar
+            id={person.id}
+            displayName={person.displayName}
+            initials={person.initials}
+            avatarUrl={person.avatarUrl}
+            size="xs"
+          />
+        </span>
+      ))}
+      {more > 0 ? <span className="ds-more">+{more}</span> : null}
+    </span>
+  );
+}
+
 function LiveDock(props: LiveDockProps) {
-  const { call, ringing = false, collapsed = false, onLeave, onReturnToChannel } = props;
+  const { call, others = NO_ONE, ringing = false, collapsed = false, onLeave, onReturnToChannel } = props;
   const { t } = useLanguage();
 
   const status =
     call.headline === "connected" ? (ringing ? RINGING : null) : CALL_STATUS[call.headline];
-  const bars = barsFor(call.headline, call.connectionQuality);
-  // While the bars stand for the link, its quality and ping are said in words
-  // for a pointer and a screen reader.
+  // The link's quality and ping, for a pointer on the time and for a screen
+  // reader: the line itself says words only when something is wrong.
   const describesQuality = call.headline === "connected" || call.headline === "degraded";
   const qualityDetail =
     call.connectionQuality === "unknown" || call.latencyMs === null
@@ -281,27 +310,21 @@ function LiveDock(props: LiveDockProps) {
   // Your screen is out, so the status is a way back to it, unless the call's
   // view is already where you are.
   const live = call.headline === "screen" && !collapsed;
+  // While the call is not up, the faces step back with it.
+  const faded = status !== null && status.tone !== "acc";
 
   const line = (
     <>
-      <span
-        className={`qbars ${bars}`}
-        {...(describesQuality
-          ? { role: "img", title: qualityDetail, "aria-label": qualityDetail }
-          : { "aria-hidden": true })}
-      >
-        <i />
-        <i />
-        <i />
-      </span>
+      <DockFaces people={others} faded={faded} />
       <span className="ds-name">{call.channelName}</span>
       {status === null ? (
-        <span className="ds-time">
+        <span className="ds-time" title={describesQuality ? qualityDetail : undefined}>
           <CallClock since={call.startedAt} />
         </span>
       ) : (
         <span className={`ds-time ${status.tone}`}>{t(status.words)}</span>
       )}
+      {describesQuality ? <span className="sr-only">{qualityDetail}</span> : null}
     </>
   );
 
