@@ -29,18 +29,25 @@
     width:var(--servers-rail-w);flex:1;min-height:0;
     display:flex;flex-direction:column;align-items:center;gap:10px;
   }
+  /* Every tile of the column stands on the website's solid edge and sinks
+     into it when pressed; the server you are on stands on the accent's. */
   .srv-item{
+    --srv-edge:var(--rail-edge);
     position:relative;width:46px;height:46px;border-radius:16px;flex:none;
     display:inline-flex;align-items:center;justify-content:center;
     background:var(--surface-raised);color:var(--text-muted);
+    box-shadow:0 3px 0 var(--srv-edge);
     transition:background var(--dur-fast) var(--ease-standard),
                color var(--dur-fast) var(--ease-standard),
-               border-radius var(--dur-fast) var(--ease-standard);
+               border-radius var(--dur-fast) var(--ease-standard),
+               transform 100ms var(--ease-standard),
+               box-shadow 100ms var(--ease-standard);
   }
+  .srv-item:active:not(:disabled){transform:translateY(3px);box-shadow:0 0 0 var(--srv-edge)}
   .srv-item:hover:not(:disabled){background:var(--surface-overlay);color:var(--text);border-radius:14px}
   /* Not dressed up as working: there is no backend behind these two yet. */
   .srv-item:disabled{opacity:0.4;cursor:not-allowed}
-  .srv-item.on{background:var(--accent-soft);color:var(--text)}
+  .srv-item.on{--srv-edge:var(--accent-edge);background:var(--accent-soft);color:var(--text)}
   .srv-item.on::before{
     content:"";position:absolute;left:-11px;top:8px;bottom:8px;width:4px;
     background:var(--accent);border-radius:0 3px 3px 0;
@@ -86,7 +93,7 @@
     width:44px;height:44px;border-radius:14px;flex:none;
     display:inline-flex;align-items:center;justify-content:center;
     background:var(--surface-raised);border:1px solid var(--line);
-    color:var(--text-muted);box-shadow:0 8px 22px oklch(0 0 0 / 0.38);
+    color:var(--text-muted);box-shadow:0 3px 0 var(--rail-edge),0 8px 22px oklch(0 0 0 / 0.38);
     animation:srvTileIn 180ms var(--ease-standard) both;
     animation-delay:calc(var(--i) * 40ms);
     transition:background var(--dur-fast) var(--ease-standard),
