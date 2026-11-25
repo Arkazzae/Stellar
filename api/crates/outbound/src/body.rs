@@ -2,17 +2,19 @@
 
 use std::io;
 use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll};
 
 use bytes::{Bytes, BytesMut};
 use http_body_util::BodyExt;
 use hyper::body::{Body as HyperBody, Frame, Incoming, SizeHint};
 use tokio::io::{AsyncRead, ReadBuf};
-use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
 use crate::encoding::{Decoder, Pull};
 use crate::error::{Error, Result};
+use crate::pool::Lease;
 
 /// The most read from a stream body in one piece.
 const SEND_CHUNK: usize = 64 * 1024;
@@ -77,11 +79,21 @@ impl Body {
 pub(crate) struct Outgoing {
     body: Body,
     sent: u64,
+    complete: Option<Arc<AtomicBool>>,
 }
 
 impl Outgoing {
     pub(crate) fn new(body: Body) -> Outgoing {
-        Outgoing { body, sent: 0 }
+        let complete = (!body.is_empty()).then(|| Arc::new(AtomicBool::new(false)));
+        Outgoing {
+            body,
+            sent: 0,
+            complete,
+        }
+    }
+
+    pub(crate) fn completion(&self) -> Option<Arc<AtomicBool>> {
+        self.complete.clone()
     }
 }
 
@@ -94,7 +106,7 @@ impl HyperBody for Outgoing {
         cx: &mut Context<'_>,
     ) -> Poll<Option<io::Result<Frame<Bytes>>>> {
         let this = self.get_mut();
-        match &mut this.body {
+        let frame = match &mut this.body {
             Body::Empty => Poll::Ready(None),
             Body::Bytes(bytes) => {
                 if bytes.is_empty() {
@@ -128,7 +140,13 @@ impl HyperBody for Outgoing {
                     }
                 }
             }
+        };
+        if this.is_end_stream()
+            && let Some(complete) = &this.complete
+        {
+            complete.store(true, Ordering::Release);
         }
+        frame
     }
 
     fn is_end_stream(&self) -> bool {
@@ -149,16 +167,6 @@ impl HyperBody for Outgoing {
     }
 }
 
-/// Aborts the task that drives the connection when it is dropped, so that
-/// a body that is given up on closes its socket at once.
-pub(crate) struct DriverGuard(pub(crate) JoinHandle<()>);
-
-impl Drop for DriverGuard {
-    fn drop(&mut self) {
-        self.0.abort();
-    }
-}
-
 /// The body of an answer, read piece by piece. The ceiling on the size of
 /// the answer and the deadline of the whole request apply to every read.
 pub struct ResponseBody {
@@ -173,7 +181,7 @@ pub struct ResponseBody {
     ceiling: u64,
     deadline: Instant,
     finished: bool,
-    _driver: DriverGuard,
+    lease: Option<Lease>,
 }
 
 impl ResponseBody {
@@ -183,9 +191,15 @@ impl ResponseBody {
         head_bytes: u64,
         ceiling: u64,
         deadline: Instant,
-        driver: DriverGuard,
+        lease: Lease,
     ) -> ResponseBody {
         let finished = incoming.is_end_stream();
+        let lease = if finished {
+            lease.release();
+            None
+        } else {
+            Some(lease)
+        };
         ResponseBody {
             incoming,
             decoder,
@@ -195,7 +209,7 @@ impl ResponseBody {
             ceiling,
             deadline,
             finished,
-            _driver: driver,
+            lease,
         }
     }
 
@@ -209,17 +223,29 @@ impl ResponseBody {
     /// when the connection breaks, the framing is wrong, or the body is
     /// compressed in a way that cannot be undone or is damaged.
     pub async fn chunk(&mut self) -> Result<Option<Bytes>> {
+        let result = self.read_chunk().await;
+        if result.is_err() {
+            self.finished = true;
+            self.lease.take();
+        } else if self.finished
+            && let Some(lease) = self.lease.take()
+        {
+            lease.release();
+        }
+        result
+    }
+
+    async fn read_chunk(&mut self) -> Result<Option<Bytes>> {
         loop {
             if self.finished {
                 return Ok(None);
             }
             // What is already pushed into the decoder comes first.
             if let Decoder::Chain(chain) = &mut self.decoder {
-                match chain.pull().inspect_err(|_| self.finished = true)? {
+                match chain.pull()? {
                     Pull::Data(piece) => {
                         self.delivered += piece.len() as u64;
                         if self.head_bytes.saturating_add(self.delivered) > self.ceiling {
-                            self.finished = true;
                             return Err(Error::TooLarge);
                         }
                         return Ok(Some(piece));
@@ -249,18 +275,17 @@ impl ResponseBody {
             };
             self.received += data.len() as u64;
             if self.head_bytes.saturating_add(self.received) > self.ceiling {
-                self.finished = true;
                 return Err(Error::TooLarge);
             }
             match &mut self.decoder {
                 Decoder::Pass => {
                     self.delivered += data.len() as u64;
                     if !data.is_empty() {
+                        self.finished = self.incoming.is_end_stream();
                         return Ok(Some(data));
                     }
                 }
                 Decoder::Unsupported(why) => {
-                    self.finished = true;
                     return Err(Error::Body((*why).into()));
                 }
                 Decoder::Chain(chain) => chain.push(&data),
