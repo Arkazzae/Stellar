@@ -182,7 +182,7 @@
   .vc-ctl > .dock-pop.mic-menu{width:300px}
   /* Two groups and their hints: on a short window, or with finger-sized rows,
      the menu scrolls inside itself rather than past the top. */
-  .dock-pop.mic-menu{max-height:calc(100dvh - 200px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+  .dock-pop.mic-menu{max-height:calc(100dvh - 200px);overflow-y:auto;overscroll-behavior:contain}
 
   /* ---------- Quality menus: the account panel's rows ---------- */
   .qm-head{display:flex;flex-direction:column;gap:1px;padding:8px 8px 4px}
