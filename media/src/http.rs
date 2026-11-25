@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 use axum::Router;
 use axum::body::Bytes;
 use axum::extract::rejection::BytesRejection;
-use axum::extract::{DefaultBodyLimit, Path, Query, Request, State};
-use axum::http::{HeaderMap, StatusCode, header};
+use axum::extract::{DefaultBodyLimit, Path, Request, State};
+use axum::http::{HeaderMap, StatusCode, Uri, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
@@ -73,8 +73,7 @@ pub fn router(state: AppState) -> Router {
 }
 
 fn error(status: StatusCode, code: &str, detail: impl Into<String>) -> Response {
-    let body = json!({ "error": code, "detail": detail.into() });
-    (status, axum::Json(body)).into_response()
+    json_response(status, json!({ "error": code, "detail": detail.into() }))
 }
 
 fn api_error(e: ApiError) -> Response {
@@ -89,8 +88,11 @@ fn api_error(e: ApiError) -> Response {
     error(status, e.code(), e.detail())
 }
 
-fn ok(status: StatusCode, body: impl Serialize) -> Response {
-    (status, axum::Json(body)).into_response()
+fn json_response(status: StatusCode, body: impl Serialize) -> Response {
+    match serde_json::to_vec(&body) {
+        Ok(bytes) => (status, [(header::CONTENT_TYPE, "application/json")], bytes).into_response(),
+        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
+    }
 }
 
 fn unavailable() -> Response {
@@ -214,14 +216,14 @@ async fn method_not_allowed() -> Response {
 
 async fn health(State(state): State<AppState>) -> Response {
     match call(&state, |core, _| core.health()).await {
-        Ok(health) => ok(StatusCode::OK, health),
+        Ok(health) => json_response(StatusCode::OK, health),
         Err(Unavailable) => unavailable(),
     }
 }
 
 async fn reset(State(state): State<AppState>) -> Response {
     match call(&state, |core, now| core.reset(now)).await {
-        Ok(reply) => ok(StatusCode::OK, reply),
+        Ok(reply) => json_response(StatusCode::OK, reply),
         Err(Unavailable) => unavailable(),
     }
 }
@@ -253,7 +255,7 @@ async fn create_session(
     })
     .await
     {
-        Ok(Ok(created)) => ok(StatusCode::CREATED, created),
+        Ok(Ok(created)) => json_response(StatusCode::CREATED, created),
         Ok(Err(e)) => api_error(e),
         Err(Unavailable) => unavailable(),
     }
@@ -385,15 +387,10 @@ fn query_number(query: &HashMap<String, String>, name: &str) -> Result<u64, ApiE
     }
 }
 
-async fn events(
-    State(state): State<AppState>,
-    query: Result<Query<HashMap<String, String>>, axum::extract::rejection::QueryRejection>,
-) -> Response {
-    let Ok(Query(query)) = query else {
-        return api_error(ApiError::InvalidRequest(
-            "The query string is malformed.".into(),
-        ));
-    };
+async fn events(State(state): State<AppState>, uri: Uri) -> Response {
+    let query = form_urlencoded::parse(uri.query().unwrap_or_default().as_bytes())
+        .into_owned()
+        .collect::<HashMap<_, _>>();
     let epoch = query.get("epoch").cloned();
     let after = match query_number(&query, "after") {
         Ok(v) => v,
@@ -416,23 +413,23 @@ async fn events(
             Err(Unavailable) => return unavailable(),
         };
         if poll.reset || !poll.events.is_empty() {
-            return ok(StatusCode::OK, poll);
+            return json_response(StatusCode::OK, poll);
         }
 
         tokio::select! {
             changed = seq.changed() => {
                 if changed.is_err() {
-                    return ok(StatusCode::OK, poll);
+                    return json_response(StatusCode::OK, poll);
                 }
             }
-            _ = tokio::time::sleep_until(deadline) => return ok(StatusCode::OK, poll),
+            _ = tokio::time::sleep_until(deadline) => return json_response(StatusCode::OK, poll),
         }
     }
 }
 
 async fn stats(State(state): State<AppState>) -> Response {
     match call(&state, |core, now| core.stats(now)).await {
-        Ok(stats) => ok(StatusCode::OK, stats),
+        Ok(stats) => json_response(StatusCode::OK, stats),
         Err(Unavailable) => unavailable(),
     }
 }

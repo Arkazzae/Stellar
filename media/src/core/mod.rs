@@ -17,7 +17,6 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use rand::Rng;
 use serde::Serialize;
 use serde_json::{Value, json};
 use str0m::bwe::{Bitrate, BweKind};
@@ -315,7 +314,8 @@ fn guard<T>(f: impl FnOnce() -> T) -> Result<T, ()> {
 }
 
 pub(crate) fn random_id() -> String {
-    let bytes: [u8; 16] = rand::rng().random();
+    let mut bytes = [0u8; 16];
+    aws_lc_rs::rand::fill(&mut bytes).expect("the system random number generator failed");
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
