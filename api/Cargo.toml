@@ -29,3 +29,17 @@ tokio = "1"
 tokio-rustls = "0.26"
 tracing = "0.1"
 tracing-subscriber = "0.3"
+
+# Dependencies are optimised in development and test builds too. They are
+# compiled once and then cached, and the tests spend most of their time in
+# them: SQLite, the password derivation in aws-lc, hyper. The workspace's own
+# crates stay unoptimised, so a change to one of them rebuilds as fast as
+# before.
+[profile.dev.package."*"]
+opt-level = 3
+
+# The exception among the workspace's crates: its tests push whole streams
+# through the decoder a byte at a time, and took longer unoptimised than every
+# endpoint test together.
+[profile.dev.package.stellarr-deflate]
+opt-level = 3

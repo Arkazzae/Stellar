@@ -1016,6 +1016,12 @@ file, merged the same way). Each test starts the real
 `/health/ready`, and stops it afterwards. Tests run in parallel and share
 nothing.
 
+The data folders are made under the temporary folder, and SQLite syncs every
+commit to them. With `TMPDIR` on a filesystem in memory the same tests take
+about a fifth less time; CI mounts one for them. It must allow running files,
+which Docker's `/dev/shm` does not: the documentation tests are built there
+and run from it, and a few tests run a script they wrote there.
+
 ```rust
 // tests/api/channels.rs
 use crate::support::Server;
