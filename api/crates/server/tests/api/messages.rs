@@ -241,10 +241,23 @@ async fn the_length_of_a_message_is_counted_in_utf16_units_after_trimming() {
         ("a".repeat(20_001), 400),
         (format!("{}\u{1F600}", "a".repeat(19_998)), 201),
         (format!("{}\u{1F600}", "a".repeat(19_999)), 400),
+        (format!("````\n```\n{}\n````", "😀".repeat(49_993)), 201),
+        (format!("````\n```\n{}x\n````", "😀".repeat(49_993)), 400),
     ] {
         let response = w.post(&w.owner, &w.general, json!({ "content": content })).await;
         assert_eq!(response.status, status, "{} units", content.encode_utf16().count());
     }
+}
+
+#[tokio::test]
+async fn a_message_can_be_rewritten_as_a_long_code_block() {
+    let w = world().await;
+    let message = w.say(&w.owner, &w.general, "before").await;
+    let content = format!("```plaintext\n{}\n```", "x".repeat(60_000));
+
+    let response = w.edit(&w.owner, &id_of(&message), json!({ "content": content })).await;
+    assert_eq!(response.status, 200);
+    assert_eq!(response.json::<Value>()["content"], content);
 }
 
 #[tokio::test]

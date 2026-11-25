@@ -14,7 +14,7 @@ use crate::auth::Caller;
 use crate::events::{Audience, Event};
 use crate::http::{ApiError, ApiResult, Json, Path, json_response};
 use crate::delivery::outbox;
-use crate::messages::{MAX_CONTENT_UNITS, field_problem, trimmed, units};
+use crate::messages::{MAX_CODE_CONTENT_UNITS, content_limit, field_problem, trimmed, units};
 use crate::social::conversations::{self, DirectMessage};
 use crate::social::{announce, is_blocked};
 use crate::state::AppState;
@@ -32,7 +32,7 @@ const IV_BYTES: usize = 12;
 const TAG_BYTES: usize = 16;
 /// The longest text escaped as JSON in the worst case, and the descriptions of
 /// its attachments.
-const MAX_CIPHERTEXT_BYTES: usize = 256 * 1024;
+const MAX_CIPHERTEXT_BYTES: usize = MAX_CODE_CONTENT_UNITS * 6 + 128 * 1024;
 
 /// What a sender asked to post, after trimming and de-duplication.
 struct Submission {
@@ -180,15 +180,12 @@ pub async fn create(
                 if !valid {
                     return Err(field_problem("encrypted", &messages, MessageKey::EncryptionMessageInvalid, &[]));
                 }
-            } else if (submission.content.is_empty() && submission.attachments.is_empty())
-                || units(&submission.content) > MAX_CONTENT_UNITS
-            {
-                return Err(field_problem(
-                    "content",
-                    &messages,
-                    MessageKey::MessageContentInvalid,
-                    &[("max", &MAX_CONTENT_UNITS)],
-                ));
+            } else {
+                let length = units(&submission.content);
+                let max = content_limit(&submission.content, length);
+                if (submission.content.is_empty() && submission.attachments.is_empty()) || length > max {
+                    return Err(field_problem("content", &messages, MessageKey::MessageContentInvalid, &[("max", &max)]));
+                }
             }
 
             // A retry of a send that went through is answered before anything

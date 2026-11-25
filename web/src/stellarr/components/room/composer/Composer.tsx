@@ -21,7 +21,7 @@ import { insertEmojiAt, toggleMarker } from "@/lib/messages/composerText";
 import { EmojiPicker } from "@/components/emoji/EmojiPicker";
 import { GifBrowser } from "./GifBrowser";
 import { MentionList, mentionOptionId } from "./MentionList";
-import { MESSAGE_MAX_LENGTH } from "@/lib/messages/messageLimits";
+import { CODE_MESSAGE_MAX_LENGTH } from "@/lib/messages/messageLimits";
 import { useAutosizedField } from "./useAutosizedField";
 import { useComposerDraft } from "./useComposerDraft";
 import { useComposerPopovers } from "./useComposerPopovers";
@@ -194,6 +194,7 @@ export function Composer({
     sendError,
     clearSendError,
     codeMode,
+    automaticCode,
     setCodeMode,
     codeLanguage,
     setCodeLanguage,
@@ -292,7 +293,6 @@ export function Composer({
     const start = element?.selectionStart ?? caret.current ?? text.length;
     const end = element?.selectionEnd ?? start;
     const edit = toggleMarker(text, start, end, marker);
-    if (edit.text.length > MESSAGE_MAX_LENGTH) return;
     setText(edit.text);
     caret.current = edit.selectionEnd;
     setFormatOpen(false);
@@ -425,6 +425,9 @@ export function Composer({
         : undefined;
   const hasMentionCandidates = mentionCandidates.length > 0;
   const selectedMention = mentions.selected;
+  const codeLines = codeMode && text.length <= CODE_MESSAGE_MAX_LENGTH ? countLines(text) : 0;
+  // A paste of thousands of lines can be edited directly in the textarea.
+  const highlightCode = codeLines > 0 && codeLines <= 5_000;
 
   return (
     <form className="composer" onSubmit={submit}>
@@ -484,8 +487,8 @@ export function Composer({
               language={codeLanguage}
               onLanguageChange={setCodeLanguage}
               guess={codeGuess}
-              room={codeRoom ?? MESSAGE_MAX_LENGTH}
-              onDisable={() => {
+              room={codeRoom ?? CODE_MESSAGE_MAX_LENGTH}
+              onDisable={automaticCode ? undefined : () => {
                 switchCodeMode(false);
                 // The head and its button are gone; the field is where the
                 // keyboard was working.
@@ -519,19 +522,19 @@ export function Composer({
           <div
             className={codeMode ? codeCss.field : codeCss.plainField}
             data-composing={codeMode && composing ? "" : undefined}
+            data-plain-code={codeMode && !highlightCode ? "" : undefined}
             style={
-              codeMode
-                ? ({ "--digits": String(countLines(text)).length } as CSSProperties)
+              highlightCode
+                ? ({ "--digits": String(codeLines).length } as CSSProperties)
                 : undefined
             }
           >
-            {codeMode ? (
+            {highlightCode ? (
               <ComposerCodeLayers field={field} text={text} language={codeHighlight} />
             ) : null}
             <textarea
               ref={field}
               rows={1}
-              maxLength={MESSAGE_MAX_LENGTH}
               value={text}
               placeholder={codeMode ? t("composer.codePlaceholder") : prompt}
               aria-label={prompt}

@@ -10,7 +10,7 @@ import {
 import { resolveCodeLanguage, type CodeLanguageId } from "@/lib/messages/codeLanguages";
 import type { ComposerChip } from "./ComposerChips";
 import { fencedCode } from "@/lib/messages/composerText";
-import { MESSAGE_MAX_LENGTH } from "@/lib/messages/messageLimits";
+import { CODE_MESSAGE_MAX_LENGTH, MESSAGE_MAX_LENGTH, messageContentLimit } from "@/lib/messages/messageLimits";
 
 interface Options {
   chips: readonly ComposerChip[];
@@ -35,8 +35,14 @@ export function useComposerDraft({ chips, onSubmit, onSent, locale, t }: Options
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
-  const [codeMode, setCodeMode] = useState(false);
+  const [manualCode, setCodeMode] = useState(false);
   const [codeLanguage, setCodeLanguage] = useState<CodeLanguageChoice>(AUTO_LANGUAGE);
+  const authored = text.trim();
+  const automaticCode = useMemo(
+    () => authored.length > MESSAGE_MAX_LENGTH && messageContentLimit(authored) === MESSAGE_MAX_LENGTH,
+    [authored],
+  );
+  const codeMode = manualCode || automaticCode;
 
   // The guess reads the whole draft (it tries it as JSON, among others), so it
   // may trail the typing by a frame; the fence takes a fresh one on sending.
@@ -53,10 +59,10 @@ export function useComposerDraft({ chips, onSubmit, onSent, locale, t }: Options
    * is what the message limit counts. Null outside code mode.
    */
   const codeRoom = codeMode
-    ? MESSAGE_MAX_LENGTH - fencedCode(codeHighlight, text.trim()).length
+    ? CODE_MESSAGE_MAX_LENGTH - fencedCode(codeHighlight, text).length
     : null;
 
-  const hasPayload = text.trim().length > 0 || chips.length > 0;
+  const hasPayload = authored.length > 0 || chips.length > 0;
   const attachmentsBlocked = chips.some((chip) => chip.status !== "ready");
   const canSend = hasPayload && !attachmentsBlocked && !sending;
 
@@ -70,16 +76,15 @@ export function useComposerDraft({ chips, onSubmit, onSent, locale, t }: Options
     setSendError(null);
     try {
       const draft = text;
-      const authored = draft.trim();
       // An automatic choice is written into the fence, so every reader sees
       // the colours the author saw instead of guessing again.
       const language =
-        codeLanguage === AUTO_LANGUAGE ? guessLanguage(authored) : codeLanguage;
-      const body = codeMode ? fencedCode(language, authored) : authored;
-      if (body.length > MESSAGE_MAX_LENGTH) {
+        codeMode && codeLanguage === AUTO_LANGUAGE ? guessLanguage(draft) : codeHighlight;
+      const body = codeMode && authored.length > 0 ? fencedCode(language, draft) : authored;
+      if (body.length > CODE_MESSAGE_MAX_LENGTH) {
         setSendError(
           t("composer.codeTooLong", {
-            count: MESSAGE_MAX_LENGTH.toLocaleString(locale === "en" ? "en-GB" : "pl-PL"),
+            count: CODE_MESSAGE_MAX_LENGTH.toLocaleString(locale === "en" ? "en-GB" : "pl-PL"),
           }),
         );
         return;
@@ -108,6 +113,7 @@ export function useComposerDraft({ chips, onSubmit, onSent, locale, t }: Options
     sendError,
     clearSendError: () => setSendError(null),
     codeMode,
+    automaticCode,
     setCodeMode,
     codeLanguage,
     setCodeLanguage,
