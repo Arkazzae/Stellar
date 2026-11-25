@@ -1,5 +1,5 @@
-//! Opening the connection: resolving the name, judging every address,
-//! connecting to one that passed, and the TLS handshake.
+//! Resolving and judging addresses, establishing TCP connections, and
+//! negotiating TLS.
 //!
 //! The socket is opened to the very address that was judged. The name is
 //! never handed to the operating system a second time, so an answer that
@@ -11,7 +11,6 @@ use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use std::time::Duration;
 
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::TcpStream;
@@ -151,44 +150,32 @@ pub(crate) async fn allowed_addresses(
     Ok(allowed)
 }
 
-/// Resolves, judges and connects within `limit`, then does the TLS
-/// handshake for an `https` URL, inside the same limit.
+/// Connects to a validated address and returns it with the stream. The
+/// caller enforces the deadline across DNS, TCP and the TLS handshake.
 pub(crate) async fn open(
     url: &Url,
-    policy: AddressPolicy,
-    resolver: &dyn Resolve,
+    addresses: &[IpAddr],
     tls: Option<&TlsConnector>,
-    limit: Duration,
-) -> Result<Stream> {
-    let host = url.bare_host().to_owned();
-    let deadline = Instant::now() + limit;
-    let work = async {
-        let addresses = allowed_addresses(url, policy, resolver).await?;
-        let tcp = connect_any(&host, &addresses, url.port(), deadline).await?;
-        match tls {
-            None => Ok(Stream::Plain(tcp)),
-            Some(connector) => {
-                let name = rustls::pki_types::ServerName::try_from(host.clone()).map_err(|_| {
-                    Error::Tls {
-                        host: host.clone(),
-                        message: "the host is not a valid server name".into(),
-                    }
-                })?;
-                let stream = connector
-                    .connect(name, tcp)
-                    .await
-                    .map_err(|error| Error::Tls {
-                        host: host.clone(),
-                        message: tls_message(&error),
-                    })?;
-                Ok(Stream::Tls(Box::new(stream)))
-            }
-        }
+    deadline: Instant,
+) -> Result<(Stream, IpAddr)> {
+    let host = url.bare_host();
+    let (tcp, peer) = connect_any(host, addresses, url.port(), deadline).await?;
+    let Some(connector) = tls else {
+        return Ok((Stream::Plain(tcp), peer));
     };
-    match tokio::time::timeout_at(deadline, work).await {
-        Ok(result) => result,
-        Err(_) => Err(Error::ConnectTimeout { host }),
-    }
+    let name =
+        rustls::pki_types::ServerName::try_from(host.to_owned()).map_err(|_| Error::Tls {
+            host: host.to_owned(),
+            message: "the host is not a valid server name".into(),
+        })?;
+    let stream = connector
+        .connect(name, tcp)
+        .await
+        .map_err(|error| Error::Tls {
+            host: host.to_owned(),
+            message: tls_message(&error),
+        })?;
+    Ok((Stream::Tls(Box::new(stream)), peer))
 }
 
 /// What a failed handshake says, in words of this crate's own: nothing
@@ -230,13 +217,13 @@ async fn connect_any(
     addresses: &[IpAddr],
     port: u16,
     deadline: Instant,
-) -> Result<TcpStream> {
+) -> Result<(TcpStream, IpAddr)> {
     dial_any(host, addresses, deadline, |address| async move {
         let stream = TcpStream::connect(SocketAddr::new(address, port)).await?;
         // A request is written in one go and the answer waited for:
         // Nagle's delay would only add to the wait.
         let _ = stream.set_nodelay(true);
-        Ok(stream)
+        Ok((stream, address))
     })
     .await
 }
@@ -299,6 +286,7 @@ pub(crate) fn connector(config: Arc<rustls::ClientConfig>) -> TlsConnector {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     fn addresses(count: usize) -> Vec<IpAddr> {
         (1..=count)

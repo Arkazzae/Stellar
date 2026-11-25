@@ -66,7 +66,7 @@ async fn sends_the_request_the_way_a_server_expects_it() {
     assert_eq!(seen.header("user-agent"), Some("Test/1"));
     assert_eq!(seen.header("accept"), Some("application/json"));
     assert_eq!(seen.header("accept-encoding"), Some("gzip, deflate"));
-    assert_eq!(seen.header("connection"), Some("close"));
+    assert_eq!(seen.header("connection"), None);
     assert_eq!(seen.header("cookie"), None);
     assert_eq!(seen.header("content-length"), None);
 }
