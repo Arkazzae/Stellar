@@ -6,6 +6,8 @@
 //! aimed at somebody as a load generator. The message is on screen the moment
 //! it is sent, and its cards arrive underneath a moment later.
 
+use std::time::Duration;
+
 use rusqlite::OptionalExtension;
 use stellarr_embeds::Fetcher;
 use tracing::warn;
@@ -15,6 +17,7 @@ use super::queue::PreviewRequest;
 use crate::background::{Stop, Worker};
 use crate::database::DbError;
 use crate::events::Event;
+use crate::http::AttemptLimiter;
 use crate::messages::dto::MessageEmbedsDto;
 use crate::permissions::visibility;
 use crate::state::AppState;
@@ -38,6 +41,7 @@ pub fn workers_with(fetcher: Fetcher) -> Vec<Worker> {
 }
 
 async fn run(state: AppState, stop: Stop, fetcher: Fetcher) {
+    let unfurls = AttemptLimiter::new(20, Duration::from_secs(60));
     loop {
         let request = tokio::select! {
             () = stop.stopped() => return,
@@ -45,7 +49,7 @@ async fn run(state: AppState, stop: Stop, fetcher: Fetcher) {
         };
         // One bad link must not take the worker down, or every later message
         // would silently lose its previews.
-        if let Err(error) = process(&state, &fetcher, request).await {
+        if let Err(error) = process(&state, &fetcher, request, &unfurls).await {
             warn!("the previews of a message could not be built: {error}");
         }
     }
@@ -55,8 +59,9 @@ async fn process(
     state: &AppState,
     fetcher: &Fetcher,
     request: PreviewRequest,
+    unfurls: &AttemptLimiter,
 ) -> Result<(), DbError> {
-    let embeds = builder::build(state, fetcher, request.message).await?;
+    let embeds = builder::build(state, fetcher, request.message, unfurls).await?;
     let channel = request.channel;
     let audience = state
         .database()

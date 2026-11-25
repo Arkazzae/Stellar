@@ -323,6 +323,9 @@ pub(crate) struct Session {
     pub transport: Transport,
     pub negotiation: Negotiation,
     pub published: Vec<Published>,
+    /// Counts outgoing sections by publishing account, including retired
+    /// sections. A publisher reconnecting cannot reset a receiver's budget.
+    out_publications: HashMap<String, usize>,
     pub outs: Vec<OutSection>,
     /// The mids of this receiver's sections it asked to be sent. A section
     /// that is not listed is negotiated and named in the directory, but
@@ -389,6 +392,7 @@ impl Session {
             },
             negotiation: Negotiation::default(),
             published: Vec::new(),
+            out_publications: HashMap::new(),
             outs: Vec::new(),
             subscriptions: HashSet::new(),
             subscription_order: Vec::new(),
@@ -452,6 +456,21 @@ impl Session {
 
         let keyframes = self.published.iter().filter_map(|t| t.keyframe.due());
         candidates.into_iter().flatten().chain(keyframes).min()
+    }
+
+    pub fn can_add_publications(&self, publisher: &str, count: usize) -> bool {
+        self.out_publications.get(publisher).copied().unwrap_or(0) + count
+            <= super::MAX_PUBLICATIONS
+            && self.out_publications.values().sum::<usize>() + count <= super::MAX_OUT_SECTIONS
+    }
+
+    pub fn count_publications(&mut self, publisher: &str, count: usize) {
+        if count > 0 {
+            *self
+                .out_publications
+                .entry(publisher.to_string())
+                .or_insert(0) += count;
+        }
     }
 
     pub fn add_out(&mut self, source: TrackKey, kind: MediaKind) -> bool {

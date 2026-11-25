@@ -24,16 +24,27 @@ fail() {
   exit 1
 }
 
-# Prints the secret stored under secrets/<name>, creating it on first use. The
-# files are read back on every later start, so they must never be renamed.
-read_or_create_secret() {
-  local file="$data_root/secrets/$1" pending
-  if [[ ! -s "$file" ]]; then
-    pending="$(mktemp "$file.XXXXXX")" # mode 600
-    openssl rand -hex 32 > "$pending"
-    mv -f "$pending" "$file"
-  fi
-  tr -d '\r\n' < "$file"
+write_trusted_proxies() {
+  local entry ip prefix width
+  local -a proxies=()
+  read -r -a proxies <<< "$(printf '%s' "${STELLARR_TRUSTED_PROXIES:-}" | tr ',[:space:]' ' ')"
+  for entry in "${proxies[@]}"; do
+    ip="${entry%%/*}"
+    if is_ipv4_address "$ip"; then
+      width=32
+    elif is_ipv6_address "$ip"; then
+      width=128
+    else
+      fail "STELLARR_TRUSTED_PROXIES must list IP addresses or CIDR ranges."
+    fi
+    if [[ "$entry" == */* ]]; then
+      prefix="${entry#*/}"
+      if [[ ! "$prefix" =~ ^[0-9]{1,3}$ ]] || (( 10#$prefix < 1 || 10#$prefix > width )); then
+        fail "STELLARR_TRUSTED_PROXIES contains an invalid CIDR prefix."
+      fi
+    fi
+    printf '%s 1;\n' "$entry"
+  done
 }
 
 # Prints the external IPv4 address coturn and the media server should
@@ -75,6 +86,7 @@ write_instance_language() {
 # The settings, each with the image's default. A value that cannot be used
 # stops the container here, before anything is written.
 read_settings || exit 1
+trusted_proxy_rules="$(write_trusted_proxies)"
 public_ip="$(resolve_public_ip)"
 # A numeric domain can be used as the host candidate without DNS. Local
 # installs need the published loopback address instead of the Docker IP.
@@ -87,6 +99,22 @@ if [[ -z "$media_public_ip" ]]; then
   fi
 fi
 
+# Migrate existing volumes before any operation that touches instance data.
+# Physical traversal and non-dereferencing chown leave symlinks alone.
+mkdir -p "$data_root"
+private_dirs=("$data_root"/{db,files,keys,logs,secrets})
+mounted_tls=()
+if [[ ! -L "$data_root/tls" ]] && mountpoint -q -- "$data_root/tls"; then
+  mounted_tls=(-path "$data_root/tls" -prune -o)
+else
+  private_dirs+=("$data_root/tls")
+fi
+find -P "$data_root" -xdev "${mounted_tls[@]}" \( -type d -o -type f \) ! -user stellarr \
+  -exec chown -h stellarr:stellarr -- {} +
+run_as_api() {
+  setpriv --reuid=stellarr --regid=stellarr --clear-groups -- "$@"
+}
+
 # A backup staged with `stellarr backup restore` replaces the instance's data
 # here, before any service starts and before the secrets below are read, so
 # every service sees the restored instance. An archive the restore refuses
@@ -98,7 +126,7 @@ restore_dir="$data_root/restore"
 if [[ -f "$restore_dir/staged.zip" ]]; then
   echo "Restoring the backup staged in $restore_dir/staged.zip." >&2
   restore_status=0
-  /usr/local/bin/stellarr --data-root "$data_root" backup apply --yes || restore_status=$?
+  run_as_api /usr/local/bin/stellarr --data-root "$data_root" backup apply --yes || restore_status=$?
   case "$restore_status" in
     0) ;;
     4) echo "The staged backup was not restored, and the instance starts with its previous data; see $restore_dir/last-restore.json." >&2 ;;
@@ -106,13 +134,20 @@ if [[ -f "$restore_dir/staged.zip" ]]; then
   esac
 fi
 
-mkdir -p "$data_root"/{db,files,keys,logs,secrets,tls} /run/nginx
+run_as_api mkdir -p "${private_dirs[@]}"
+run_as_api chmod 700 "$data_root" "${private_dirs[@]}"
+mkdir -p /run/nginx
 
 # The secrets the API shares with coturn and the media server are the ones in
 # the data volume, never a setting: the exports below replace any value the
 # environment brings under the names the services read.
 
-media_control_secret="$(read_or_create_secret media-control-secret)"
+read_instance_secret() {
+  # shellcheck disable=SC2016 # the child shell needs its own positional arguments
+  run_as_api bash -e -c 'source /usr/local/lib/stellarr/settings.sh; read_or_create_secret "$1" "$2"' \
+    read-instance-secret "$data_root" "$1"
+}
+media_control_secret="$(read_instance_secret media-control-secret)"
 
 # What the API, the TLS script and the media server read, as resolved above.
 export STELLARR_DATA_ROOT="$data_root"
@@ -126,7 +161,7 @@ export STELLARR_TURNS_ENABLED="$turns_enabled"
 export Rtc__MediaControlUrl="http://127.0.0.1:5200"
 export Rtc__MediaControlSecret="$media_control_secret"
 if [[ "$turn_enabled" == "true" ]]; then
-  turn_secret="$(read_or_create_secret turn-shared-secret)"
+  turn_secret="$(read_instance_secret turn-shared-secret)"
   export Rtc__TurnSharedSecret="$turn_secret"
 else
   unset Rtc__TurnSharedSecret
@@ -190,16 +225,30 @@ if [[ "$turn_enabled" == "true" ]]; then
     external_ip_line="external-ip=$public_ip"
   fi
 
-  sed \
-    -e "s|__REALM__|$public_host|g" \
-    -e "s|__STATIC_AUTH_SECRET__|$turn_secret|g" \
-    -e "s|__EXTERNAL_IP_LINE__|$external_ip_line|g" \
-    -e "s|__TURN_RELAY_MIN__|$turn_relay_min|g" \
-    -e "s|__TURN_RELAY_MAX__|$turn_relay_max|g" \
-    -e "s|__TURN_TCP_LINE__|$turn_tcp_line|g" \
-    -e "s|__TURN_TLS_LINE__|$turn_tls_line|g" \
-    -e "s|__TURN_DTLS_LINE__|$turn_dtls_line|g" \
-    /etc/turnserver.conf.template > /etc/turnserver.conf
+  # Media listens on all local IPv4 interfaces. Never extend this list to
+  # an address merely because it was advertised by the operator.
+  read -r -a local_addresses <<< "$(hostname -I)"
+  turn_peers=()
+  for ip in "${local_addresses[@]}"; do
+    if is_ipv4_address "$ip" && [[ "$ip" != 127.* && "$ip" != 0.0.0.0 ]]; then
+      turn_peers+=("allowed-peer-ip=$ip")
+    fi
+  done
+  (( ${#turn_peers[@]} > 0 )) || fail "TURN needs a non-loopback local IPv4 address for the media server."
+
+  turn_config="$(</etc/turnserver.conf.template)"
+  turn_config="${turn_config//__REALM__/$public_host}"
+  turn_config="${turn_config//__STATIC_AUTH_SECRET__/$turn_secret}"
+  turn_config="${turn_config//__EXTERNAL_IP_LINE__/$external_ip_line}"
+  turn_config="${turn_config//__TURN_RELAY_MIN__/$turn_relay_min}"
+  turn_config="${turn_config//__TURN_RELAY_MAX__/$turn_relay_max}"
+  turn_config="${turn_config//__TURN_TCP_LINE__/$turn_tcp_line}"
+  turn_config="${turn_config//__TURN_TLS_LINE__/$turn_tls_line}"
+  turn_config="${turn_config//__TURN_DTLS_LINE__/$turn_dtls_line}"
+  turn_pending="$(mktemp /etc/turnserver.conf.XXXXXX)"
+  printf '%s\n' "$turn_config" "${turn_peers[@]}" > "$turn_pending"
+  chown turnserver:turnserver "$turn_pending"
+  mv -f "$turn_pending" /etc/turnserver.conf
 fi
 
 write_instance_language /run/stellarr/stellarr-instance.js
@@ -208,10 +257,20 @@ public_https_suffix=""
 if (( https_port != 443 )); then
   public_https_suffix=":$https_port"
 fi
-sed -e "s|__PUBLIC_HTTPS_SUFFIX__|$public_https_suffix|g" \
-  /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
+# shellcheck disable=SC2016 # nginx variable
+redirect_host="${domain:-\$host}"
+[[ "$domain" != *:* ]] || redirect_host="[$domain]"
+nginx_config="$(</etc/nginx/nginx.conf.template)"
+nginx_config="${nginx_config//__REDIRECT_HOST__/$redirect_host}"
+nginx_config="${nginx_config//__PUBLIC_HTTPS_SUFFIX__/$public_https_suffix}"
+script_hashes="$(</etc/nginx/stellarr-csp-script-hashes)"
+[[ "$script_hashes" =~ ^(\'sha256-[A-Za-z0-9+/]{43}=\'\ ?)*$ ]] ||
+  fail "The web client's CSP script hashes are invalid."
+nginx_config="${nginx_config//__SCRIPT_HASHES__/$script_hashes}"
+printf '%s\n' "$trusted_proxy_rules" > /etc/nginx/stellarr-trusted-proxies.conf
+printf '%s\n' "$nginx_config" > /etc/nginx/nginx.conf
 
 # The services and how each is started, checked and stopped are compiled into
-# stellarr-init (init/src/services.rs). They inherit the environment exported
-# above.
+# stellarr-init (init/src/services.rs), which passes each service its settings.
+umask 077
 exec /usr/local/bin/stellarr-init run

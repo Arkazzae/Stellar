@@ -1,3 +1,5 @@
+import { safeAssetUrl, safeAttachmentUrl, safeHttpUrl } from "@/lib/format/safeUrl";
+
 import { ApiError } from "./errors";
 import {
   definedField,
@@ -41,15 +43,15 @@ export function parseAttachment(value: unknown, path: string): Attachment {
   const record = expectRecord(value, path);
   return {
     id: expectString(record, "id", path),
-    url: expectString(record, "url", path),
+    url: safeAttachmentUrl(expectString(record, "url", path)) ?? "",
     name: optionalString(record, "name") ?? "attachment",
     contentType: optionalString(record, "contentType") ?? "application/octet-stream",
     size: optionalNumber(record, "size") ?? 0,
     ...definedField("width", optionalNumber(record, "width")),
     ...definedField("height", optionalNumber(record, "height")),
     ...definedField("durationSeconds", optionalNumber(record, "durationSeconds")),
-    ...definedField("posterUrl", optionalString(record, "posterUrl")),
-    ...definedField("previewUrl", optionalString(record, "previewUrl")),
+    ...definedField("posterUrl", safeAssetUrl(optionalString(record, "posterUrl"))),
+    ...definedField("previewUrl", safeAssetUrl(optionalString(record, "previewUrl"))),
     ...definedField("placeholder", optionalString(record, "placeholder")),
     ...(record["isVoiceMessage"] === true ? { isVoiceMessage: true } : {}),
   };
@@ -59,7 +61,7 @@ function parseEmbed(value: unknown, path: string): MessageEmbed {
   const record = expectRecord(value, path);
   return {
     id: expectString(record, "id", path),
-    url: expectString(record, "url", path),
+    url: safeHttpUrl(expectString(record, "url", path)) ?? "",
     kind: record["kind"] === "video" ? "video" : "link",
     provider: optionalString(record, "provider") ?? "",
     domain: optionalString(record, "domain") ?? "",
@@ -67,7 +69,7 @@ function parseEmbed(value: unknown, path: string): MessageEmbed {
     ...definedField("startSeconds", optionalNumber(record, "startSeconds")),
     ...definedField("title", optionalString(record, "title")),
     ...definedField("description", optionalString(record, "description")),
-    ...definedField("thumbnailUrl", optionalString(record, "thumbnailUrl")),
+    ...definedField("thumbnailUrl", safeAssetUrl(optionalString(record, "thumbnailUrl"))),
   };
 }
 
@@ -79,7 +81,7 @@ export function parseEmbedsUpdate(
   return {
     messageId: expectString(record, "messageId", path),
     channelId: expectString(record, "channelId", path),
-    embeds: optionalList(record["embeds"], `${path}.embeds[]`, parseEmbed),
+    embeds: optionalList(record["embeds"], `${path}.embeds[]`, parseEmbed).filter((embed) => embed.url !== ""),
   };
 }
 
@@ -162,7 +164,7 @@ export function parseMessage(value: unknown, path = "message"): Message {
     attachments: optionalList(record["attachments"], `${path}.attachments[]`, parseAttachment),
     // Absent on a server that predates unfurling, and on every message without
     // links, so an empty list is the normal case.
-    embeds: optionalList(record["embeds"], `${path}.embeds[]`, parseEmbed),
+    embeds: optionalList(record["embeds"], `${path}.embeds[]`, parseEmbed).filter((embed) => embed.url !== ""),
     reactions: optionalList(record["reactions"], `${path}.reactions[]`, parseReaction),
     createdAt: optionalString(record, "createdAt") ?? new Date(0).toISOString(),
     ...(replyTo === undefined ? {} : { replyTo }),

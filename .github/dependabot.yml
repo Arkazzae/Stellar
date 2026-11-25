@@ -7,7 +7,11 @@ version: 2
 # repository's commit format.
 updates:
   - package-ecosystem: cargo
-    directory: /api
+    directories:
+      - /api
+      - /media
+      - /init
+      - /init/installer
     schedule:
       interval: weekly
       day: monday
@@ -44,7 +48,11 @@ updates:
         versions: [">=7"]
 
   - package-ecosystem: npm
-    directory: /docs
+    directories:
+      - /docs
+      - /website
+      - /deploy/cloudflare/backup-relay
+      - /media/smoke
     schedule:
       interval: weekly
       day: monday

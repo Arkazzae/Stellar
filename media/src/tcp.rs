@@ -3,11 +3,11 @@
 
 use std::collections::HashMap;
 use std::io;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::time::{Duration, Instant};
 
 use str0m::net::{DatagramSend, Protocol};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::{AbortHandle, JoinError, JoinSet};
@@ -18,9 +18,11 @@ use crate::core::{Core, Endpoint, MAX_DATAGRAM, Outgoing, SessionKey};
 
 const MAX_CONNECTIONS: usize = 512;
 const MAX_PENDING: usize = 64;
+const MAX_CONNECTIONS_PER_IP: usize = 8;
+const MAX_PENDING_PER_IP: usize = 4;
 const RECEIVE_QUEUE: usize = 256;
 const SEND_QUEUE: usize = 64;
-const AUTH_TIMEOUT: Duration = Duration::from_secs(5);
+const AUTH_TIMEOUT: Duration = Duration::from_secs(2);
 const READ_TIMEOUT: Duration = Duration::from_secs(45);
 const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 const ACCEPT_RETRY: Duration = Duration::from_millis(100);
@@ -50,10 +52,17 @@ struct Peer {
     abort: AbortHandle,
 }
 
+#[derive(Default)]
+struct PeerCounts {
+    total: usize,
+    pending: usize,
+}
+
 pub(crate) struct TcpMedia {
     listener: TcpListener,
     candidates: Vec<SocketAddr>,
     peers: HashMap<Endpoint, Peer>,
+    per_ip: HashMap<IpAddr, PeerCounts>,
     pending: usize,
     next_generation: u64,
     next_accept: tokio::time::Instant,
@@ -69,6 +78,7 @@ impl TcpMedia {
             listener,
             candidates,
             peers: HashMap::new(),
+            per_ip: HashMap::new(),
             pending: 0,
             next_generation: 0,
             next_accept: tokio::time::Instant::now(),
@@ -121,6 +131,12 @@ impl TcpMedia {
     }
 
     fn accept(&mut self, stream: TcpStream, remote: SocketAddr) {
+        let ip = remote.ip().to_canonical();
+        if self.per_ip.get(&ip).is_some_and(|count| {
+            count.total >= MAX_CONNECTIONS_PER_IP || count.pending >= MAX_PENDING_PER_IP
+        }) {
+            return;
+        }
         let Ok(local) = stream.local_addr() else {
             return;
         };
@@ -164,6 +180,9 @@ impl TcpMedia {
             },
         );
         self.pending += 1;
+        let count = self.per_ip.entry(ip).or_default();
+        count.total += 1;
+        count.pending += 1;
     }
 
     fn receive(&mut self, core: &mut Core, frame: Frame) {
@@ -185,6 +204,10 @@ impl TcpMedia {
             {
                 peer.session = Some(session);
                 self.pending -= 1;
+                self.per_ip
+                    .get_mut(&frame.socket.endpoint.remote.ip().to_canonical())
+                    .expect("every peer has a reservation")
+                    .pending -= 1;
             }
             let _ = authorize.send(session.is_some());
         }
@@ -243,8 +266,18 @@ impl TcpMedia {
             .remove(&socket.endpoint)
             .expect("socket still present");
         peer.abort.abort();
+        let ip = socket.endpoint.remote.ip().to_canonical();
+        let count = self
+            .per_ip
+            .get_mut(&ip)
+            .expect("every peer has a reservation");
+        count.total -= 1;
         if peer.session.is_none() {
             self.pending -= 1;
+            count.pending -= 1;
+        }
+        if count.total == 0 {
+            self.per_ip.remove(&ip);
         }
         // The Rtc can still nominate another path. ICE's own timers and
         // checks decide when there is no viable connection left.
@@ -257,7 +290,8 @@ async fn run(
     frames: mpsc::Sender<Frame>,
     mut outgoing: mpsc::Receiver<DatagramSend>,
 ) -> SocketId {
-    let (mut rx, mut tx) = stream.split();
+    let (rx, mut tx) = stream.split();
+    let mut rx = BufReader::new(rx);
     let result = tokio::select! {
         result = receive_frames(&mut rx, socket, &frames) => result,
         result = send_frames(&mut tx, &mut outgoing) => result,
@@ -274,7 +308,7 @@ async fn receive_frames(
     frames: &mpsc::Sender<Frame>,
 ) -> io::Result<()> {
     let allowed = timeout(AUTH_TIMEOUT, async {
-        let data = read_frame(rx).await?;
+        let data = read_frame(rx, false).await?;
         let (approve, decision) = oneshot::channel();
         frames
             .send(Frame {
@@ -292,7 +326,7 @@ async fn receive_frames(
     }
 
     loop {
-        let data = timeout(READ_TIMEOUT, read_frame(rx)).await??;
+        let data = timeout(READ_TIMEOUT, read_frame(rx, true)).await??;
         frames
             .send(Frame {
                 socket,
@@ -304,10 +338,16 @@ async fn receive_frames(
     }
 }
 
-async fn read_frame(rx: &mut (impl AsyncRead + Unpin)) -> io::Result<Vec<u8>> {
+async fn read_frame(rx: &mut (impl AsyncRead + Unpin), authenticated: bool) -> io::Result<Vec<u8>> {
     loop {
         let len = usize::from(rx.read_u16().await?);
         if len == 0 {
+            if !authenticated {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "null frame before ICE authentication",
+                ));
+            }
             // RFC 4571 null packets carry no media.
             continue;
         }
@@ -353,13 +393,23 @@ mod tests {
                 tokio::task::yield_now().await;
             }
         });
-        assert_eq!(read_frame(&mut rx).await.unwrap(), [11, 22, 33]);
-        assert_eq!(read_frame(&mut rx).await.unwrap(), [44]);
+        assert_eq!(read_frame(&mut rx, true).await.unwrap(), [11, 22, 33]);
+        assert_eq!(read_frame(&mut rx, true).await.unwrap(), [44]);
         assert_eq!(
-            read_frame(&mut rx).await.unwrap_err().kind(),
+            read_frame(&mut rx, true).await.unwrap_err().kind(),
             io::ErrorKind::UnexpectedEof
         );
         writer.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn rejects_null_frames_before_authentication() {
+        let (mut tx, mut rx) = duplex(8);
+        tx.write_all(&[0, 0, 0, 1, 42]).await.unwrap();
+        assert_eq!(
+            read_frame(&mut rx, false).await.unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
     }
 
     #[tokio::test]
@@ -369,13 +419,13 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            read_frame(&mut rx).await.unwrap_err().kind(),
+            read_frame(&mut rx, true).await.unwrap_err().kind(),
             io::ErrorKind::InvalidData
         );
         tx.write_all(&[0, 2, 1]).await.unwrap();
         drop(tx);
         assert_eq!(
-            read_frame(&mut rx).await.unwrap_err().kind(),
+            read_frame(&mut rx, true).await.unwrap_err().kind(),
             io::ErrorKind::UnexpectedEof
         );
     }

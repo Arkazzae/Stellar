@@ -53,33 +53,36 @@ async function putObject(request: Request, env: Env, key: string): Promise<Respo
   if (!digest || !/^[0-9a-f]{64}$/.test(digest)) return problem(400, "invalid-sha256");
   if (!request.body) return problem(400, "missing-body");
 
-  // A retried upload with the same archive is already complete. Never
-  // overwrite an object with different content: that needs an operator.
   const existing = await env.BACKUPS.head(key);
-  if (existing) {
-    if (existing.customMetadata?.sha256 === digest) {
-      return json({ status: "unchanged", key, size: existing.size }, 200);
-    }
-    return problem(409, "object-exists-with-different-metadata");
-  }
+  if (existing) return existingObject(existing, key, digest);
 
   const object = await env.BACKUPS.put(key, request.body, {
     httpMetadata: { contentType: "application/zip" },
-    customMetadata: { sha256: digest },
+    sha256: digest,
+    onlyIf: { etagDoesNotMatch: "*" },
   });
-  return json({ status: "created", key, size: object.size }, 201);
+  if (object) return json({ status: "created", key, size: object.size }, 201);
+  return existingObject(await env.BACKUPS.head(key), key, digest);
+}
+
+function verifiedDigest(object: R2Object): string | null {
+  const bytes = object.checksums.sha256;
+  return bytes ? Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("") : null;
+}
+
+function existingObject(object: R2Object | null, key: string, digest: string): Response {
+  return object && verifiedDigest(object) === digest
+    ? json({ status: "unchanged", key, size: object.size }, 200)
+    : problem(409, "object-exists-with-different-metadata");
 }
 
 async function headObject(env: Env, key: string): Promise<Response> {
   const object = await env.BACKUPS.head(key);
   if (!object) return problem(404, "not-found");
-  return new Response(null, {
-    headers: {
-      [SIZE_HEADER]: String(object.size),
-      [SHA_HEADER]: object.customMetadata?.sha256 ?? "",
-      "Cache-Control": "no-store",
-    },
-  });
+  const headers = new Headers({ [SIZE_HEADER]: String(object.size), "Cache-Control": "no-store" });
+  const digest = verifiedDigest(object);
+  if (digest !== null) headers.set(SHA_HEADER, digest);
+  return new Response(null, { headers });
 }
 
 async function getObject(env: Env, key: string): Promise<Response> {
@@ -89,7 +92,8 @@ async function getObject(env: Env, key: string): Promise<Response> {
   object.writeHttpMetadata(headers);
   headers.set("etag", object.httpEtag);
   headers.set("Content-Length", String(object.size));
-  headers.set(SHA_HEADER, object.customMetadata?.sha256 ?? "");
+  const digest = verifiedDigest(object);
+  if (digest !== null) headers.set(SHA_HEADER, digest);
   headers.set("Cache-Control", "no-store");
   return new Response(object.body, { headers });
 }

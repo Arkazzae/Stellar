@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 
+import { safeAttachmentUrl, safeHttpUrl } from "@/lib/format/safeUrl";
 import type { ViewerTarget } from "@/components/room/attachments/MediaViewer";
 import type { AttachmentCallbacks } from "@/lib/messages/parts";
 
@@ -37,23 +38,33 @@ export function useAttachmentViewer(openEncrypted?: OpenEncrypted) {
 
   const attachments = useMemo<AttachmentCallbacks>(
     () => ({
-      onOpenImage: (images, index) => setTarget({ kind: "image", images, index }),
+      onOpenImage: (images, index) => {
+        const selected = images[index];
+        const safeImages = images.filter((image) => safeAttachmentUrl(image.src) !== undefined);
+        const selectedIndex = selected === undefined ? -1 : safeImages.indexOf(selected);
+        if (selectedIndex < 0) return;
+        const gallery = safeImages.map((image) => ({ ...image, preview: safeAttachmentUrl(image.preview) }));
+        setTarget({ kind: "image", images: gallery, index: selectedIndex });
+      },
       resolveOriginal: (src) => {
-        if (!src.startsWith(ENCRYPTED_LINK)) return Promise.resolve(src);
-        return Promise.resolve(openEncrypted?.(src)).then((opened) => opened?.url ?? null);
+        const url = safeAttachmentUrl(src);
+        if (url === undefined || !url.startsWith(ENCRYPTED_LINK)) return Promise.resolve(url ?? null);
+        return Promise.resolve(openEncrypted?.(url)).then((opened) => safeAttachmentUrl(opened?.url) ?? null);
       },
       onPlayVideo: (part) => {
         const show = (src: string) =>
           setTarget({
             kind: "video",
             src,
-            ...(part.thumb === undefined ? {} : { poster: part.thumb }),
+            poster: safeAttachmentUrl(part.thumb),
             ...(part.name === undefined ? {} : { name: part.name }),
           });
-        const url = part.url ?? "";
+        const url = safeAttachmentUrl(part.url);
+        if (url === undefined) return;
         if (url.startsWith(ENCRYPTED_LINK)) {
           void openEncrypted?.(url).then((opened) => {
-            if (opened !== null) show(opened.url);
+            const src = safeAttachmentUrl(opened?.url);
+            if (src !== undefined) show(src);
           });
           return;
         }
@@ -62,13 +73,16 @@ export function useAttachmentViewer(openEncrypted?: OpenEncrypted) {
       // An embed card and a file are links, and links open where links open;
       // neither is worth a modal.
       onOpenEmbed: (part) => {
-        if (part.url !== undefined) window.open(part.url, "_blank", "noopener");
+        const url = safeHttpUrl(part.url);
+        if (url !== undefined) window.open(url, "_blank", "noopener,noreferrer");
       },
       onDownloadFile: (part) => {
-        const url = part.url ?? "";
+        const url = safeAttachmentUrl(part.url);
+        if (url === undefined) return;
         if (url.startsWith(ENCRYPTED_LINK)) {
           void openEncrypted?.(url).then((opened) => {
-            if (opened !== null) save(opened.url, part.name);
+            const src = safeAttachmentUrl(opened?.url);
+            if (src?.startsWith("blob:")) save(src, part.name);
           });
           return;
         }
@@ -76,7 +90,7 @@ export function useAttachmentViewer(openEncrypted?: OpenEncrypted) {
           save(url, part.name);
           return;
         }
-        if (url !== "") window.open(url, "_blank", "noopener");
+        window.open(url, "_blank", "noopener,noreferrer");
       },
     }),
     [openEncrypted],

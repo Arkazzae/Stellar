@@ -31,6 +31,69 @@ is_ipv4_address() {
   done
 }
 
+is_ipv6_address() {
+  local ip="$1" tail left right
+  local group='[0-9A-Fa-f]{1,4}' groups
+  [[ "$ip" == *:* ]] || return 1
+  if [[ "$ip" == *.* ]]; then
+    tail="${ip##*:}"
+    is_ipv4_address "$tail" || return 1
+    ip="${ip%:*}:0:0"
+  fi
+  groups="$group(:$group)*"
+  if [[ "$ip" == *::* ]]; then
+    left="${ip%%::*}"
+    right="${ip#*::}"
+    [[ -z "$left" || "$left" =~ ^$groups$ ]] || return 1
+    [[ -z "$right" || "$right" =~ ^$groups$ ]] || return 1
+    local colons="${ip//[^:]/}"
+    # An edge compression contributes one separator in addition to the
+    # seven needed by eight explicit groups.
+    if [[ -n "$left" && -n "$right" ]]; then
+      (( ${#colons} <= 7 ))
+    else
+      (( ${#colons} <= 8 ))
+    fi
+  else
+    [[ "$ip" =~ ^$group(:$group){7}$ ]]
+  fi
+}
+
+require_public_host() {
+  local LC_ALL=C host="$1"
+  local label='[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?'
+  if [[ "$host" == *:* ]]; then
+    is_ipv6_address "$host" && return 0
+  elif [[ "$host" =~ ^[0-9]+(\.[0-9]+){3}$ ]]; then
+    is_ipv4_address "$host" && return 0
+  elif (( ${#host} <= 253 )) && [[ "$host" =~ ^$label(\.$label)*\.?$ ]]; then
+    return 0
+  fi
+  echo "STELLARR_DOMAIN must be a DNS hostname or an IP address without a port." >&2
+  return 1
+}
+
+# Prints a persistent secret, creating it with mode 0600 on first use.
+read_or_create_secret() {
+  local name="$2" file="$1/secrets/$2" pending value
+  if [[ ! -e "$file" ]]; then
+    pending="$(mktemp "$file.XXXXXX")"
+    openssl rand -hex 32 > "$pending"
+    mv -f "$pending" "$file"
+  fi
+  # A successful read before EOF means the file contained a NUL.
+  if [[ -L "$file" || ! -f "$file" ]] || IFS= read -r -d '' value < "$file"; then
+    value=''
+  fi
+  value="${value%$'\n'}"
+  value="${value%$'\r'}"
+  if [[ ! "$value" =~ ^[0-9a-fA-F]{64}$ ]]; then
+    echo "Secret $name must contain 64 hexadecimal digits." >&2
+    return 1
+  fi
+  printf '%s' "$value"
+}
+
 # Each check prints why it refuses the value of $1 and returns 1.
 require_boolean() {
   case "$2" in
@@ -76,6 +139,7 @@ read_settings() {
   # localhost and the instance has no public address.
   domain="$(or_default "${STELLARR_DOMAIN:-}")"
   public_host="${domain:-localhost}"
+  require_public_host "$public_host" || return 1
   public_url_setting="$(or_default "${STELLARR_PUBLIC_URL:-}")"
   public_ip_setting="$(or_default "${STELLARR_PUBLIC_IP:-}")"
   https_port="$(or_default "${STELLARR_HTTPS_PORT:-}" 443)"

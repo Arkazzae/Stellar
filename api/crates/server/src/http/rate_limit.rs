@@ -1,8 +1,8 @@
 //! The named limits a route opts into.
 //!
 //! Each policy counts requests in a fixed window of its own, per client
-//! address, except uploads, which share one budget across the instance
-//! because their cost is bytes, not callers. A request over its limit is
+//! address, except uploads, which count per account and share a concurrency
+//! limit across the instance. A request over its limit is
 //! answered with 429 and no body, with no `Retry-After`.
 //!
 //! A fixed window starts at the first request of its partition and runs for
@@ -10,7 +10,6 @@
 
 use std::collections::HashMap;
 use std::hash::Hash;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -40,8 +39,7 @@ pub enum RateLimitPolicy {
     /// by [`AttemptLimiter`]: the limiter runs before authentication, so it
     /// cannot tell whose PIN is being tried.
     PinUnlock,
-    /// Uploads that run at once, queued briefly, and uploads per minute, both
-    /// counted for the whole instance.
+    /// Uploads per account per minute and concurrent uploads across the instance.
     Uploads,
 }
 
@@ -116,9 +114,8 @@ impl<K: Hash + Eq> Windows<K> {
 
 struct Uploads {
     running: Arc<Semaphore>,
-    waiting: AtomicUsize,
-    queue_limit: usize,
-    per_minute: Mutex<Window>,
+    queue: Semaphore,
+    per_minute: Mutex<Windows<Id>>,
 }
 
 impl RateLimiter {
@@ -129,12 +126,8 @@ impl RateLimiter {
             windows: Mutex::new(Windows::default()),
             uploads: Uploads {
                 running: Arc::new(Semaphore::new(concurrent)),
-                waiting: AtomicUsize::new(0),
-                queue_limit: concurrent * 4,
-                per_minute: Mutex::new(Window {
-                    started: Instant::now(),
-                    used: 0,
-                }),
+                queue: Semaphore::new(concurrent * 4),
+                per_minute: Mutex::new(Windows::default()),
             },
         }
     }
@@ -158,7 +151,7 @@ impl RateLimiter {
             RateLimitPolicy::SecurityWrite => (self.limits.security_write, QUARTER_HOUR),
             RateLimitPolicy::InvitePreview => (self.limits.invite_preview, MINUTE),
             RateLimitPolicy::PinUnlock => (self.limits.pin_unlock, PIN_UNLOCK_WINDOW),
-            RateLimitPolicy::Uploads => return self.acquire_upload(now).await,
+            RateLimitPolicy::Uploads => return None,
         };
         let mut windows = self
             .windows
@@ -170,28 +163,32 @@ impl RateLimiter {
         take(window, limit, length, now).then_some(Lease { _permit: None })
     }
 
-    async fn acquire_upload(&self, now: Instant) -> Option<Lease> {
+    pub async fn acquire_upload(&self, account: Id) -> Option<Lease> {
+        self.acquire_upload_at(account, Instant::now()).await
+    }
+
+    async fn acquire_upload_at(&self, account: Id, now: Instant) -> Option<Lease> {
         let uploads = &self.uploads;
+        {
+            let mut windows = uploads
+                .per_minute
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let window = windows.get(account, now, |_| MINUTE);
+            if !take(window, self.limits.uploads_per_minute, MINUTE, now) {
+                return None;
+            }
+        }
         // The queue is as long as four times what runs at once; beyond it a
-        // request is refused rather than made to wait.
+        // request is refused. The slot is released even if the wait is cancelled.
         let permit = match Arc::clone(&uploads.running).try_acquire_owned() {
             Ok(permit) => permit,
             Err(_) => {
-                if uploads.waiting.fetch_add(1, Ordering::SeqCst) >= uploads.queue_limit {
-                    uploads.waiting.fetch_sub(1, Ordering::SeqCst);
-                    return None;
-                }
-                let waited = Arc::clone(&uploads.running).acquire_owned().await;
-                uploads.waiting.fetch_sub(1, Ordering::SeqCst);
-                waited.ok()?
+                let _slot = uploads.queue.try_acquire().ok()?;
+                Arc::clone(&uploads.running).acquire_owned().await.ok()?
             }
         };
-        let mut window = uploads
-            .per_minute
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        // Past the window the permit goes back with the lease it was part of.
-        take(&mut window, self.limits.uploads_per_minute, MINUTE, now).then_some(Lease {
+        Some(Lease {
             _permit: Some(permit),
         })
     }
@@ -406,30 +403,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn uploads_share_one_budget_and_hold_a_place_while_they_run() {
+    async fn upload_accounts_have_independent_budgets() {
         let limiter = RateLimiter::new(&limits());
         let now = Instant::now();
+        let (first, second) = (Id::random(), Id::random());
 
-        let first = limiter
-            .acquire_at(RateLimitPolicy::Uploads, "a", now)
-            .await
-            .unwrap();
-        let second = limiter
-            .acquire_at(RateLimitPolicy::Uploads, "b", now)
-            .await
-            .unwrap();
-        // The per-minute budget of two is spent, whoever asks.
-        drop(first);
-        drop(second);
+        assert!(limiter.acquire_upload_at(first, now).await.is_some());
+        assert!(limiter.acquire_upload_at(first, now).await.is_some());
+        assert!(limiter.acquire_upload_at(first, now).await.is_none());
+        assert!(limiter.acquire_upload_at(second, now).await.is_some());
         assert!(
             limiter
-                .acquire_at(RateLimitPolicy::Uploads, "c", now)
-                .await
-                .is_none()
-        );
-        assert!(
-            limiter
-                .acquire_at(RateLimitPolicy::Uploads, "c", now + Duration::from_secs(61))
+                .acquire_upload_at(first, now + Duration::from_secs(61))
                 .await
                 .is_some()
         );
@@ -441,15 +426,10 @@ mod tests {
         wide.uploads_per_minute = 1000;
         let limiter = Arc::new(RateLimiter::new(&wide));
         let now = Instant::now();
+        let account = Id::random();
         let running = [
-            limiter
-                .acquire_at(RateLimitPolicy::Uploads, "a", now)
-                .await
-                .unwrap(),
-            limiter
-                .acquire_at(RateLimitPolicy::Uploads, "a", now)
-                .await
-                .unwrap(),
+            limiter.acquire_upload_at(account, now).await.unwrap(),
+            limiter.acquire_upload_at(account, now).await.unwrap(),
         ];
 
         // Eight more may wait, the ninth is refused.
@@ -458,7 +438,7 @@ mod tests {
                 let limiter = Arc::clone(&limiter);
                 tokio::spawn(async move {
                     limiter
-                        .acquire_at(RateLimitPolicy::Uploads, "a", Instant::now())
+                        .acquire_upload_at(account, Instant::now())
                         .await
                         .is_some()
                 })
@@ -466,12 +446,7 @@ mod tests {
             .collect();
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert!(waiting.iter().all(|task| !task.is_finished()));
-        assert!(
-            limiter
-                .acquire_at(RateLimitPolicy::Uploads, "a", now)
-                .await
-                .is_none()
-        );
+        assert!(limiter.acquire_upload_at(account, now).await.is_none());
 
         drop(running);
         for task in waiting {

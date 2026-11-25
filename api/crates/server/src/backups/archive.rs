@@ -256,7 +256,11 @@ fn file_name_text(path: &Path) -> Result<String, BackupFailed> {
 /// order: folder by folder, each by the whole path as text.
 pub fn instance_files(data_root: &Path) -> Result<Vec<(PathBuf, String)>, BackupFailed> {
     let mut found = Vec::new();
+    let mounted_tls = has_mounted_tls(data_root);
     for folder in INSTANCE_FOLDERS {
+        if folder == "tls" && mounted_tls {
+            continue;
+        }
         let root = data_root.join(folder);
         let mut files = Vec::new();
         walk(&root, &mut files)?;
@@ -280,6 +284,26 @@ pub fn instance_files(data_root: &Path) -> Result<Vec<(PathBuf, String)>, Backup
         found.extend(named);
     }
     Ok(found)
+}
+
+/// The operator can bind-mount a certificate directory, which is managed
+/// outside the volume and may be readable only by root.
+pub(crate) fn has_mounted_tls(data_root: &Path) -> bool {
+    let Ok(tls) = data_root.join("tls").canonicalize() else {
+        return false;
+    };
+    let Ok(mounts) = std::fs::read_to_string("/proc/self/mountinfo") else {
+        return false;
+    };
+    let path = tls
+        .to_string_lossy()
+        .replace('\\', "\\134")
+        .replace(' ', "\\040")
+        .replace('\t', "\\011")
+        .replace('\n', "\\012");
+    mounts
+        .lines()
+        .any(|line| line.split_ascii_whitespace().nth(4) == Some(path.as_str()))
 }
 
 /// Regular files below `folder`; a link is neither followed nor listed.

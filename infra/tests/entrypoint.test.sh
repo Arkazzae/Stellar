@@ -40,10 +40,13 @@ fail() {
 # The image's files, and stubs for what the entrypoint and the wrapper hand
 # over to. Each stub records its call; stellarr-init and the tool record the
 # environment they were given.
+useradd --system --user-group stellarr
+useradd --system --user-group turnserver
 mkdir -p /etc/nginx /usr/local/bin /usr/local/lib/stellarr /opt/stellarr/cli "$stubs"
 cp "$repo_root/infra/settings.sh" /usr/local/lib/stellarr/settings.sh
 cp "$repo_root/infra/turnserver.conf.template" /etc/turnserver.conf.template
 cp "$repo_root/infra/nginx.conf" /etc/nginx/nginx.conf.template
+printf "\n" > /etc/nginx/stellarr-csp-script-hashes
 cat >/usr/local/bin/stellarr-init <<EOF
 #!/bin/bash
 echo "stellarr-init \$*" >>$out/calls
@@ -92,6 +95,7 @@ run() {
   shift
   rm -rf /data/stellarr /data/elsewhere /run/stellarr /run/nginx /etc/turnserver.conf /etc/nginx/nginx.conf "$out"
   mkdir -p "$out"
+  chown stellarr "$out"
   [[ -z ${STAGE:-} ]] || "$STAGE"
   status=0
   env -i PATH="$stubs:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" HOME=/root \
@@ -174,10 +178,12 @@ expect_call() {
   grep -qxF -- "$1" "$out/calls" || fail "no call: $1"
 }
 
-# The HTTP redirect nginx was rendered with: $1 is the port, or nothing for 443.
+# $1 is the HTTPS port (empty for 443), and $2 is the configured domain.
 expect_redirect() {
-  # shellcheck disable=SC2016 # nginx's variables, not the shell's
-  local line='return 308 https://$host'"${1:+:$1}"'$request_uri;'
+  # shellcheck disable=SC2016 # nginx variable
+  local fallback='$host'
+  # shellcheck disable=SC2016 # nginx variable
+  local line="return 308 https://${2:-$fallback}${1:+:$1}"'$request_uri;'
   grep -qF -- "$line" /etc/nginx/nginx.conf || fail "the redirect is not: $line"
 }
 
@@ -267,7 +273,7 @@ expect_export Desktop__CanonicalOrigin https://chat.example.com:8443
 expect_export STELLARR_TURN_PORT 3478
 expect_export STELLARR_TURNS_PORT 5349
 expect_line /etc/turnserver.conf 'realm=chat.example.com'
-expect_redirect 8443
+expect_redirect 8443 chat.example.com
 expect_call 'stellarr-tls-maintenance prepare domain=chat.example.com data=/data/stellarr'
 
 # STELLARR_PUBLIC_IP, which coturn and the media server advertise.
@@ -287,12 +293,12 @@ expect_line /etc/turnserver.conf 'external-ip=198.51.100.4'
 run https-port "${image_env[@]}" STELLARR_DOMAIN=chat.example.com STELLARR_HTTPS_PORT=09443
 expect_started
 expect_export Operations__PublicUrl https://chat.example.com:9443
-expect_redirect 9443
+expect_redirect 9443 chat.example.com
 
 run public-port "${image_env[@]}" STELLARR_DOMAIN=chat.example.com STELLARR_HTTPS_PORT=9443 STELLARR_PUBLIC_PORT=443
 expect_started
 expect_export Operations__PublicUrl https://chat.example.com
-expect_redirect 9443
+expect_redirect 9443 chat.example.com
 
 run public-url "${image_env[@]}" STELLARR_TURN_ENABLED=true STELLARR_PUBLIC_URL=https://proxy.example/
 expect_started
@@ -302,19 +308,41 @@ expect_line /etc/turnserver.conf 'realm=localhost'
 
 # The secrets are the ones in the data volume, read back on a later start,
 # whatever arrives in the environment under the names the services read.
+kept_turn="$(printf 'a%.0s' {1..64})"
+kept_media="$(printf 'b%.0s' {1..64})"
 kept_secrets() {
   mkdir -p /data/stellarr/secrets
-  echo kept-turn >/data/stellarr/secrets/turn-shared-secret
-  echo kept-media >/data/stellarr/secrets/media-control-secret
+  echo "$kept_turn" >/data/stellarr/secrets/turn-shared-secret
+  echo "$kept_media" >/data/stellarr/secrets/media-control-secret
 }
 STAGE=kept_secrets run secrets "${image_env[@]}" STELLARR_TURN_ENABLED=true STELLARR_MEDIA_CONTROL_SECRET=operator-media \
   Rtc__TurnSharedSecret=operator-turn Rtc__MediaControlSecret=operator-media
 expect_started
-expect_export Rtc__TurnSharedSecret kept-turn
-expect_export Rtc__MediaControlSecret kept-media
-expect_export STELLARR_MEDIA_CONTROL_SECRET kept-media
-expect_line /etc/turnserver.conf 'static-auth-secret=kept-turn'
+expect_export Rtc__TurnSharedSecret "$kept_turn"
+expect_export Rtc__MediaControlSecret "$kept_media"
+expect_export STELLARR_MEDIA_CONTROL_SECRET "$kept_media"
+expect_line /etc/turnserver.conf "static-auth-secret=$kept_turn"
 ! grep -q 'operator-' "$out/env" /etc/turnserver.conf || fail "a secret from the environment was kept"
+
+expect_line /etc/turnserver.conf no-tcp-relay
+expect_line /etc/turnserver.conf 'denied-peer-ip=0.0.0.0-255.255.255.255'
+expect_line /etc/turnserver.conf "allowed-peer-ip=$(hostname -I | awk '{print $1}')"
+[[ $(stat -c %a /etc/turnserver.conf) == 600 ]] || fail "TURN config is not private"
+[[ $(stat -c %a /data/stellarr/db) == 700 ]] || fail "database directory is not private"
+
+invalid_secret() {
+  kept_secrets
+  printf 'bad secret
+' >/data/stellarr/secrets/turn-shared-secret
+}
+STAGE=invalid_secret run malformed-secret "${image_env[@]}" STELLARR_TURN_ENABLED=true
+expect_failure 'Secret turn-shared-secret must contain 64 hexadecimal digits.'
+
+run trusted-proxies "${image_env[@]}" STELLARR_TRUSTED_PROXIES=$'10.2.0.0/16,
+ fd00::1'
+expect_started
+expect_line /etc/nginx/stellarr-trusted-proxies.conf '10.2.0.0/16 1;'
+expect_line /etc/nginx/stellarr-trusted-proxies.conf 'fd00::1 1;'
 
 # The other settings it shares with the API or hands to the media server.
 run transports-and-language "${image_env[@]}" STELLARR_TURN_ENABLED=true STELLARR_TURN_TCP_ENABLED=true STELLARR_TURNS_ENABLED=true \
@@ -374,6 +402,8 @@ expect_refused() {
   [[ $(<"$out/stderr") == "$message" ]] || fail "the wrapper did not say only: $message"
   expect_absent Operations__PublicUrl Desktop__CanonicalOrigin
 }
+expect_refused bad-domain 'STELLARR_DOMAIN must be a DNS hostname or an IP address without a port.' \
+  STELLARR_DOMAIN='bad.example/path'
 expect_refused bad-public-ip "STELLARR_PUBLIC_IP must be an IPv4 address or the value 'auto'." \
   STELLARR_PUBLIC_IP=203.0.113.300
 expect_refused bad-https-port "STELLARR_HTTPS_PORT must be an integer between 1 and 65535." STELLARR_HTTPS_PORT=0

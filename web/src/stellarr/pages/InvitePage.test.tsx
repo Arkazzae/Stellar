@@ -128,13 +128,17 @@ describe("InvitePage", () => {
     expect(mocks.ports.directory.joinInvite).not.toHaveBeenCalled();
   });
 
-  it("joins the server, selects it, forgets the invite and returns to the app", async () => {
+  it("joins after explicit confirmation and returns to the app", async () => {
+    const user = userEvent.setup();
     mocks.ports.directory.joinInvite.mockResolvedValue({ id: "server-7" });
     // Back from an identity provider, the tab still remembers the invite.
     window.sessionStorage.setItem(PENDING_INVITE_STORAGE_KEY, "abc123");
 
     await renderInvite("/invite/abc123");
 
+    expect(mocks.ports.directory.joinInvite).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: PREVIEW.server.name })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: t("auth.invite.join") }));
     expect(mocks.ports.directory.joinInvite).toHaveBeenCalledExactlyOnceWith("abc123");
     expect(mocks.ports.directory.selectServer).toHaveBeenCalledExactlyOnceWith("server-7");
     expect(window.sessionStorage.getItem(PENDING_INVITE_STORAGE_KEY)).toBeNull();
@@ -147,6 +151,7 @@ describe("InvitePage", () => {
     mocks.ports.directory.joinInvite.mockResolvedValue({ id: "server-7" });
 
     await renderInvite(`/invite/${encodeURIComponent("old code")}`);
+    await userEvent.click(screen.getByRole("button", { name: t("auth.invite.join") }));
 
     expect(mocks.ports.directory.joinInvite).toHaveBeenCalledExactlyOnceWith("old code");
   });
@@ -156,6 +161,7 @@ describe("InvitePage", () => {
     mocks.ports.directory.joinInvite.mockRejectedValue(new Error("expired"));
 
     await renderInvite();
+    await user.click(screen.getByRole("button", { name: t("auth.invite.join") }));
 
     expect(await screen.findByRole("heading", { name: t("auth.invite.unusableTitle") })).toBeVisible();
     expect(mocks.ports.directory.selectServer).not.toHaveBeenCalled();
@@ -178,9 +184,9 @@ describe("InvitePage", () => {
         finishJoin = resolve;
       }),
     );
-    await act(async () => {
-      render(invite("/invite/abc123")).unmount();
-    });
+    const view = render(invite("/invite/abc123"));
+    await userEvent.click(await screen.findByRole("button", { name: t("auth.invite.join") }));
+    view.unmount();
 
     await act(async () => finishJoin({ id: "server-7" }));
 

@@ -10,6 +10,7 @@ use tracing::{debug, warn};
 
 use super::thumbnails::{NOBODY, discard_thumbnails, roll_back};
 use crate::database::DbError;
+use crate::http::AttemptLimiter;
 use crate::messages::dto::MessageEmbedDto;
 use crate::state::AppState;
 use crate::values::{Id, Timestamp};
@@ -36,34 +37,60 @@ pub async fn build(
     state: &AppState,
     fetcher: &Fetcher,
     message: Id,
+    unfurls: &AttemptLimiter,
 ) -> Result<Vec<MessageEmbedDto>, DbError> {
     let content = state
         .database()
-        .read(move |db| -> Result<Option<String>, DbError> {
+        .read(move |db| -> Result<Option<(String, Id)>, DbError> {
             Ok(db
                 .query_row(
-                    "SELECT \"Content\" FROM \"Messages\" WHERE \"Id\" = ?1",
+                    "SELECT \"Content\", \"AuthorId\" FROM \"Messages\" WHERE \"Id\" = ?1",
                     [message],
-                    |row| row.get(0),
+                    |row| Ok((row.get(0)?, row.get(1)?)),
                 )
                 .optional()?)
         })
         .await?;
-    let Some(content) = content else {
+    let Some((content, author)) = content else {
         return Ok(Vec::new());
     };
 
-    let mut built: Vec<Built> = Vec::new();
+    let mut previews = Vec::new();
     let links = extract_links(&content, fetcher.settings().max_per_message);
     for (position, link) in links.iter().enumerate() {
+        if !unfurls.try_acquire(author) {
+            break;
+        }
         match fetcher.preview(link).await {
-            Ok(preview) => built.push(make(state, preview, position).await),
+            Ok(preview) => previews.push((position, preview)),
             // A page that says nothing about itself is worse than the link the
             // reader can already see.
             Err(reason) => debug!("no card for a link: {reason}"),
         }
     }
 
+    let bytes = previews
+        .iter()
+        .filter_map(|(_, preview)| preview.thumbnail.as_ref())
+        .map(|image| i64::try_from(image.size()).unwrap_or(i64::MAX))
+        .fold(0i64, i64::saturating_add);
+    // Reserve all pictures for one message with one slot, through the commit.
+    let lease = if bytes > 0 {
+        state
+            .admission()
+            .enter_previews(state.database(), bytes)
+            .await?
+            .ok()
+    } else {
+        None
+    };
+    let mut built = Vec::with_capacity(previews.len());
+    for (position, mut preview) in previews {
+        if lease.is_none() {
+            preview.thumbnail = None;
+        }
+        built.push(make(state, preview, position).await);
+    }
     let replaced = replace(state, message, built).await;
     let (embeds, replaced) = match replaced {
         Ok(done) => done,
@@ -73,6 +100,7 @@ pub async fn build(
             return Err(error);
         }
     };
+    drop(lease);
     discard_thumbnails(state, replaced).await;
     Ok(embeds)
 }

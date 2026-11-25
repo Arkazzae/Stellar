@@ -13,10 +13,13 @@ const harness = vi.hoisted(() => ({
   },
 }));
 
+const voiceChannels = [{ id: "ch-salon", kind: "voice" }];
+
 vi.mock("./DirectoryProvider", () => ({
   useDirectoryContext: () => ({
     firstTextChannelId: harness.firstTextChannelId,
     textChannels: harness.textChannels,
+    channels: voiceChannels,
   }),
 }));
 
@@ -87,6 +90,14 @@ describe("UiProvider navigation", () => {
 
     expect(harness.voice.join).toHaveBeenCalledExactlyOnceWith("ch-salon");
     expect(result.current).toMatchObject({ roomView: "voice", space: "server" });
+  });
+
+  it("does not join a text channel or private conversation as a server call", () => {
+    const { result } = mountUi();
+    act(() => result.current.joinVoiceChannel("ch-general"));
+    act(() => result.current.joinVoiceChannel("dm-1"));
+    expect(harness.voice.join).not.toHaveBeenCalled();
+    expect(result.current.roomView).toBe("text");
   });
 
   it("marks the joined call as the current channel while the voice view is up", () => {

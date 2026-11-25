@@ -341,6 +341,7 @@ pub fn spawn(service: &Service) -> Result<u32, String> {
     let program = &service.command[0];
     let mut command = Command::new(program);
     command
+        .env_clear()
         .args(&service.command[1..])
         .stdin(Stdio::null())
         .process_group(0);

@@ -1,5 +1,6 @@
 import { Icon } from "@stellarr/icons";
 import { formatFull } from "@/lib/format/format";
+import { safeAssetUrl, safeHttpUrl } from "@/lib/format/safeUrl";
 import { useLanguage } from "@/state/hooks";
 
 import type { LinkItemVM } from "./channelPanelModel";
@@ -13,15 +14,19 @@ export function LinksTab({
   status: IndexStatus;
 }) {
   const { locale, t } = useLanguage();
+  const safeLinks = links.flatMap((link) => {
+    const href = safeHttpUrl(link.href);
+    return href === undefined ? [] : [{ ...link, href, thumb: safeAssetUrl(link.thumb) }];
+  });
 
   return (
     <IndexedTab
       status={status}
-      empty={links.length === 0}
+      empty={safeLinks.length === 0}
       emptyText={t("room.noLinksInChannel")}
     >
       <ul className="cp-list">
-        {links.map((link) => (
+        {safeLinks.map((link) => (
           <li key={link.id}>
             <a
               className="cp-row"

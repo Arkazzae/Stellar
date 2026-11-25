@@ -436,7 +436,7 @@ function useDialogs(closeDrawers: () => void): DialogsValue {
 const UiContext = createContext<UiValue | null>(null);
 
 export function UiProvider({ children }: { children: ReactNode }) {
-  const { firstTextChannelId, textChannels } = useDirectoryContext();
+  const { channels, firstTextChannelId, textChannels } = useDirectoryContext();
   const voice = useVoiceContext();
   /*
    * The voice value changes with every speaking-level snapshot. Actions that
@@ -538,6 +538,7 @@ export function UiProvider({ children }: { children: ReactNode }) {
 
   const joinVoiceChannel = useCallback(
     (channelId: string) => {
+      if (!channels.some((channel) => channel.id === channelId && channel.kind === "voice")) return;
       // The room follows the click; the dock follows the connection state, so
       // a join that fails leaves the stage up and says why.
       voiceRef.current.join(channelId);
@@ -545,7 +546,7 @@ export function UiProvider({ children }: { children: ReactNode }) {
       setSpace("server");
       closeDrawers();
     },
-    [closeDrawers],
+    [channels, closeDrawers],
   );
 
   const leaveCall = useCallback(() => {
