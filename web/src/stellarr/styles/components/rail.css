@@ -453,17 +453,17 @@
   }
   .ds-link:hover{background:var(--surface-overlay)}
   .ds-arrow{flex:none;color:var(--accent-text)}
-  /* Hanging up stands on the website's edge, in the danger red: the one
-     button in the dock that ends something. */
+  /* Hanging up stands on the website's edge: the call bar's own red face on
+     a darker red edge, the one button in the dock that ends something. */
   .dock-hang{
     width:32px;height:32px;flex:none;border-radius:10px;
     display:inline-flex;align-items:center;justify-content:center;
-    background:var(--danger-soft);color:var(--danger-text);
-    box-shadow:0 2px 0 var(--danger-edge);
+    background:var(--hang);color:var(--on-hang);
+    box-shadow:0 2px 0 var(--hang-edge);
     transition:background var(--dur-fast) var(--ease-standard), transform 100ms var(--ease-standard), box-shadow 100ms var(--ease-standard);
   }
-  .dock-hang:hover{background:color-mix(in srgb, var(--danger-soft), var(--danger-text) 14%)}
-  .dock-hang:active{transform:translateY(2px);box-shadow:0 0 0 var(--danger-edge)}
+  .dock-hang:hover{background:var(--hang-hover)}
+  .dock-hang:active{transform:translateY(2px);box-shadow:0 0 0 var(--hang-edge)}
   /* The call bar's groups as joined pills: what you say and hear, what you show. */
   .dock-ctrl{display:flex;align-items:center;justify-content:space-between;gap:8px}
   .dock-grp{
