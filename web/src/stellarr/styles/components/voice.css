@@ -236,7 +236,7 @@
   .vc-btn[aria-pressed="true"],
   .vc-ctl > .vc-btn[aria-expanded="true"]{background:var(--surface-overlay);color:var(--text)}
   .vc-btn.on{background:var(--accent);color:var(--on-accent)}
-  .vc-btn.muted{background:oklch(0.55 0.14 25.5 / 0.16);color:var(--danger-text)}
+  .vc-btn.muted{background:var(--danger-soft);color:var(--danger-text)}
   .vc-caret{
     width:22px;height:40px;border-radius:12px;margin-right:2px;
     display:inline-flex;align-items:center;justify-content:center;color:var(--text-faint);

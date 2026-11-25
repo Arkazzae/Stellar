@@ -49,7 +49,7 @@ function pick(key,allowed){
 var value=saved&&saved[key];
 return allowed.indexOf(value)<0?DEFAULT[key]:value;
 }
-function onAccent(hex){
+function onColour(hex){
 var c=[1,3,5].map(function(i){var n=parseInt(hex.slice(i,i+2),16)/255;return n<=.04045?n/12.92:Math.pow((n+.055)/1.055,2.4)});
 var l=.2126*c[0]+.7152*c[1]+.0722*c[2];
 return(l+.05)/.05>=1.05/(l+.05)?"#000000":"#ffffff";
@@ -66,7 +66,9 @@ out[ROLES[i][2]]=v.toLowerCase();
 }
 v=colors.accent.toLowerCase();
 out["--palette-accent"]=v;
-out["--palette-on-accent"]=onAccent(v);
+out["--palette-on-accent"]=onColour(v);
+out["--palette-on-background"]=onColour(out["--palette-background-primary"]);
+out["--palette-on-danger"]=onColour(out["--palette-danger"]);
 out["--palette-text-faint-accessible"]=faint.toLowerCase();
 out["--h-neutral"]=String(neutral.hue);
 out["--c-neutral"]=String(neutral.chroma);
@@ -77,7 +79,7 @@ var palette=own?${JSON.stringify(CUSTOM_PALETTE)}:pick("palette",PALETTES),varia
 if(typeof accent==="string"&&OPAQUE.test(accent)){
 accent=accent.toLowerCase();
 variables["--palette-accent"]=accent;
-variables["--palette-on-accent"]=onAccent(accent);
+variables["--palette-on-accent"]=onColour(accent);
 }
 var root=document.documentElement,scheme=pick("scheme",SCHEMES);
 Object.keys(variables).forEach(function(name){root.style.setProperty(name,variables[name])});

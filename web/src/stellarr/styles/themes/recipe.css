@@ -22,6 +22,8 @@
   /* Midnight fallbacks. Keep these in sync with `PALETTES[0]`. */
   --palette-accent: #6f65d1;
   --palette-on-accent: #ffffff;
+  --palette-on-background: #ffffff;
+  --palette-on-danger: #000000;
   --palette-background-darkest: #09090b;
   --palette-background-dark: #18181b;
   --palette-background-primary: #222327;
@@ -221,6 +223,27 @@
   --syntax-function: color-mix(in oklab, var(--palette-accent) 58%, black);
 }
 
+/* The imported colors may describe either a light or a dark surface. */
+[data-theme="custom"][data-scheme="dark"] {
+  --accent-hover: color-mix(in oklab, var(--palette-accent) 82%, var(--palette-on-accent));
+  --accent-quiet: color-mix(in oklab, var(--palette-accent) 82%, var(--surface-base));
+  --accent-text: color-mix(in oklab, var(--palette-accent) 55%, var(--palette-on-background));
+  --danger-text: color-mix(in oklab, var(--palette-danger) 72%, var(--palette-on-background));
+  --warn-text: color-mix(in oklab, var(--palette-warning) 72%, var(--palette-on-background));
+  --info-text: color-mix(in oklab, var(--palette-info) 66%, var(--palette-on-background));
+  --live: color-mix(in oklab, var(--palette-success) 72%, var(--palette-on-background));
+  --syntax-string: var(--live);
+  --syntax-number: var(--warn-text);
+  --syntax-type: var(--info-text);
+  --syntax-function: var(--accent-text);
+}
+
+[data-theme="custom"] {
+  --hang: var(--palette-danger);
+  --hang-hover: color-mix(in oklab, var(--hang) 88%, var(--palette-on-danger));
+  --on-hang: var(--palette-on-danger);
+}
+
 /* ------------------------------------------------------- high contrast ---- */
 /*
  * Not a separate theme: an override applied on top of whichever scheme is
@@ -238,6 +261,18 @@
   --accent-text: color-mix(in oklab, var(--palette-accent) 22%, white);
   --danger-text: color-mix(in oklab, var(--palette-danger) 32%, white);
   --live: color-mix(in oklab, var(--palette-success) 30%, white);
+}
+
+[data-theme="custom"][data-scheme="dark"][data-contrast="high"] {
+  --text: var(--palette-on-background);
+  --text-muted: color-mix(in oklab, var(--text) 90%, var(--surface-base));
+  --text-faint: color-mix(in oklab, var(--text) 85%, var(--surface-base));
+  --line-subtle: color-mix(in oklab, var(--text) 32%, var(--surface-base));
+  --line: color-mix(in oklab, var(--text) 44%, var(--surface-base));
+  --line-strong: color-mix(in oklab, var(--text) 58%, var(--surface-base));
+  --accent-text: color-mix(in oklab, var(--palette-accent) 30%, var(--text));
+  --danger-text: color-mix(in oklab, var(--palette-danger) 40%, var(--text));
+  --live: color-mix(in oklab, var(--palette-success) 40%, var(--text));
 }
 
 [data-contrast="high"][data-scheme="light"] {

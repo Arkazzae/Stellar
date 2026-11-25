@@ -19,6 +19,7 @@ import {
 } from "@/design/themes";
 import type { MessageKey } from "@/i18n";
 import type { Conversion } from "@/lib/betterDiscord/convert";
+import type { SourceGroup } from "@/lib/betterDiscord/sources";
 import { useLanguage } from "@/state/hooks";
 
 import styles from "./BetterDiscordDialog.module.css";
@@ -32,9 +33,9 @@ const converter = () => import("@/lib/betterDiscord/run");
 /** What a theme's stylesheets may hold together; `INLINE_LIMITS.total` repeated, so the check needs no converter. */
 const THEME_MAX_CHARS = 2 * 1024 * 1024;
 
-const ADDRESS_PROBLEMS: Record<"notHttps" | "betterDiscordSite" | "invalid", MessageKey> = {
+const ADDRESS_PROBLEMS: Record<"notHttps" | "notFound" | "invalid", MessageKey> = {
   notHttps: "theme.bd.notHttps",
-  betterDiscordSite: "theme.bd.betterDiscordSite",
+  notFound: "theme.bd.notFound",
   invalid: "theme.bd.invalidAddress",
 };
 
@@ -42,6 +43,7 @@ type State =
   | { step: "idle" }
   | { step: "loading" }
   | { step: "failed"; message: string }
+  | { step: "results"; groups: SourceGroup[] }
   | { step: "ready"; conversion: Conversion; source?: string };
 
 export interface BetterDiscordDialogProps {
@@ -52,15 +54,7 @@ export interface BetterDiscordDialogProps {
   wallpaper?: WallpaperAccess;
 }
 
-/**
- * A BetterDiscord theme brought over: a `.theme.css` from disk or an https
- * address to one, read and evaluated apart from the app (`lib/betterDiscord`),
- * shown in the pane's miniature with what came across and what did not, and
- * applied only when the person says so. A theme whose backgrounds and text
- * did not come across makes no palette: only what did is offered. A picture
- * the theme names is fetched only if the person ticks it, after seeing where
- * from.
- */
+/** Resolve a source, preview its conversion and apply the choices the user confirms. */
 export default function BetterDiscordDialog({ open, onClose, theme, onChange, wallpaper }: BetterDiscordDialogProps) {
   const { t } = useLanguage();
   const confirm = useConfirm();
@@ -87,16 +81,16 @@ export default function BetterDiscordDialog({ open, onClose, theme, onChange, wa
   const readFile = (file: File) =>
     void read(async () => {
       const { convertText } = await converter();
-      return { step: "ready", conversion: await convertText(await file.text()) };
+      return { step: "ready", conversion: await convertText(await file.text(), file.name) };
     });
 
-  const readAddress = () =>
+  const readAddress = (value: string) =>
     void read(async () => {
       const { convertAddress } = await converter();
-      const converted = await convertAddress(address);
-      return "problem" in converted
-        ? { step: "failed", message: t(ADDRESS_PROBLEMS[converted.problem]) }
-        : { step: "ready", conversion: converted.conversion, source: converted.source };
+      const converted = await convertAddress(value);
+      if ("problem" in converted) return { step: "failed", message: t(ADDRESS_PROBLEMS[converted.problem]) };
+      if ("groups" in converted) return { step: "results", groups: converted.groups };
+      return { step: "ready", conversion: converted.conversion, source: converted.source };
     });
 
   const apply = async (conversion: Conversion, source: string | undefined) => {
@@ -132,8 +126,6 @@ export default function BetterDiscordDialog({ open, onClose, theme, onChange, wa
       }
       Object.assign(patch, { palette: CUSTOM_PALETTE, custom, scheme: "dark" });
     }
-    onChange(patch);
-
     if (fetchPicture && conversion.wallpaper !== undefined && wallpaper !== undefined) {
       setApplying(true);
       let picture: Blob;
@@ -144,7 +136,9 @@ export default function BetterDiscordDialog({ open, onClose, theme, onChange, wa
         setApplyError(t("theme.bd.pictureUnreachable"));
         return;
       }
-      const outcome = await applyWallpaper(picture, wallpaper, theme, onChange, t, {
+      const outcome = await applyWallpaper(picture, wallpaper, theme, (wallpaperPatch) => {
+        Object.assign(patch, wallpaperPatch);
+      }, t, {
         shade: conversion.wallpaper.shade ?? WALLPAPER_SHADE_DEFAULT,
         blur: 0,
       });
@@ -154,19 +148,22 @@ export default function BetterDiscordDialog({ open, onClose, theme, onChange, wa
         return;
       }
     }
+    if (Object.keys(patch).length > 0) onChange(patch);
     onClose();
   };
 
+  const isBusy = state.step === "loading" || applying;
+
   return (
     <Modal open={open} onClose={applying ? () => undefined : onClose} labelledBy={titleId} className={cx(card.wrap)} exitMs={200}>
-      <div className={cx(card.card, styles.card)} aria-busy={state.step === "loading" || applying || undefined}>
+      <div className={cx(card.card, styles.card)} aria-busy={isBusy || undefined}>
         <div className={card.body}>
           <h2 id={titleId}>{t("theme.bd.title")}</h2>
           <p className={card.sub}>{t("theme.bd.intro")}</p>
         </div>
 
         <div className={styles.source}>
-          <Button type="button" variant="secondary" size="sm" onClick={() => input.current?.click()}>
+          <Button type="button" variant="secondary" size="sm" disabled={isBusy} onClick={() => input.current?.click()}>
             <Icon name="upload" size={15} />
             {t("theme.bd.pickFile")}
           </Button>
@@ -192,7 +189,7 @@ export default function BetterDiscordDialog({ open, onClose, theme, onChange, wa
             className={styles.address}
             onSubmit={(event) => {
               event.preventDefault();
-              readAddress();
+              readAddress(address.trim() || "https://betterdiscord.app/themes");
             }}
           >
             <label className="sr-only" htmlFor={addressId}>
@@ -201,16 +198,16 @@ export default function BetterDiscordDialog({ open, onClose, theme, onChange, wa
             <input
               id={addressId}
               className="set-input"
-              type="url"
-              inputMode="url"
+              type="text"
+              maxLength={4096}
               placeholder={t("theme.bd.addressPlaceholder")}
               value={address}
               spellCheck={false}
               autoComplete="off"
               onChange={(event) => setAddress(event.currentTarget.value)}
             />
-            <Button type="submit" variant="secondary" size="sm" disabled={address.trim() === "" || state.step === "loading"}>
-              {t("theme.bd.read")}
+            <Button type="submit" variant="secondary" size="sm" disabled={isBusy}>
+              {t(address.trim() ? "theme.bd.read" : "theme.bd.browse")}
             </Button>
           </form>
         </div>
@@ -224,6 +221,31 @@ export default function BetterDiscordDialog({ open, onClose, theme, onChange, wa
           <p className={styles.error} role="alert">
             {state.message}
           </p>
+        ) : null}
+        {state.step === "results" ? (
+          <div className={styles.result} aria-live="polite">
+            {state.groups.map(({ provider, choices, problem }) => (
+              <section key={provider} className={styles.searchGroup}>
+                <h3>{t(`theme.bd.provider.${provider}`)}</h3>
+                {problem !== undefined ? (
+                  <p>{t(problem === "rateLimited" ? "theme.bd.rateLimited" : "theme.bd.searchUnavailable")}</p>
+                ) : choices.length === 0 ? (
+                  <p>{t(provider === "files" ? "theme.bd.noFiles" : "theme.bd.noResults")}</p>
+                ) : (
+                  <ul>
+                    {choices.map(({ label, detail, url }) => (
+                      <li key={url}>
+                        <button type="button" onClick={() => readAddress(url)}>
+                          <span>{label}</span>
+                          {detail === undefined ? null : <small>{detail}</small>}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            ))}
+          </div>
         ) : null}
         {state.step === "ready" ? (
           <Result
@@ -243,7 +265,7 @@ export default function BetterDiscordDialog({ open, onClose, theme, onChange, wa
           <Button type="button" variant="secondary" disabled={applying} onClick={onClose}>
             {t("common.cancel")}
           </Button>
-          {state.step === "ready" && (state.conversion.palette !== undefined || state.conversion.accent !== undefined || state.conversion.font?.id) ? (
+          {state.step === "ready" && (state.conversion.palette !== undefined || state.conversion.accent !== undefined || state.conversion.font?.id || (fetchPicture && state.conversion.wallpaper !== undefined)) ? (
             <Button
               type="button"
               variant="primary"
@@ -293,11 +315,13 @@ function Result({
   }
   if (conversion.accent !== undefined) taken.push(t("theme.bd.takenAccent"));
   if (font?.id != null) taken.push(t("theme.bd.takenFont", { font: FONT_LABELS[font.id].label }));
+  if (wallpaper !== undefined && canSetWallpaper) taken.push(t("theme.bd.takenWallpaper"));
 
   const left: string[] = [t("theme.bd.leftLayout")];
   if (palette === undefined) left.push(t("theme.bd.leftPalette"));
   if (font !== undefined && font.id === null) left.push(t("theme.bd.leftFont", { font: font.family }));
   if (filled.length > 0) left.push(t("theme.bd.leftFilled"));
+  if (conversion.skipped.length > 0) left.push(t("theme.bd.leftImports", { count: conversion.skipped.length }));
 
   return (
     <div className={styles.result}>
