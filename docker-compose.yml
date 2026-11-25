@@ -1,8 +1,8 @@
 # Production stack: one container runs Nginx, the API and the Stellarr
 # Media server, and Nginx serves the web client and Cockpit.
 #
-#   docker compose up -d           pulls the published image
-#   docker compose up -d --build   builds the image from this checkout
+#   docker compose up -d           uses a published image
+#   ./install.sh --build           builds the image from this checkout
 #
 # Settings go in .env, which the container reads as it is; the image holds
 # every default. See docs/install/configuration.md.
@@ -15,10 +15,7 @@ name: stellarr
 
 services:
   stellarr:
-    image: ghcr.io/arkazzae/stellarr:${STELLARR_VERSION:-latest}
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ${STELLARR_IMAGE:-ghcr.io/arkazzae/stellarr:${STELLARR_VERSION:-latest}}
     container_name: stellarr
     restart: unless-stopped
     # The process manager stops the services one at a time and the API alone

@@ -78,21 +78,20 @@ pub fn is_tag(value: &str) -> bool {
 
 /// A release such as 1.4.0 or 1.5.0-rc.1.
 pub fn is_exact_version(value: &str) -> bool {
-    let (core, pre) = match value.split_once('-') {
-        Some((core, pre)) => (core, Some(pre)),
-        None => (value, None),
-    };
-    let numbers: Vec<&str> = core.split('.').collect();
-    numbers.len() == 3
-        && numbers
-            .iter()
-            .all(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
-        && pre.is_none_or(|pre| {
-            !pre.is_empty()
-                && pre
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
-        })
+    exact_version(value).is_some()
+}
+
+pub fn exact_version(value: &str) -> Option<semver::Version> {
+    if !is_tag(value) {
+        return None;
+    }
+    semver::Version::parse(value).ok()
+}
+
+/// A stable release series, such as 1.4.
+pub fn release_series(value: &str) -> Option<(u64, u64)> {
+    let version = semver::Version::parse(&format!("{value}.0")).ok()?;
+    (version.pre.is_empty() && version.build.is_empty()).then_some((version.major, version.minor))
 }
 
 /// A git tag or branch name, short of everything git allows.
@@ -130,27 +129,10 @@ pub fn normalize_address(value: &str) -> String {
 /// Whether release `a` is older than release `b`, both exact versions. A
 /// pre-release comes before the release of the same number.
 pub fn version_older(a: &str, b: &str) -> bool {
-    let split = |v: &str| -> (Vec<u64>, String) {
-        let (core, pre) = v.split_once('-').unwrap_or((v, ""));
-        (
-            core.split('.').map(|n| n.parse().unwrap_or(0)).collect(),
-            pre.to_string(),
-        )
-    };
-    let (a_core, a_pre) = split(a);
-    let (b_core, b_pre) = split(b);
-    match a_core.cmp(&b_core) {
-        std::cmp::Ordering::Less => return true,
-        std::cmp::Ordering::Greater => return false,
-        std::cmp::Ordering::Equal => {}
+    match (semver::Version::parse(a), semver::Version::parse(b)) {
+        (Ok(a), Ok(b)) => a.cmp_precedence(&b).is_lt(),
+        _ => false,
     }
-    if a_pre.is_empty() {
-        return false;
-    }
-    if b_pre.is_empty() {
-        return true;
-    }
-    a_pre.as_bytes() < b_pre.as_bytes()
 }
 
 /// The HTTP bind: a port, or an IPv4 or bracketed IPv6 address and a port.
@@ -257,6 +239,8 @@ mod tests {
         assert!(version_older("1.5.0-rc.1", "1.5.0"));
         assert!(!version_older("1.5.0", "1.5.0-rc.1"));
         assert!(version_older("1.5.0-rc.1", "1.5.0-rc.2"));
+        assert!(version_older("1.5.0-rc.2", "1.5.0-rc.10"));
+        assert!(!version_older("1.5.0-rc.10", "1.5.0-rc.2"));
     }
 
     #[test]

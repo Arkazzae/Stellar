@@ -37,11 +37,18 @@ impl Http {
     /// Downloads `url`, following redirects to HTTPS only and trying again
     /// after a failure that may pass. The error is one line to show.
     pub fn get(&self, url: &str) -> Result<Vec<u8>, String> {
+        self.get_optional(url)?
+            .ok_or_else(|| "The requested URL returned error: 404".to_string())
+    }
+
+    /// The old release layout is tried only when the requested path is absent.
+    pub fn get_optional(&self, url: &str) -> Result<Option<Vec<u8>>, String> {
         let mut attempt = 0;
         loop {
             attempt += 1;
             let retry = match self.request(url, true, false, 120, false) {
-                Answer::Body(body) => return Ok(body),
+                Answer::Body(body) => return Ok(Some(body)),
+                Answer::Status(404) => return Ok(None),
                 Answer::Redirect(to) => {
                     return Err(format!("Too many redirects, the last to {to}"));
                 }

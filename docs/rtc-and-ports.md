@@ -14,11 +14,13 @@ The advertised media port is the host-side `STELLARR_MEDIA_PORT`. Map both proto
 
 ### Optional TURN relay
 
-Enable TURN if some callers can reach neither direct media transport. A fresh installation starts without a relay. With the installer, pass `--enable-turn`. For a manual Compose deployment, download `docker-compose.turn.yml` alongside `docker-compose.yml` and use both files for startup and upgrades:
+Enable TURN if some callers can reach neither direct media transport. A fresh installation starts without a relay. With the installer, pass `--enable-turn`. For manual Compose deployments, use both files from the same release for startup and upgrades:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.turn.yml up -d
+docker compose -f docker-compose.yml -f infra/compose/turn.yml up -d
 ```
+
+In an installer-managed directory, the overlay is saved as `docker-compose.turn.yml`. Older releases also used that path in the repository.
 
 The override enables `STELLARR_TURN_ENABLED` and publishes all the port mappings below. Forward only the ports for transports you enable, plus the relay range.
 

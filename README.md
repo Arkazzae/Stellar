@@ -54,7 +54,19 @@ curl -fsSL https://raw.githubusercontent.com/Arkazzae/Stellarr/main/.env.example
 docker compose up -d
 ```
 
-Want to build from source instead? Clone the repo and run `docker compose up -d --build`.
+To build from source with Docker, run this in a checkout:
+
+```bash
+docker compose -f docker-compose.yml -f infra/compose/build.yml up -d --build
+```
+
+With Cargo installed, you can run the installer from the checkout before a release is available:
+
+```bash
+cargo run --locked --release --manifest-path installer/Cargo.toml -- --build --dir "$PWD"
+```
+
+`docker-compose.yml` defines the production stack. `infra/compose/` contains the local build, TURN, and development configurations.
 
 1. Grab the one-time setup code printed by the installer (or run `docker compose logs stellarr | grep "Setup code"`).
 2. Open the HTTPS address printed by the installer (default `https://localhost`), accept the local self-signed certificate, and run through `/setup` to create your owner account and first server.

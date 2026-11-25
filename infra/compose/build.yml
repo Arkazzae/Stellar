@@ -1,0 +1,8 @@
+# Add this file to docker-compose.yml to build and run the checkout.
+services:
+  stellarr:
+    image: stellarr-local:dev
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: Dockerfile

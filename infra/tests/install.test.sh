@@ -27,6 +27,7 @@ binary="$(cd -P "$(dirname "$binary")" && pwd -P)/$(basename "$binary")"
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/stellarr-install-test.XXXXXX")"
 # Without symbolic links, as the installer and the stubs see it.
 scratch="$(cd -P "$scratch" && pwd -P)"
+mkdir -p "$scratch/locks"
 # KEEP=1 leaves the cases' directories, with their screens and calls, to look at.
 if [[ -n ${KEEP:-} ]]; then
   trap 'echo "The cases are in $scratch/cases." >&2' EXIT
@@ -71,15 +72,26 @@ printf '%s %s @%s\n' "$name" "$*" "$PWD" >>"$STUB_LOG"
 
 read_file() { if [[ -f $state/$1 ]]; then cat "$state/$1"; else printf '%s\n' "$2"; fi; }
 
-env_version() {
-  local value=latest line
-  if [[ -f .env ]]; then
+env_value() {
+  local key=$1 value=$2 line file=${compose_env:-.env} pattern
+  pattern="^[[:blank:]]*(export[[:blank:]]+)?$key[[:blank:]]*[:=][[:blank:]]*(.*)$"
+  if [[ -f $file ]]; then
     while IFS= read -r line || [[ -n $line ]]; do
-      [[ $line == STELLARR_VERSION=* ]] && value=${line#STELLARR_VERSION=}
-    done <.env
+      if [[ ${line%$'\r'} =~ $pattern ]]; then
+        value=${BASH_REMATCH[2]}
+        value=${value%% #*}
+        value="${value%"${value##*[![:blank:]]}"}"
+        if [[ $value == \'*\' || $value == \"*\" ]]; then
+          value=${value:1:${#value}-2}
+        fi
+      fi
+    done <"$file"
   fi
   printf '%s' "$value"
 }
+
+env_version() { env_value STELLARR_VERSION latest; }
+env_image() { env_value STELLARR_IMAGE "ghcr.io/arkazzae/stellarr:$(env_version)"; }
 
 render() {
   local out=$1 before rest expression after value key
@@ -146,21 +158,28 @@ case $name in
     case $1 in -lnt) listening tcp ;; -lnu) listening udp ;; esac
     ;;
   curl | wget)
-    # Only install.sh downloads with these: the installer of a release and
-    # its sums, served from $STUB_ASSETS.
     url='' target=''
     while [[ $# -gt 0 ]]; do
       case $1 in
         -o | -O) target=$2; shift ;;
-        --proto | --connect-timeout | --max-time | --retry | --retry-delay | -T | -t) shift ;;
+        --proto | --proto-redir | --connect-timeout | --max-time | --retry | --retry-delay | -T | -w) shift ;;
         https://* | http://*) url=$1 ;;
       esac
       shift
     done
+    [[ ! -e $state/github-down ]] || { echo "$name: Could not resolve host: github.com" >&2; exit 6; }
     case $url in
-      https://github.com/Arkazzae/Stellarr/releases/latest/download/* | \
-        https://github.com/Arkazzae/Stellarr/releases/download/v*/*)
-        [[ ! -e $state/github-down ]] || { echo "$name: Could not resolve host: github.com" >&2; exit 6; }
+      https://github.com/Arkazzae/Stellarr/releases/latest)
+        if [[ $name == curl ]]; then
+          read_file release-redirect https://github.com/Arkazzae/Stellarr/releases/tag/v1.4.0
+        else
+          echo '  HTTP/1.1 302 Found' >&2
+          echo "  Location: $(read_file release-redirect /Arkazzae/Stellarr/releases/tag/v1.4.0)" >&2
+          exit 8
+        fi
+        ;;
+      https://github.com/Arkazzae/Stellarr/releases/tag/v1.4.0) ;;
+      https://github.com/Arkazzae/Stellarr/releases/download/v*/*)
         file="$STUB_ASSETS/${url##*/}"
         if [[ ! -f $file ]]; then
           echo "$name: The requested URL returned error: 404" >&2
@@ -189,30 +208,94 @@ case $name in
         fi
         echo 28.3.2
         ;;
+      info) printf 'stub-daemon:%s\n' "$state" ;;
       compose)
+        compose_env=.env
+        compose_project="$PWD"
+        compose_name=stellarr
+        compose_files=()
+        while [[ $1 == -* ]]; do
+          case $1 in
+            --project-name) compose_name=$2 ;;
+            --project-directory) compose_project=$2 ;;
+            --env-file) compose_env=$2 ;;
+            -f) compose_files+=("$2") ;;
+            *) echo "unknown Compose context option: $1" >&2; exit 2 ;;
+          esac
+          shift 2
+        done
         action=$1
         shift
+        if [[ $action != version ]]; then
+          printf 'compose %s %s @%s\n' "$action" "$*" "$PWD" >>"$STUB_LOG"
+        fi
         case $action in
           version)
             [[ ! -e $state/no-compose-plugin ]] || { echo "docker: 'compose' is not a docker command." >&2; exit 1; }
             read_file compose-version 2.39.1
             ;;
-          config) [[ ! -e $state/config-fails ]] || { echo "invalid interpolation format" >&2; exit 15; } ;;
+          config)
+            if [[ -e $state/config-fails || ( -e $state/live-config-fails && $compose_project == "$PWD" ) ]]; then
+              echo "invalid interpolation format" >&2
+              exit 15
+            fi
+            if [[ -e $state/pause-live-config && $compose_project == "$PWD" && $* == '--format json' ]]; then
+              touch "$state/live-config-paused"
+              for ((ticks=0; ticks<250; ticks++)); do
+                [[ -e $state/pause-live-config ]] || break
+                "$STUB_REAL_SLEEP" .02
+              done
+            fi
+            case $* in
+              '--images stellarr') env_image ;;
+              '--format json')
+                build=''
+                for file in "${compose_files[@]}"; do
+                  if [[ $file == */build-context.json ]]; then
+                    build=$(sed -n 's/.*"build":\({"context":"[^"]*"}\).*/,"build":\1/p' "$file")
+                  fi
+                done
+                extras=$(read_file config-extra-services '')
+                extras=${extras//PROJECT_DIR/$compose_project}
+                printf '{"name":"%s","volumes":{"stellarr_data":{"name":"%s"}},"services":{"stellarr":{"container_name":"stellarr","image":"%s","volumes":[{"type":"volume","source":"stellarr_data","target":"/data/stellarr"}]%s}%s}}\n' \
+                  "$compose_name" "$(read_file config-volume stellarr_stellarr_data)" "$(env_image)" "$build" "$extras"
+                ;;
+            esac
+            ;;
           pull)
             [[ ! -e $state/pull-fails ]] || { echo "Error response from daemon: manifest unknown" >&2; exit 1; }
-            touch "$state/image-$(env_version)"
+            if [[ $* == *registry* ]]; then
+              touch "$state/image-remote"
+            else
+              touch "$state/image-$(env_version)"
+            fi
             ;;
-          build) touch "$state/image-$(env_version)" "$state/built" ;;
+          build)
+            for service in "$@"; do
+              case $service in
+                stellarr) touch "$state/image-$(env_version)" "$state/built" ;;
+                helper) touch "$state/image-stellarr-helper" ;;
+                *) exit 2 ;;
+              esac
+            done
+            for file in "${compose_files[@]}"; do
+              if [[ $file == */build-paths.json ]]; then
+                cat "$file" >>"$STUB_LOG"
+                printf '\n' >>"$STUB_LOG"
+              fi
+            done
+            ;;
           up)
-            printf 'compose up sees COMPOSE_PROJECT_NAME=%s STELLARR_TURN_RELAY_RANGE=%s\n' \
-              "${COMPOSE_PROJECT_NAME-unset}" "${STELLARR_TURN_RELAY_RANGE-unset}" >>"$STUB_LOG"
+            [[ ! -e $state/up-fails ]] || { echo "container startup refused" >&2; exit 15; }
+            printf 'compose up sees COMPOSE_PROJECT_NAME=%s STELLARR_TURN_RELAY_RANGE=%s COMPOSE_DISABLE_ENV_FILE=%s\n' \
+              "${COMPOSE_PROJECT_NAME-unset}" "${STELLARR_TURN_RELAY_RANGE-unset}" "${COMPOSE_DISABLE_ENV_FILE-unset}" >>"$STUB_LOG"
             tag=$(env_version)
             [[ -e $state/image-$tag ]] || { echo "Error: No such image: ghcr.io/arkazzae/stellarr:$tag" >&2; exit 1; }
             mkdir -p "$state/container"
             read_file after-up running >"$state/container/status"
             echo true >"$state/container/running"
             echo stellarr >"$state/container/label.com.docker.compose.project"
-            echo "$PWD" >"$state/container/label.com.docker.compose.project.working_dir"
+            echo "$compose_project" >"$state/container/label.com.docker.compose.project.working_dir"
             if [[ -e $state/built ]]; then echo dev; else echo "$tag"; fi >"$state/container/label.org.opencontainers.image.version"
             ;;
         esac
@@ -220,7 +303,11 @@ case $name in
       container)
         [[ -d $state/container ]] || { echo "Error: No such container: stellarr" >&2; exit 1; }
         [[ $1 == inspect && $2 == --format ]] || exit 1
-        render "$3"
+        if [[ $3 == *'.NetworkSettings.Ports'* ]]; then
+          read_file port-bindings ''
+        else
+          render "$3"
+        fi
         ;;
       image)
         [[ -e $state/image-${2##*:} ]]
@@ -230,6 +317,15 @@ case $name in
           health)
             count=$(($(read_file health-checks 0) + 1))
             echo "$count" >"$state/health-checks"
+            hang_at=$(read_file hung-health 0)
+            if [[ -e $state/hung-health ]] && ((count >= ${hang_at:-1})); then
+              (
+                trap '' INT TERM
+                "$STUB_REAL_SLEEP" 3
+                touch "$state/health-child-survived"
+              ) &
+              wait
+            fi
             [[ ! -e $state/never-healthy ]] || exit 1
             [[ $count -ge $(read_file healthy-after 1) ]]
             ;;
@@ -315,6 +411,13 @@ release() {
   cp "$fixtures/env.example" "$raw/v$1/.env.example"
 }
 
+checkout_files() {
+  local directory=$1
+  mkdir -p "$directory/infra/compose"
+  cp "$repo_root/docker-compose.yml" "$repo_root/.env.example" "$directory/"
+  cp "$repo_root/infra/compose/build.yml" "$repo_root/infra/compose/turn.yml" "$directory/infra/compose/"
+}
+
 no_release() { latest_release https://github.com/Arkazzae/Stellarr/releases; }
 github_down() {
   : >"$http/github.com.down"
@@ -364,8 +467,9 @@ seams() {
   # every run.
   mkdir -p "$case_dir/tmp"
   seam_env=(PATH="$bin:$tools" HOME="$home" TMPDIR="$case_dir/tmp" STUB_STATE="$state" STUB_LOG="$case_dir/calls"
-    STUB_PROGRAM="$stub" STUB_BIN="$bin" STUB_ASSETS="$case_assets"
-    STELLARR_INSTALLER_TEST_HTTP="$http" STELLARR_INSTALLER_TEST_HTTP_LOG="$case_dir/calls")
+    STUB_PROGRAM="$stub" STUB_BIN="$bin" STUB_ASSETS="$case_assets" STUB_REAL_SLEEP="$tools/sleep"
+    STELLARR_INSTALLER_TEST_HTTP="$http" STELLARR_INSTALLER_TEST_HTTP_LOG="$case_dir/calls"
+    STELLARR_INSTALLER_TEST_LOCKS="$scratch/locks")
   if [[ $clock == fast ]]; then seam_env+=(STELLARR_INSTALLER_TEST_CLOCK=fast); fi
   if [[ -f $state/os ]]; then seam_env+=(STELLARR_INSTALLER_TEST_OS="$(cat "$state/os")"); fi
   # A person, not root, unless the case says otherwise.
@@ -468,9 +572,9 @@ case_install_sh() {
   through_install_sh
   run --yes --domain chat.example.com
   expect_success
-  expect_called "curl --proto =https --tlsv1.2 -fsSL"
-  expect_called "https://github.com/Arkazzae/Stellarr/releases/latest/download/stellarr-installer-x86_64-unknown-linux-musl"
-  expect_called "https://github.com/Arkazzae/Stellarr/releases/latest/download/stellarr-installer.sha256"
+  expect_called "curl --proto =https --proto-redir =https --tlsv1.2 -fsSL"
+  expect_called "https://github.com/Arkazzae/Stellarr/releases/download/v1.4.0/stellarr-installer-x86_64-unknown-linux-musl"
+  expect_called "https://github.com/Arkazzae/Stellarr/releases/download/v1.4.0/stellarr-installer.sha256"
   expect_line "$home/stellarr/.env" "STELLARR_DOMAIN=chat.example.com"
   expect_shown "Stellarr 1.4.0 is running"
 
@@ -493,7 +597,30 @@ case_install_sh() {
   rm "$bin/curl"
   run --yes
   expect_success
-  expect_called "wget -q -T 20 -O"
+  expect_called "wget -S -T 20 --max-redirect=0 -O"
+
+  new_case install-sh-wget-downgrade
+  through_install_sh
+  rm "$bin/curl"
+  echo 'http://example.invalid/release' >"$state/release-redirect"
+  run --help
+  expect_failure
+  expect_shown "Could not find the latest Stellarr release"
+  expect_not_called "http://example.invalid/release"
+
+  new_case install-sh-literal-backslash
+  through_install_sh
+  local literal_tmp="$case_dir/back\slash"
+  mkdir "$literal_tmp"
+  run TMPDIR="$literal_tmp" --help
+  expect_success
+  expect_empty_dir "$literal_tmp"
+
+  new_case install-sh-local-binary
+  through_install_sh
+  run STELLARR_INSTALLER_BIN="$binary" STELLARR_INSTALLER_VERSION=missing --help
+  expect_success
+  expect_not_called curl
 
   new_case install-sh-bad-sum
   through_install_sh
@@ -505,30 +632,39 @@ case_install_sh() {
   expect_not_called docker
   expect_missing "$home/stellarr"
 
+  new_case install-sh-before-first-release
+  through_install_sh
+  echo https://github.com/Arkazzae/Stellarr/releases >"$state/release-redirect"
+  run --help
+  expect_failure
+  expect_shown "Could not find the latest Stellarr release"
+  expect_shown "cargo run --locked --manifest-path installer/Cargo.toml -- --dir . --build"
+  expect_not_called "releases/download/"
+  expect_not_called docker
+
   new_case install-sh-no-installer
   through_install_sh
   rm "$case_assets/stellarr-installer-x86_64-unknown-linux-musl"
   run --yes
   expect_failure
   expect_shown "Could not download the Stellarr installer for x86_64-unknown-linux-musl"
-  expect_shown "cd Stellarr && ./install.sh --build"
+  expect_shown "cargo run --locked --manifest-path installer/Cargo.toml -- --dir . --build"
   expect_empty_dir "$case_dir/tmp"
 
-  # In a checkout without cargo it downloads the installer too, and says
-  # how to build it there when there is none to download.
-  new_case install-sh-checkout-no-cargo
+  # A checkout still gets the release binary; cargo is an explicit alternative.
+  new_case install-sh-checkout
   local checkout="$case_dir/Stellarr"
   mkdir -p "$checkout/installer"
-  cp "$installer" "$repo_root/docker-compose.yml" "$repo_root/.env.example" "$checkout/"
+  checkout_files "$checkout"
+  cp "$installer" "$checkout/"
   echo 'FROM scratch' >"$checkout/Dockerfile"
   : >"$checkout/installer/Cargo.toml"
   rm "$case_assets/stellarr-installer-x86_64-unknown-linux-musl"
   through_install_sh "$checkout/install.sh"
   run --yes --build
   expect_failure
-  expect_shown "install Rust's cargo (https://rustup.rs)"
-  expect_shown "builds the installer from this checkout"
-  expect_not_shown "git clone"
+  expect_shown "cargo run --locked --manifest-path installer/Cargo.toml -- --dir . --build"
+  expect_not_called cargo
 
   new_case install-sh-arch
   through_install_sh
@@ -570,8 +706,8 @@ case_fresh_install() {
   expect_line "$env_file" "STELLARR_LANGUAGE=pl"
   [[ $(head -n 1 "$env_file") == "$marker" ]] || fail "the marker is not the first line of .env."
   private_file "$env_file" || fail ".env is not readable and writable by its owner alone."
-  expect_called "docker compose pull --quiet @$home/stellarr"
-  expect_called "docker compose up -d --no-build @$home/stellarr"
+  expect_called "compose pull --quiet --policy always stellarr @$home/stellarr"
+  expect_called "compose up -d --no-build --pull never @$home/stellarr"
   expect_not_called "sudo"
   expect_shown "Open: https://chat.example.com:8443/setup"
   expect_shown "Setup code: K7QM-2XWP-9HDA"
@@ -699,7 +835,8 @@ case_docker_through_sudo() {
   flag sudo-works
   run --yes
   expect_success
-  expect_called "sudo -n docker compose up -d --no-build"
+  expect_called "sudo -n docker compose --project-name stellarr"
+  expect_called "compose up -d --no-build --pull never"
   expect_shown "sudo docker compose logs -f"
 
   # On macOS Docker Desktop runs as the person: sudo is never tried, and
@@ -747,7 +884,8 @@ case_compose_v1() {
   echo 2.29.7 >"$state/standalone-compose-version"
   run --yes
   expect_success
-  expect_called "docker-compose up -d --no-build"
+  expect_called "docker-compose --project-name stellarr"
+  expect_called "compose up -d --no-build --pull never"
 
   # docker-compose.yml needs env_file's required: false, from Compose 2.24.0.
   new_case compose-below-floor
@@ -762,7 +900,7 @@ case_compose_v1() {
   echo 2.24.0 >"$state/compose-version"
   run --yes
   expect_success
-  expect_called "docker compose up -d --no-build"
+  expect_called "compose up -d --no-build --pull never"
 }
 
 case_found_by_label() {
@@ -775,7 +913,7 @@ case_found_by_label() {
   run --yes
   expect_success
   expect_shown "Stellarr 1.4.0 in $dir is the latest release"
-  expect_called "up -d --no-build @$dir"
+  expect_called "up -d --no-build --pull never @$dir"
   expect_missing "$home/stellarr"
   # The same release again changes no file and makes no backup.
   [[ $(snapshot "$dir") == "$before" ]] || fail "a file in the installation changed."
@@ -842,8 +980,8 @@ case_compose_files() {
   echo 'services: {}' >"$dir/compose.override.yaml"
   run --yes
   expect_success
-  expect_called "docker compose up -d --no-build @$dir"
-  expect_not_called " -f "
+  expect_called "compose up -d --no-build --pull never @$dir"
+  expect_called "-f $dir/compose.override.yaml up -d --no-build --pull never"
 }
 
 # A container whose directory is gone is taken over only when asked to.
@@ -861,16 +999,16 @@ case_container_dir_gone() {
   container "$case_dir/gone" 1.4.0 false
   run --yes --force
   expect_success
-  expect_called "up -d --no-build @$case_dir/gone"
+  expect_called "up -d --no-build --pull never @$case_dir/gone"
 }
 
 # Compose reads the installation's .env alone: a project name or a setting
 # exported in the shell does not reach it.
 case_compose_environment() {
   new_case compose-environment
-  run COMPOSE_PROJECT_NAME=stellarr-dev STELLARR_TURN_RELAY_RANGE=50000-50040 STELLARR_DOMAIN=chat.example.com --yes
+  run COMPOSE_PROJECT_NAME=stellarr-dev COMPOSE_DISABLE_ENV_FILE=1 STELLARR_TURN_RELAY_RANGE=50000-50040 STELLARR_DOMAIN=chat.example.com --yes
   expect_success
-  expect_called "compose up sees COMPOSE_PROJECT_NAME=unset STELLARR_TURN_RELAY_RANGE=unset"
+  expect_called "compose up sees COMPOSE_PROJECT_NAME=unset STELLARR_TURN_RELAY_RANGE=unset COMPOSE_DISABLE_ENV_FILE=unset"
   expect_shown "Ignored from the environment, as Compose reads .env: STELLARR_TURN_RELAY_RANGE"
   expect_line "$home/stellarr/.env" "STELLARR_DOMAIN=chat.example.com"
 }
@@ -904,8 +1042,8 @@ case_update() {
   backups=("$dir"/.env.bak-*)
   [[ ${#backups[@]} -eq 1 ]] || fail ".env has more than one backup."
   cmp -s "$case_dir/env-before" "${backups[0]}" || fail "the backup is not the previous .env."
-  expect_called "pull --quiet @$dir"
-  expect_called "up -d --no-build @$dir"
+  expect_called "pull --quiet --policy always stellarr @$dir"
+  expect_called "up -d --no-build --pull never @$dir"
 
   # Without a terminal and without --yes, an update is not confirmed for the
   # person.
@@ -949,6 +1087,134 @@ case_update() {
 # The container reads .env as it is, so settings without a STELLARR_* name
 # live there too, as raw Section__Key settings. An update leaves every such line
 # as it was, where it was, and changes only the version.
+case_staged_installation() {
+  local dir pid
+  for problem in config pull volume live-config; do
+    new_case "staged-failure-$problem"
+    dir="$home/stellarr"
+    installed "$dir" 1.4.0
+    release 1.5.0
+    cp "$dir/.env" "$case_dir/env-before"
+    case $problem in
+      volume) echo unrelated_volume >"$state/config-volume" ;;
+      *) flag "$problem-fails" ;;
+    esac
+    run --yes
+    expect_failure
+    expect_not_called "up -d"
+    expect_missing "$dir/.stellarr-install-stage"
+    cmp -s "$fixtures/compose-1.4.0" "$dir/docker-compose.yml" || fail "replaced the old Compose file"
+    cmp -s "$case_dir/env-before" "$dir/.env" || fail "replaced the old environment"
+    [[ $problem != live-config ]] || expect_shown "Restored the previous installation files"
+  done
+
+  new_case staged-health-failure
+  dir="$home/stellarr"
+  installed "$dir" 1.4.0
+  release 1.5.0
+  flag never-healthy
+  run STELLARR_START_TIMEOUT=1 --yes
+  expect_failure
+  expect_called "up -d"
+  expect_line "$dir/.env" STELLARR_VERSION=1.5.0
+  expect_missing "$dir/.stellarr-install-stage"
+  cmp -s "$fixtures/compose-1.5.0" "$dir/docker-compose.yml" || fail "restored old configuration after start"
+
+  new_case staged-interruption-lock-and-recovery
+  dir="$home/stellarr"
+  installed "$dir" 1.4.0
+  release 1.5.0
+  echo 'an unrelated operator file' >"$dir/pending"
+  flag pause-live-config
+  seams
+  (
+    cd "$work"
+    exec env -i "${seam_env[@]}" TERM=dumb STELLARR_INSTALLER_UI=plain \
+      "$binary" --yes --no-start </dev/null >"$case_dir/first-out" 2>"$case_dir/first-err"
+  ) &
+  pid=$!
+  for ((tick=0; tick<250; tick++)); do
+    [[ ! -e $state/live-config-paused ]] || break
+    sleep .02
+  done
+  if [[ ! -e $state/live-config-paused ]]; then
+    kill -TERM "$pid" 2>/dev/null || :
+    wait "$pid" || :
+    fail "never reached validation after publication"
+  fi
+  run --yes --no-start
+  expect_failure
+  expect_shown "another installer is already running"
+  kill -KILL "$pid"
+  wait "$pid" 2>/dev/null || :
+  rm "$state/pause-live-config"
+  flag config-fails
+  run --yes --no-start
+  expect_failure
+  expect_shown "Restored the files from before the interrupted installation"
+  expect_line "$dir/.env" STELLARR_VERSION=1.4.0
+  expect_line "$dir/pending" 'an unrelated operator file'
+  expect_missing "$dir/.stellarr-install-stage"
+  cmp -s "$fixtures/compose-1.4.0" "$dir/docker-compose.yml" || fail "failed to recover interrupted publication"
+}
+
+case_sidecar_preparation() {
+  local dir build_mode
+  for build_mode in release checkout; do
+    new_case "sidecar-$build_mode"
+    dir="$home/stellarr"
+    mkdir -p "$dir/helper"
+    printf ',"helper":{"build":{"context":"PROJECT_DIR/helper"}},"registry":{"image":"registry.example/sidecar:remote"},"local":{"image":"local-only:cached","pull_policy":"never"}\n' >"$state/config-extra-services"
+    flag image-cached
+    if [[ $build_mode == checkout ]]; then
+      checkout_files "$dir"
+      echo 'FROM scratch' >"$dir/Dockerfile"
+      run --yes --build --dir "$dir"
+      expect_called "compose build helper stellarr"
+    else
+      run --yes
+      expect_called "compose build helper"
+      expect_line "$dir/.env" STELLARR_VERSION=1.4.0
+    fi
+    expect_success
+    expect_called "compose pull registry"
+    expect_not_called "compose pull local"
+    expect_called "image inspect local-only:cached"
+    expect_called "\"context\":\"$dir/helper\""
+    expect_called "compose up -d --no-build --pull never"
+  done
+
+  new_case missing-local-sidecar-image
+  dir="$home/stellarr"
+  printf ',"local":{"image":"local-only:cached","pull_policy":"never"}\n' >"$state/config-extra-services"
+  run --yes
+  expect_failure
+  expect_shown "Compose service local requires local image local-only:cached"
+  expect_not_called "compose up"
+  expect_missing "$dir/.env"
+}
+
+case_env_compose_syntax() {
+  local dir
+  new_case env-colon-project-name
+  dir="$home/stellarr"
+  mkdir -p "$dir"
+  printf 'COMPOSE_PROJECT_NAME: unrelated\n' >"$dir/.env"
+  run --yes
+  expect_failure
+  expect_shown ".env sets COMPOSE_PROJECT_NAME"
+  expect_missing "$dir/docker-compose.yml"
+
+  new_case env-bom-and-multiline
+  dir="$home/stellarr"
+  mkdir -p "$dir"
+  printf "\357\273\277PASSWORD='first\nCOMPOSE_PROJECT_NAME: unrelated\nlast'\n" >"$dir/.env"
+  run --yes --no-start
+  expect_success
+  printf "\357\273\277%s\nSTELLARR_VERSION=1.4.0\nPASSWORD='first\nCOMPOSE_PROJECT_NAME: unrelated\nlast'\n" "$marker" >"$case_dir/expected"
+  cmp -s "$case_dir/expected" "$dir/.env" || fail "did not preserve the BOM or multiline value"
+}
+
 case_env_raw_keys() {
   new_case env-raw-keys
   local dir="$case_dir/srv/stellarr"
@@ -969,7 +1235,7 @@ case_env_raw_keys() {
   expect_line "$dir/.env" "STELLARR_VERSION=1.5.0"
   expect_line "$dir/.env" "Logging__LogLevel__Stellarr.Api.Requests=Warning"
   expect_line "$dir/.env" "  Oidc__Providers__work__Authority=https://id.example.com/realms/work  "
-  expect_called "up -d --no-build @$dir"
+  expect_called "up -d --no-build --pull never @$dir"
 }
 
 case_env_without_marker() {
@@ -1137,9 +1403,22 @@ case_ports() {
   installed "$dir" 1.4.0
   container "$dir" 1.4.0
   echo 8443 >"$state/busy-tcp"
+  echo '{"443/tcp":[{"HostPort":"8443","HostIp":"0.0.0.0"}]}' >"$state/port-bindings"
   run --yes
   expect_success
-  expect_not_called "ss -ltn"
+  expect_called "ss -ltn"
+  expect_shown "held by Stellarr"
+
+  new_case port-running-container-new-conflict
+  dir="$case_dir/srv/stellarr"
+  installed "$dir" 1.4.0
+  container "$dir" 1.4.0
+  printf '8443\n9443\n' >"$state/busy-tcp"
+  echo '{"443/tcp":[{"HostPort":"8443","HostIp":"0.0.0.0"}]}' >"$state/port-bindings"
+  run --yes --https-port 9443
+  expect_failure
+  expect_shown "9443 (HTTPS), as given"
+  expect_not_called "up -d"
 
   new_case port-asked
   printf '8443\n8444\n' >"$state/busy-tcp"
@@ -1221,8 +1500,19 @@ case_never_healthy() {
   expect_shown "Stellarr did not start within 3 s"
   expect_shown "api      starting: waiting for the database"
   expect_shown "Setup code: K7QM-2XWP-9HDA"
-  expect_shown "Nothing was removed."
+  expect_shown "The saved configuration is in place."
   [[ $(count "stellarr-init health" "$case_dir/calls") -ge 3 ]] || fail "health was not checked once a second."
+
+  new_case hung-health
+  clock=real
+  flag hung-health
+  local started=$SECONDS
+  run STELLARR_START_TIMEOUT=1 --yes
+  expect_status 1
+  expect_shown "Stellarr did not start within 1 s"
+  [[ $((SECONDS - started)) -lt 3 ]] || fail "a hung Docker probe overran the startup timeout."
+  sleep 3
+  expect_missing "$state/health-child-survived"
 
   new_case exited
   echo exited >"$state/after-up"
@@ -1245,7 +1535,8 @@ case_unexpected_failure() {
 modern_release() {
   cp "$repo_root/docker-compose.yml" "$fixtures/compose-1.6.0"
   release 1.6.0
-  cp "$repo_root/docker-compose.turn.yml" "$raw/v1.6.0/docker-compose.turn.yml"
+  mkdir -p "$raw/v1.6.0/infra/compose"
+  cp "$repo_root/infra/compose/turn.yml" "$raw/v1.6.0/infra/compose/turn.yml"
 }
 
 case_direct_and_turn() {
@@ -1285,9 +1576,23 @@ case_direct_and_turn() {
   expect_line "$home/stellarr/.env" "STELLARR_TURN_ENABLED=true"
   expect_line "$home/stellarr/.env" "STELLARR_HTTP_PORT=127.0.0.1:8888"
   expect_line "$home/stellarr/.env" "COMPOSE_FILE=docker-compose.yml:docker-compose.turn.yml"
-  cmp -s "$repo_root/docker-compose.turn.yml" "$home/stellarr/docker-compose.turn.yml" ||
+  cmp -s "$repo_root/infra/compose/turn.yml" "$home/stellarr/docker-compose.turn.yml" ||
     fail "the TURN overlay was not downloaded."
-  expect_called "docker compose up -d --no-build @$home/stellarr"
+  expect_called "compose up -d --no-build --pull never @$home/stellarr"
+
+  expect_called "https GET https://raw.githubusercontent.com/Arkazzae/Stellarr/v1.6.0/infra/compose/turn.yml"
+  expect_not_called "https GET https://raw.githubusercontent.com/Arkazzae/Stellarr/v1.6.0/docker-compose.turn.yml"
+
+  new_case turn-overlay-old-release-location
+  modern_release
+  mv "$raw/v1.6.0/infra/compose/turn.yml" "$raw/v1.6.0/docker-compose.turn.yml"
+  run --yes --no-start --enable-turn
+  expect_success
+  expect_called "https GET https://raw.githubusercontent.com/Arkazzae/Stellarr/v1.6.0/infra/compose/turn.yml"
+  expect_called "https GET https://raw.githubusercontent.com/Arkazzae/Stellarr/v1.6.0/docker-compose.turn.yml"
+  expect_line "$home/stellarr/.env" "COMPOSE_FILE=docker-compose.yml:docker-compose.turn.yml"
+  cmp -s "$repo_root/infra/compose/turn.yml" "$home/stellarr/docker-compose.turn.yml" ||
+    fail "the legacy TURN overlay was not downloaded."
 
   new_case turn-upgrade
   modern_release
@@ -1332,23 +1637,51 @@ case_checkout() {
   new_case checkout
   local checkout="$case_dir/Stellarr"
   mkdir -p "$checkout"
-  cp "$installer" "$repo_root/docker-compose.yml" "$repo_root/.env.example" "$checkout/"
+  checkout_files "$checkout"
+  cp "$installer" "$checkout/"
   echo 'FROM scratch' >"$checkout/Dockerfile"
   no_release
   # install.sh names the checkout it is in to the installer.
   through_install_sh "$checkout/install.sh"
   run --yes --build
   expect_success
-  expect_called "compose build @$checkout"
-  expect_called "up -d --no-build @$checkout"
-  expect_line "$checkout/.env" "STELLARR_VERSION=latest"
+  expect_called "compose build stellarr @$checkout"
+  expect_called "up -d --no-build --pull never @$checkout"
+  expect_line "$checkout/.env" "STELLARR_VERSION=dev"
+  expect_line "$checkout/.env" "STELLARR_IMAGE=stellarr-local:dev"
   cmp -s "$repo_root/docker-compose.yml" "$checkout/docker-compose.yml" || fail "the checkout's docker-compose.yml changed."
   expect_shown "Stellarr is running"
+
+  new_case checkout-migrate-turn-path
+  checkout="$case_dir/Stellarr"
+  checkout_files "$checkout"
+  echo 'FROM scratch' >"$checkout/Dockerfile"
+  printf '%s\n' "$marker" 'COMPOSE_FILE=docker-compose.yml:docker-compose.turn.yml' >"$checkout/.env"
+  printf 'services: {}\n' >"$checkout/compose.override.yml"
+  run --yes --build --no-start --dir "$checkout"
+  expect_success
+  expect_line "$checkout/.env" "STELLARR_TURN_ENABLED=true"
+  expect_line "$checkout/.env" "COMPOSE_FILE=docker-compose.yml:infra/compose/turn.yml:compose.override.yml"
+  expect_shown "-f infra/compose/turn.yml -f infra/compose/build.yml -f compose.override.yml up -d --build"
+  expect_missing "$checkout/docker-compose.turn.yml"
+
+  new_case checkout-retains-legacy-overlays
+  checkout="$case_dir/Stellarr"
+  checkout_files "$checkout"
+  mv "$checkout/infra/compose/turn.yml" "$checkout/docker-compose.turn.yml"
+  mv "$checkout/infra/compose/build.yml" "$checkout/docker-compose.build.yml"
+  echo 'FROM scratch' >"$checkout/Dockerfile"
+  run --yes --build --no-start --enable-turn --dir "$checkout"
+  expect_success
+  expect_line "$checkout/.env" "STELLARR_TURN_ENABLED=true"
+  expect_line "$checkout/.env" "COMPOSE_FILE=docker-compose.yml:docker-compose.turn.yml"
+  expect_shown "-f docker-compose.turn.yml -f docker-compose.build.yml up -d --build"
 
   new_case checkout-no-release
   checkout="$case_dir/Stellarr"
   mkdir -p "$checkout"
-  cp "$installer" "$repo_root/docker-compose.yml" "$repo_root/.env.example" "$checkout/"
+  checkout_files "$checkout"
+  cp "$installer" "$checkout/"
   echo 'FROM scratch' >"$checkout/Dockerfile"
   no_release
   through_install_sh "$checkout/install.sh"
@@ -1390,13 +1723,14 @@ case_terminal_mode() {
   # The installer runs in the foreground, as a person's would, so that it
   # receives the interrupt; a helper sends it once the waiting has begun.
   new_case terminal-interrupt
-  flag never-healthy
+  printf '2\n' >"$state/hung-health"
+  printf '3\n' >"$state/healthy-after"
   clock=real
   seams
   local pid_file="$case_dir/pid"
   (
     for ((i = 0; i < 60; i++)); do
-      if [[ -s $pid_file ]] && grep -q 'stellarr-init health' "$case_dir/calls"; then
+      if [[ -s $pid_file && -s $state/health-checks ]] && (( $(cat "$state/health-checks") >= 2 )); then
         kill -INT "$(cat "$pid_file")"
         exit 0
       fi
@@ -1406,12 +1740,15 @@ case_terminal_mode() {
   status=0
   (cd "$work" && exec "$BASH" -c "echo \$\$ >\"\$0\"; exec \"\$@\"" "$pid_file" env -i "${seam_env[@]}" \
     LANG=C.UTF-8 TERM=xterm-256color STELLARR_INSTALLER_UI=terminal \
-    STELLARR_INSTALLER_TTY="$case_dir/no-terminal" STELLARR_START_TIMEOUT=120 "$binary" --yes \
+    STELLARR_INSTALLER_TTY="$case_dir/no-terminal" STELLARR_START_TIMEOUT=120 "$BASH" "$downloaded" --yes \
     </dev/null >"$case_dir/out" 2>"$case_dir/err") || status=$?
   wait
   expect_status 130
   expect_shown "Cancelled."
   expect_clean_terminal
+  expect_empty_dir "$case_dir/tmp"
+  sleep 3
+  expect_missing "$state/health-child-survived"
 
   # Without UTF-8 the glyphs are plain characters, and without colour no
   # colour is set.
@@ -1496,6 +1833,12 @@ case_container_dir_gone
 case_compose_environment
 case_not_compose
 case_update
+case_staged_installation
+case_sidecar_preparation
+case_env_compose_syntax
+# shellcheck source=infra/tests/install-release.test.sh
+source "$repo_root/infra/tests/install-release.test.sh"
+case_release_choices
 case_env_raw_keys
 case_env_without_marker
 case_env_marked_compose_variable

@@ -18,7 +18,7 @@ docker buildx bake recipes
 
 This builds every recipe listed in [`../../docker-bake.hcl`](../../docker-bake.hcl) into `artifacts/recipes/<name>/out/` using the same `Dockerfile` stages as the production image build.
 
-Run `docker buildx bake recipes` once in a fresh checkout or worktree, and whenever a recipe changes, before running `npm run dev`, `npm test`, or `npm run build` in `web/`. Those commands invoke [`../assemble.mjs`](../assemble.mjs) first, which copies outputs from `out/` into `web/public/`, verifies every SHA-256 digest against `artifacts/manifest.json`, and fails if any output is missing or mismatched (`assemble.mjs` never invokes Docker itself). The `web` service in `docker-compose.dev.yml` reads the assembled files from the host bind mount.
+Run `docker buildx bake recipes` once in a fresh checkout or worktree, and whenever a recipe changes, before running `npm run dev`, `npm test`, or `npm run build` in `web/`. Those commands invoke [`../assemble.mjs`](../assemble.mjs) first, which copies outputs from `out/` into `web/public/`, verifies every SHA-256 digest against `artifacts/manifest.json`, and fails if any output is missing or mismatched (`assemble.mjs` never invokes Docker itself). The `web` service in `infra/compose/dev.yml` reads the assembled files from the host bind mount.
 
 Cached builds finish in a few seconds. Cold builds download the pinned toolchains first (`wasi-sdk` is ~776 MB compressed; Bergamot's Emscripten archive is ~318 MB and runs under `linux/amd64` emulation on Apple silicon, taking 13–28 minutes on a cold cache).
 
