@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { parseHex } from "@/design/colour";
 
-import { convertTheme, stylesheetAddress } from "./convert";
+import { convertTheme } from "./convert";
+import { readSource } from "./sources";
 import { browserEvaluator, type Evaluation, type Evaluator } from "./evaluate";
 import { DISCORD_ROLES, mapDiscordTheme } from "./roles";
 import {
@@ -10,7 +11,7 @@ import {
   readMeta,
   styleQueryNames,
   unwrapStyleQueries,
-  wallpaperAddressOf,
+  wallpaperValues,
   withoutAddresses,
 } from "./text";
 
@@ -111,10 +112,24 @@ describe("reading a theme's text", () => {
     expect(clean).toContain("--background-base-low: var(--bg-4)");
   });
 
-  it("finds the picture a theme puts behind Discord, whatever it calls it, and only a raster one", () => {
-    expect(wallpaperAddressOf(CLEARVISION_LIKE)).toBe("https://clearvision.github.io/images/sapphire.jpg");
-    expect(wallpaperAddressOf(":root{--app-bg: url(https://i.ibb.co/x/alps.png)}")).toBe("https://i.ibb.co/x/alps.png");
-    expect(wallpaperAddressOf(":root{--background-image-url: url('')} --dms-icon-svg-url: url(https://a.example/moon.svg)")).toBeNull();
+  it("only passes inert values to the evaluator and reads the winning wallpaper", () => {
+    const wallpaper = wallpaperValues(`${CLEARVISION_LIKE}
+      :root { --background-image: url("https://example.com/override.png") }
+      .preview { --background-image: url("https://example.com/file.svg") }`);
+    expect(wallpaper.css).not.toMatch(/url\(|https:/);
+    expect(wallpaper.read(new Map([["--background-image", "linear-gradient(rgb(1, 0, 1), rgb(1, 0, 1))"]]))).toBe("https://example.com/override.png");
+    expect(wallpaper.read(new Map([["--background-image", "none"]]))).toBeNull();
+  });
+
+  it("resolves imports and images against the final stylesheet URL and ignores commented imports", async () => {
+    const fetchSheet = vi.fn(async () => ({
+      text: '/* @import "ignore.css"; */ :root { --background-image: url("./images/night.jpg") }',
+      url: "https://cdn.example/themes/base.css",
+    }));
+    const inlined = await inlineImports('@import "https://a.example/redirect.css";', null, fetchSheet);
+    expect(fetchSheet).toHaveBeenCalledTimes(1);
+    expect(inlined.css).toContain("https://cdn.example/themes/images/night.jpg");
+    expect(inlined.fetched).toEqual(["https://cdn.example/themes/base.css"]);
   });
 
   it("decides style queries against the values the theme declares", () => {
@@ -267,6 +282,7 @@ describe("converting a theme", () => {
     const fetchSheet = fetcher({});
     const evaluator = stubEvaluator(() => ({
       colours: new Map([["--text-default", parseHex("#dcdcde")], ["--text-brand", parseHex("#2780e6")], ["--background-shading", parseHex("#00000066")]]),
+      values: new Map([["--background-image", "linear-gradient(rgb(1, 0, 0), rgb(1, 0, 0))"]]),
     }));
 
     const conversion = await convertTheme(CLEARVISION_LIKE, null, { fetchSheet, evaluator });
@@ -277,12 +293,19 @@ describe("converting a theme", () => {
     expect(conversion.accent).toBe("#2780e6");
   });
 
-  it("reads a GitHub page as the file and says plainly that betterdiscord.app cannot be read", () => {
-    expect(stylesheetAddress("https://github.com/ada/nocturne/blob/main/themes/n.theme.css")).toEqual({
+  it("recognises BetterDiscord download and detail links alongside GitHub files and repositories", () => {
+    expect(readSource("https://github.com/ada/nocturne/blob/main/themes/n.theme.css")).toEqual({
+      kind: "css",
       url: "https://raw.githubusercontent.com/ada/nocturne/main/themes/n.theme.css",
     });
-    expect(stylesheetAddress("https://betterdiscord.app/download?id=174")).toEqual({ problem: "betterDiscordSite" });
-    expect(stylesheetAddress("http://ada.github.io/n.css")).toEqual({ problem: "notHttps" });
+    expect(readSource("https://betterdiscord.app/Download?id=174")).toEqual({ kind: "store", name: "174" });
+    expect(readSource("betterdiscord.app/themes/Frosted%20Glass")).toEqual({ kind: "store", name: "Frosted Glass" });
+    expect(readSource("ada/nocturne")).toEqual({ kind: "repo", repo: "ada/nocturne", ref: "HEAD", directory: "" });
+    expect(readSource("https://github.com/ada/nocturne/tree/dev/themes")).toEqual({
+      kind: "repo", repo: "ada/nocturne", ref: "dev", directory: "themes",
+    });
+    expect(readSource("frosted glass")).toEqual({ kind: "search", query: "frosted glass" });
+    expect(readSource("http://ada.github.io/n.css")).toEqual({ kind: "problem", problem: "notHttps" });
   });
 });
 

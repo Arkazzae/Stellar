@@ -39,7 +39,7 @@ interface ImportRule {
   condition: string;
 }
 
-const IMPORT = /@import\s+(?:url\(\s*(["']?)([^"')]*)\1\s*\)|(["'])([^"']*)\3)\s*([^;]*);/g;
+const IMPORT = /@import\s+(?:url\(\s*(["']?)([^"')]*)\1\s*\)|(["'])([^"']*)\3)\s*([^;]*);/gi;
 
 function importsOf(css: string): ImportRule[] {
   return [...css.matchAll(IMPORT)].map((match) => ({
@@ -60,7 +60,7 @@ export function googleFontFamilies(url: URL): string[] {
 }
 
 /** Fetches a stylesheet's text, or rejects. */
-export type FetchStylesheet = (url: string) => Promise<string>;
+export type FetchStylesheet = (url: string) => Promise<string | { text: string; url: string }>;
 
 export interface InlineLimits {
   /** How deep imports may nest: the theme, its build, what that imports. */
@@ -75,8 +75,8 @@ export interface Inlined {
   css: string;
   /** Families asked of Google Fonts, which is never fetched. */
   googleFonts: string[];
-  /** Imports left out: not https, too deep, over the size, or failed. */
-  skipped: { url: string; reason: "insecure" | "depth" | "size" | "failed" }[];
+  /** Imports left out while reading a bounded stylesheet tree. */
+  skipped: { url: string; reason: "insecure" | "depth" | "size" | "failed" | "limit" | "cycle" }[];
   /** Every stylesheet read, the theme's own address first when it had one. */
   fetched: string[];
 }
@@ -96,12 +96,14 @@ export async function inlineImports(
 ): Promise<Inlined> {
   const result: Inlined = { css: "", googleFonts: [], skipped: [], fetched: base === null ? [] : [base] };
   let total = css.length;
+  const sheets = new Map<string, ReturnType<FetchStylesheet>>();
 
-  const expand = async (text: string, from: string | null, depth: number): Promise<string> => {
+  const expand = async (text: string, from: string | null, depth: number, ancestors: ReadonlySet<string>): Promise<string> => {
+    text = text.replace(COMMENTS, "");
     let out = "";
     let at = 0;
     for (const rule of importsOf(text)) {
-      out += text.slice(at, rule.start);
+      out += absoluteAddresses(text.slice(at, rule.start), from);
       at = rule.end;
       let url: URL;
       try {
@@ -122,25 +124,44 @@ export async function inlineImports(
         result.skipped.push({ url: url.href, reason: "depth" });
         continue;
       }
-      let sheet: string;
+      if (ancestors.has(url.href)) {
+        result.skipped.push({ url: url.href, reason: "cycle" });
+        continue;
+      }
+      let pending = sheets.get(url.href);
+      if (pending === undefined) {
+        if (sheets.size >= 16) {
+          result.skipped.push({ url: url.href, reason: "limit" });
+          continue;
+        }
+        pending = fetchSheet(url.href);
+        sheets.set(url.href, pending);
+      }
+      let sheet: string | { text: string; url: string };
       try {
-        sheet = await fetchSheet(url.href);
+        sheet = await pending;
       } catch {
         result.skipped.push({ url: url.href, reason: "failed" });
         continue;
       }
-      if (total + sheet.length > limits.total) {
+      const body = typeof sheet === "string" ? sheet : sheet.text;
+      const address = typeof sheet === "string" ? url.href : sheet.url;
+      if (ancestors.has(address)) {
+        result.skipped.push({ url: address, reason: "cycle" });
+        continue;
+      }
+      if (total + body.length > limits.total) {
         result.skipped.push({ url: url.href, reason: "size" });
         continue;
       }
-      total += sheet.length;
-      result.fetched.push(url.href);
-      out += wrapIn(rule.condition, await expand(sheet, url.href, depth + 1));
+      total += body.length;
+      result.fetched.push(address);
+      out += wrapIn(rule.condition, await expand(body, address, depth + 1, new Set([...ancestors, url.href, address])));
     }
-    return out + text.slice(at);
+    return out + absoluteAddresses(text.slice(at), from);
   };
 
-  result.css = await expand(css, base, 0);
+  result.css = await expand(css, base, 0, new Set(base === null ? [] : [base]));
   return result;
 }
 
@@ -157,34 +178,59 @@ function wrapIn(condition: string, css: string): string {
   return wrapped;
 }
 
-/**
- * The picture a theme sets behind Discord, when it names one: the first
- * https address of a raster picture in a custom property about a background,
- * a backdrop or a wallpaper (`--background-image`, `--app-bg`,
- * `--dplus-backdrop`). Read before the addresses are taken out; fetched
- * only if the person agrees.
- */
-export function wallpaperAddressOf(css: string): string | null {
-  const property = /--[\w-]*(?:background|backdrop|wallpaper|bg)[\w-]*\s*:\s*([^;}]*)/gi;
-  for (const [, value] of css.matchAll(property)) {
-    const address = /url\(\s*["']?(https:\/\/[^"')\s]+)["']?\s*\)/i.exec(value ?? "")?.[1];
-    if (address !== undefined && /\.(?:jpe?g|png|webp|gif|avif)(?:[?#]|$)/i.test(address)) return address;
-  }
-  return null;
+const COMMENTS = /\/\*[\s\S]*?\*\//g;
+const URL_TOKEN = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\s*\)/gi;
+
+function absoluteAddresses(css: string, base: string | null): string {
+  return css.replace(URL_TOKEN, (token, double: string | undefined, single: string | undefined, bare: string | undefined) => {
+    try {
+      const url = new URL((double ?? single ?? bare ?? "").trim(), base ?? undefined);
+      return url.protocol === "https:" ? `url("${url.href.replaceAll('"', "%22")}")` : token;
+    } catch {
+      return token;
+    }
+  });
 }
 
-/**
- * The stylesheet with nothing left that makes a request: every `@font-face`
- * and `@import`, and every `url()` and `image-set()` written as `none`. What
- * evaluates it never touches the network, before the iframe's own policy
- * refuses whatever this missed.
- */
-export function withoutAddresses(css: string): string {
-  // Comments first: they hold the header's addresses, and could hide a brace.
-  return removeBlocks(css.replace(/\/\*[\s\S]*?\*\//g, ""), /@font-face\s*\{/gi)
+/** Strip fetchable CSS. The optional callback turns image addresses into inert values. */
+export function withoutAddresses(css: string, replaceAddress = (_address: string) => "none"): string {
+  return removeBlocks(css.replace(COMMENTS, ""), /@font-face\s*\{/gi)
     .replace(/@import[^;]*;/gi, "")
     .replace(/(?:-webkit-)?image-set\(\s*(?:[^()]|\([^()]*\))*\)/gi, "none")
-    .replace(/url\(\s*(?:"[^"]*"|'[^']*'|[^)]*)\s*\)/gi, "none");
+    .replace(URL_TOKEN, (_token, double: string | undefined, single: string | undefined, bare: string | undefined) =>
+      replaceAddress((double ?? single ?? bare ?? "").trim()),
+    );
+}
+
+/** Let the evaluator choose the winning wallpaper variable, including aliases and overrides. */
+export function wallpaperValues(css: string) {
+  const pictures = new Map<string, string>();
+  const safeCss = withoutAddresses(css, (address) => {
+    if (!address.startsWith("https://") || !/\.(?:jpe?g|png|webp|gif|avif)(?:[?#]|$)/i.test(address)) return "none";
+    if (pictures.size >= 65536) return "none";
+    // An inert image keeps the declaration valid on both custom properties
+    // and actual backgrounds; RGB channels carry its index through CSSOM.
+    const id = `rgb(1, ${pictures.size >> 8}, ${pictures.size & 255})`;
+    pictures.set(id, address);
+    return `linear-gradient(${id}, ${id})`;
+  });
+  const preferred = [
+    "--background-image", "--app-bg", "--dplus-backdrop", "--wallpaper",
+    "--theme-background-image", "--backgroundImage", "--background", "--bg-image", "--bg-img",
+  ];
+  const names = [...new Set([
+    ...preferred,
+    ...Array.from(safeCss.matchAll(/(--[\w-]*(?:background|backdrop|wallpaper|bg)[\w-]*)\s*:/gi), (match) => match[1]!),
+  ])].slice(0, 80);
+  const read = (values: ReadonlyMap<string, string>) => {
+    for (const name of ["--stellarr-page-image", ...names]) {
+      const id = values.get(name)?.match(/rgb\(1, \d+, \d+\)/)?.[0];
+      const address = id === undefined ? undefined : pictures.get(id);
+      if (address !== undefined) return address;
+    }
+    return null;
+  };
+  return { css: safeCss, names, read };
 }
 
 /** The index just past the block whose `{` is at `open`. */

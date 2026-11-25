@@ -130,3 +130,45 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.searchGroup + .searchGroup {
+  margin-top: 14px;
+}
+
+.searchGroup h3,
+.searchGroup p {
+  margin-bottom: 6px;
+  font-size: var(--text-13);
+  color: var(--text-muted);
+}
+
+.searchGroup ul {
+  max-height: 224px;
+  overflow-y: auto;
+  border-block: 1px solid var(--line-subtle);
+}
+
+.searchGroup li + li {
+  border-top: 1px solid var(--line-subtle);
+}
+
+.searchGroup button {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px;
+  text-align: start;
+  font-size: var(--text-13);
+  overflow-wrap: anywhere;
+}
+
+.searchGroup button:hover,
+.searchGroup button:focus-visible {
+  background: var(--surface-overlay);
+}
+
+.searchGroup small {
+  color: var(--text-muted);
+  font-size: var(--text-12);
+}

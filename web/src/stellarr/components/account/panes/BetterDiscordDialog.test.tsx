@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_THEME, getPalette } from "@/design/themes";
 import type { Conversion } from "@/lib/betterDiscord/convert";
-import { convertText, fetchPicture } from "@/lib/betterDiscord/run";
+import { convertAddress, convertText, fetchPicture } from "@/lib/betterDiscord/run";
 import { renderInConfirm } from "@/test/confirm";
 
 import BetterDiscordDialog from "./BetterDiscordDialog";
@@ -12,6 +12,7 @@ import BetterDiscordDialog from "./BetterDiscordDialog";
 // The conversion itself is tested on its own; here it is what the dialog shows and does with one.
 vi.mock("@/lib/betterDiscord/run", async (original) => ({
   ...(await original<object>()),
+  convertAddress: vi.fn(),
   convertText: vi.fn(),
   fetchPicture: vi.fn(),
 }));
@@ -70,6 +71,26 @@ describe("BetterDiscord dialog", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it("opens a GitHub repository result and converts the chosen theme file", async () => {
+    const user = userEvent.setup();
+    const repo = "https://github.com/ada/nocturne";
+    const file = "https://raw.githubusercontent.com/ada/nocturne/HEAD/themes/Nocturne.theme.css";
+    vi.mocked(convertAddress)
+      .mockResolvedValueOnce({ groups: [
+        { provider: "betterDiscord", choices: [], problem: "unavailable" },
+        { provider: "github", choices: [{ label: "ada/nocturne", url: repo }] },
+      ] })
+      .mockResolvedValueOnce({ groups: [{ provider: "files", choices: [{ label: "themes/Nocturne.theme.css", url: file }] }] })
+      .mockResolvedValueOnce({ conversion: conversion(), source: file });
+
+    renderInConfirm(<BetterDiscordDialog open onClose={vi.fn()} theme={DEFAULT_THEME} onChange={vi.fn()} />);
+    await user.type(screen.getByRole("textbox", { name: "Nazwa lub link do motywu" }), "nocturne{Enter}");
+    await user.click(await screen.findByRole("button", { name: "ada/nocturne" }));
+    await user.click(await screen.findByRole("button", { name: "themes/Nocturne.theme.css" }));
+    expect(await screen.findByRole("button", { name: "Zastosuj" })).toBeInTheDocument();
+    expect(vi.mocked(convertAddress).mock.calls.map(([source]) => source)).toEqual(["nocturne", repo, file]);
+  });
+
   it("offers only what came across when the theme has no palette, and fetches its picture only when asked", async () => {
     const { user, onChange, upload } = await open(
       conversion({
@@ -80,7 +101,7 @@ describe("BetterDiscord dialog", () => {
       }),
     );
 
-    expect(screen.getByText(/Paleta: motyw nie ustawia/)).toBeInTheDocument();
+    expect(screen.getByText(/Motyw nie zawiera tła/)).toBeInTheDocument();
     expect(screen.getByText("Krój gg sans, którego nie ma w pakiecie")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Zastosuj to, co przeniesione" }));
 
