@@ -37,7 +37,7 @@ media/smoke
 # The project site has its own build and is not part of the image.
 website
 # Neither is the installer, which runs on the host before there is an image.
-installer
+init/installer
 # Neither are the native apps.
 client
 
