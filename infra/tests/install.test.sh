@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs the installer, installer/ built with its test-seams feature, and the
+# Runs the installer, init/installer/ built with its test-seams feature, and the
 # install.sh that fetches it, against stub commands, so no Docker, network or
 # root is needed. The stubs record every call and answer from files each case
 # writes; the installer's HTTPS requests are answered from files as well.
@@ -18,8 +18,8 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 installer="$repo_root/install.sh"
 binary=${STELLARR_INSTALLER_TEST_BIN:-}
 if [[ -z $binary ]]; then
-  cargo build --quiet --features test-seams --manifest-path "$repo_root/installer/Cargo.toml"
-  binary="$(cargo metadata --format-version 1 --no-deps --manifest-path "$repo_root/installer/Cargo.toml" |
+  cargo build --quiet --features test-seams --manifest-path "$repo_root/init/installer/Cargo.toml"
+  binary="$(cargo metadata --format-version 1 --no-deps --manifest-path "$repo_root/init/installer/Cargo.toml" |
     sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')/debug/stellarr-installer"
 fi
 [[ -x $binary ]] || { echo "No installer at $binary" >&2; exit 1; }
@@ -638,7 +638,7 @@ case_install_sh() {
   run --help
   expect_failure
   expect_shown "Could not find the latest Stellarr release"
-  expect_shown "cargo run --locked --manifest-path installer/Cargo.toml -- --dir . --build"
+  expect_shown "cargo run --locked --manifest-path init/installer/Cargo.toml -- --dir . --build"
   expect_not_called "releases/download/"
   expect_not_called docker
 
@@ -648,22 +648,22 @@ case_install_sh() {
   run --yes
   expect_failure
   expect_shown "Could not download the Stellarr installer for x86_64-unknown-linux-musl"
-  expect_shown "cargo run --locked --manifest-path installer/Cargo.toml -- --dir . --build"
+  expect_shown "cargo run --locked --manifest-path init/installer/Cargo.toml -- --dir . --build"
   expect_empty_dir "$case_dir/tmp"
 
   # A checkout still gets the release binary; cargo is an explicit alternative.
   new_case install-sh-checkout
   local checkout="$case_dir/Stellarr"
-  mkdir -p "$checkout/installer"
+  mkdir -p "$checkout/init/installer"
   checkout_files "$checkout"
   cp "$installer" "$checkout/"
   echo 'FROM scratch' >"$checkout/Dockerfile"
-  : >"$checkout/installer/Cargo.toml"
+  : >"$checkout/init/installer/Cargo.toml"
   rm "$case_assets/stellarr-installer-x86_64-unknown-linux-musl"
   through_install_sh "$checkout/install.sh"
   run --yes --build
   expect_failure
-  expect_shown "cargo run --locked --manifest-path installer/Cargo.toml -- --dir . --build"
+  expect_shown "cargo run --locked --manifest-path init/installer/Cargo.toml -- --dir . --build"
   expect_not_called cargo
 
   new_case install-sh-arch

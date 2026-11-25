@@ -63,7 +63,7 @@ docker compose -f docker-compose.yml -f infra/compose/build.yml up -d --build
 With Cargo installed, you can run the installer from the checkout before a release is available:
 
 ```bash
-cargo run --locked --release --manifest-path installer/Cargo.toml -- --build --dir "$PWD"
+cargo run --locked --release --manifest-path init/installer/Cargo.toml -- --build --dir "$PWD"
 ```
 
 `docker-compose.yml` defines the production stack. `infra/compose/` contains the local build, TURN, and development configurations.
