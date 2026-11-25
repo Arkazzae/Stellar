@@ -148,6 +148,7 @@ read_settings() {
   turn_tcp_enabled="$(or_default "${STELLARR_TURN_TCP_ENABLED:-}" false)"
   turns_enabled="$(or_default "${STELLARR_TURNS_ENABLED:-}" false)"
   language="$(or_default "${STELLARR_LANGUAGE:-}" en)"
+  media_lan_ip="$(or_default "${STELLARR_MEDIA_LAN_IP:-}")"
   media_advertise="$(or_default "${STELLARR_MEDIA_ADVERTISE:-}")"
   media_log="$(or_default "${STELLARR_MEDIA_LOG:-}" info)"
 

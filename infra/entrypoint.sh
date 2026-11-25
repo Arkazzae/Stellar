@@ -178,13 +178,13 @@ else
   echo "STELLARR_DOMAIN is not set, so the instance has no public address: reset links stay off and desktop clients keep the address they connected to." >&2
 fi
 
-# Stellarr Media carries every call. Its candidates are the public address,
-# when one is known, and the container's own address. Optional coturn reaches
-# the media server at its container address. STELLARR_MEDIA_ADVERTISE, when
-# set, replaces these addresses and is passed through.
+# Stellarr Media advertises the public and LAN addresses when configured,
+# plus the container address that optional coturn uses to reach it.
+# STELLARR_MEDIA_ADVERTISE overrides that list.
 export STELLARR_MEDIA_BIND="0.0.0.0:49000"
 export STELLARR_MEDIA_PUBLIC_IP="$media_public_ip"
 export STELLARR_MEDIA_PUBLIC_PORT="$media_port"
+export STELLARR_MEDIA_LAN_IP="$media_lan_ip"
 export STELLARR_MEDIA_CONTROL_BIND="127.0.0.1:5200"
 export STELLARR_MEDIA_CONTROL_SECRET="$media_control_secret"
 export STELLARR_MEDIA_LOG="$media_log"
@@ -194,7 +194,7 @@ else
   unset STELLARR_MEDIA_ADVERTISE
 fi
 
-if [[ -z "$media_public_ip" && -z "$media_advertise" ]]; then
+if [[ -z "$media_public_ip" && -z "$media_lan_ip" && -z "$media_advertise" ]]; then
   echo "STELLARR_PUBLIC_IP is empty, so the media server advertises only this container's own address." \
     "Browsers outside the container network need a reachable media candidate." \
     "Set STELLARR_PUBLIC_IP to the IPv4 address browsers reach this host at, or to 'auto'." >&2

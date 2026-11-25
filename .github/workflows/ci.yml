@@ -464,6 +464,26 @@ jobs:
           STELLARR_VERSION=1.2.3 docker compose \
             -f docker-compose.yml -f infra/compose/build.yml config --format json | jq -e '
             .services.stellarr | .image == "stellarr-local:dev" and .pull_policy == "never" and .build != null'
+      - name: Check Unraid container capabilities
+        run: |
+          docker compose config --format json > "$RUNNER_TEMP/stellarr-compose.json"
+          python3 - "$RUNNER_TEMP/stellarr-compose.json" <<'PY'
+          import json
+          import shlex
+          import sys
+          import xml.etree.ElementTree as ET
+
+          with open(sys.argv[1]) as source:
+              service = json.load(source)["services"]["stellarr"]
+          template = ET.parse("deploy/unraid/stellarr.xml")
+          params = shlex.split(template.findtext("ExtraParams", ""))
+          for option in ("cap_add", "cap_drop"):
+              prefix = "--" + option.replace("_", "-") + "="
+              actual = sorted(value.removeprefix(prefix) for value in params if value.startswith(prefix))
+              expected = sorted(service.get(option, []))
+              if actual != expected:
+                  raise SystemExit(f"Unraid {option}: expected {expected}, got {actual}")
+          PY
       - name: Check that every place names the same settings
         run: bash infra/tests/setting-names.test.sh
       - run: bash infra/tests/install.test.sh
