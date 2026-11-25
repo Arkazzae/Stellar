@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { Icon } from "@stellarr/icons";
+import { Avatar } from "@/components/primitives/Avatar";
 import type { PersonVM, ScreenShareVM } from "@/components/view-models";
 import { useLanguage } from "@/state/LanguageProvider";
 
@@ -262,7 +263,13 @@ export function ScreenTile({
             </div>
             <div className="st-group">
               {focused && onShowGrid ? (
-                <button type="button" className="st-chip st-button" aria-label={t("stage.grid")} onClick={onShowGrid}>
+                <button
+                  type="button"
+                  className="st-chip st-button"
+                  aria-label={t("stage.grid")}
+                  title={t("stage.grid")}
+                  onClick={onShowGrid}
+                >
                   <Icon name="apps" size={15} />
                   <span className="st-chip-text">{t("stage.grid")}</span>
                 </button>
@@ -272,6 +279,7 @@ export function ScreenTile({
                   type="button"
                   className="st-chip st-button"
                   aria-label={t("share.hidePreview")}
+                  title={t("share.hidePreview")}
                   onClick={onTogglePreview}
                 >
                   <Icon name="monitor" size={15} />
@@ -283,6 +291,7 @@ export function ScreenTile({
                   type="button"
                   className="st-chip st-button"
                   aria-label={t("voiceBar.stopSharing")}
+                  title={t("voiceBar.stopSharing")}
                   onClick={onStopSharing}
                 >
                   <Icon name="stop" size={15} />
@@ -294,6 +303,7 @@ export function ScreenTile({
                   type="button"
                   className="st-chip st-button"
                   aria-label={t("share.stopWatching")}
+                  title={t("share.stopWatching")}
                   onClick={onStopWatching}
                 >
                   <Icon name="x" size={15} />
@@ -329,15 +339,17 @@ function Viewers({ people }: { people: readonly PersonVM[] }) {
     <span className="st-chip st-viewers" role="img" aria-label={label} title={label}>
       <Icon name="eye" size={14} />
       <span className="st-faces" aria-hidden="true">
-        {shown.map((person) =>
-          person.avatarUrl ? (
-            <img key={person.id} src={person.avatarUrl} alt="" />
-          ) : (
-            <span key={person.id} className="st-face-initials">
-              {person.initials}
-            </span>
-          ),
-        )}
+        {shown.map((person) => (
+          <span key={person.id} className="st-face">
+            <Avatar
+              id={person.id}
+              displayName={person.displayName}
+              initials={person.initials}
+              avatarUrl={person.avatarUrl}
+              size="xs"
+            />
+          </span>
+        ))}
       </span>
       <span aria-hidden="true">{people.length}</span>
     </span>

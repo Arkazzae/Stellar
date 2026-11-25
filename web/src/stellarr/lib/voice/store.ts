@@ -152,6 +152,8 @@ function samePeer(a: VoicePeer, b: VoicePeer | undefined): boolean {
     a.self === b.self &&
     sameScreen(a.screen, b.screen) &&
     sameCamera(a.camera, b.camera) &&
+    a.watching?.userId === b.watching?.userId &&
+    a.watching?.streamId === b.watching?.streamId &&
     a.undecryptable?.audio === b.undecryptable?.audio &&
     a.undecryptable?.video === b.undecryptable?.video
   );

@@ -78,7 +78,8 @@ UI components interact exclusively with `VoiceClient` and immutable `VoiceState`
 - The backend validates authentication, room membership, recipient membership, `protocolVersion`, `kind`, and a 128 KiB payload limit.
 - Occupancy updates (`VoiceParticipantChanged`) for server voice channels go to the members who see the channel, and to whoever is seated in it; where nobody is denied `viewChannel` at the channel that is the server's whole group, as before. Direct-call occupancy updates go only to the two conversation participants.
 - Declining a direct call (`DeclineDirectCall`) clears room occupancy and emits `DirectCallDeclined` so the caller releases capture devices immediately.
-- Payloads are validated by typed codecs (`web/src/stellarr/lib/rtc/protocol.ts`). A `state` payload has the shape `{ muted, screenStreamId, cameraStreamId, encrypted }` (`cameraStreamId` is optional, omitted when camera is off; `encrypted` is optional, omitted when the sender does not encrypt media frames).
+- Payloads are validated by typed codecs (`web/src/stellarr/lib/rtc/protocol.ts`). A `state` payload has the shape `{ muted, screenStreamId, cameraStreamId, encrypted, watching }` (`cameraStreamId` is optional, omitted when camera is off; `encrypted` is optional, omitted when the sender does not encrypt media frames; `watching` is optional, `{ userId, streamId }` of the one screen share the sender watches and omitted while it watches none, so the call's own participants can show who watches a screen).
+- The hub reads `muted`, and whether `screenStreamId` and `cameraStreamId` name a stream, into the sender's seat. The room's occupancy lists each participant as `{ userId, displayName, muted, sharing, camera }`, which the channel list shows to people outside the call too. `watching` is never read into the seat: it reaches only the room, in the relayed signal.
 - Local mute state is authoritative for the local user over out-of-order hub echoes. In a 1:1 direct call, an unencrypted receiver mutes remote media until the peer's `state` signal arrives (preventing encrypted frames from playing as static noise) and upgrades its own connection to end-to-end encryption if the peer announces `encrypted: true` (see [End-to-end encrypted calls](./stellarr-media.md#end-to-end-encrypted-calls)).
 
 > [!NOTE]
@@ -100,7 +101,7 @@ Defined in `web/src/stellarr/lib/rtc/protocol.ts` and implemented by the hub met
 | Method | `GetRtcClock` | Return server Unix timestamp in milliseconds for clock-offset estimation |
 | Method | `OpenMediaSession` | Allocate an SFU media session on `stellarr-media` for the caller's seat |
 | Method | `SendMediaSignal` | Send an SDP offer/answer, ICE candidate, or receive subscription list to `stellarr-media` |
-| Event | `VoiceParticipantChanged` | Room occupancy snapshot: `{ channelId, sequence, participants }` |
+| Event | `VoiceParticipantChanged` | Room occupancy snapshot: `{ channelId, sequence, participants }`, each participant `{ userId, displayName, muted, sharing, camera }` |
 | Event | `VoiceChannelKicked` | `channelId` identifies the room. Access enforcement adds `reason: "access-revoked"`. A moderator disconnect omits `reason`. |
 | Event | `VoiceSignal` | Relayed `VoiceSignal` envelope |
 | Event | `VoiceSessionReplaced` | Account joined voice from a newer browser tab or device |

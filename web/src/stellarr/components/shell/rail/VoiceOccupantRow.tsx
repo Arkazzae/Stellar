@@ -53,6 +53,8 @@ export const VoiceOccupantRow = memo(function VoiceOccupantRow({
   const seat = useVoiceSeat(person.id);
   const speaking = seat?.speaking ?? person.speaking === true;
   const muted = seat?.muted ?? person.muted === true;
+  const sharing = seat?.sharing ?? person.sharing === true;
+  const camera = seat?.camera ?? person.camera === true;
   const enabled = drag !== undefined;
   const className = [
     "voice-occupant",
@@ -96,6 +98,12 @@ export const VoiceOccupantRow = memo(function VoiceOccupantRow({
         speaking={speaking}
       />
       <span className="occ-name">{person.displayName}</span>
+      {camera ? (
+        <span className="occ-camera" role="img" aria-label={t("shell.cameraOn")} title={t("shell.cameraOn")}>
+          <Icon name="camera" size={13} />
+        </span>
+      ) : null}
+      {sharing ? <span className="live-badge occ-live">{t("share.live")}</span> : null}
       {muted ? (
         <span className="occ-mic" aria-hidden="true">
           <Icon name="micSlash" size={13} />

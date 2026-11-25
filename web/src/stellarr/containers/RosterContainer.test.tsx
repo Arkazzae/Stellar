@@ -65,7 +65,7 @@ describe("RosterContainer", () => {
   it("rings the speaker in a call without moving them out of their group", () => {
     setStubs({ directory: { inVoice: [OLA] } });
     // Everyone's seat says they speak; only someone seated in a call is ringed.
-    const speaking = { speaking: true, muted: false };
+    const speaking = { speaking: true, muted: false, sharing: false, camera: false };
     render(
       <VoiceSeatContext.Provider value={{ get: () => speaking, subscribe: () => () => undefined }}>
         <ConfirmProvider>

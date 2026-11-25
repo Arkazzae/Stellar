@@ -91,7 +91,9 @@ function sameParticipants(a: readonly VoiceOccupant[], b: readonly VoiceOccupant
         other !== undefined &&
         participant.userId === other.userId &&
         participant.displayName === other.displayName &&
-        participant.muted === other.muted
+        participant.muted === other.muted &&
+        (participant.sharing === true) === (other.sharing === true) &&
+        (participant.camera === true) === (other.camera === true)
       );
     })
   );

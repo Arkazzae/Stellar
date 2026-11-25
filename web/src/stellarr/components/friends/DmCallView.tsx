@@ -26,6 +26,8 @@ export interface DmCallViewProps extends ParticipantTileSources {
   encrypted?: boolean;
   /** The screens shared in the call, your own first. */
   shares: readonly ScreenShareVM[];
+  /** Who watches each screen, by its key. */
+  viewers?: ReadonlyMap<string, readonly PersonVM[]>;
   onWatchShare: (key: string) => void;
   onStopWatchingShare: () => void;
   /** Stops your own share, from its tile. */
@@ -59,6 +61,7 @@ export function DmCallView({
   status,
   encrypted = false,
   shares,
+  viewers,
   onWatchShare,
   onStopWatchingShare,
   onStopSharing,
@@ -92,6 +95,7 @@ export function DmCallView({
       share={item}
       className={focused ? "dm-call-screen" : "dm-call-small"}
       focused={focused}
+      viewers={viewers?.get(item.key)}
       volume={participantVolumes?.get(item.ownerId)}
       onVolumeChange={
         onParticipantVolumeChange && ((volume) => onParticipantVolumeChange(item.ownerId, volume))

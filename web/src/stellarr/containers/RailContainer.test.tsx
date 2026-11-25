@@ -78,13 +78,31 @@ describe("RailContainer", () => {
     expect(within(rowOf("ogólny")).queryByLabelText("Powiadomienia wyciszone")).toBeNull();
   });
 
+  it("marks who shares a screen and who has a camera on, from the server's list", () => {
+    setStubs({
+      directory: {
+        voiceChannels: [
+          { id: "c-salon", name: "Salon", occupants: [{ ...MAJA, sharing: true, camera: true }] },
+        ],
+      },
+    });
+    renderRail();
+
+    const row = screen
+      .getAllByText("Maja")
+      .map((name) => name.closest(".voice-occupant"))
+      .find((item) => item !== null)!;
+    expect(row).toHaveTextContent("Na żywo");
+    expect(row.querySelector(".occ-camera")).toHaveAttribute("aria-label", "Kamera włączona");
+  });
+
   it("shows who is speaking in the call, whose word on the microphone outranks the server's", () => {
     setStubs({
       directory: {
         voiceChannels: [{ id: "c-salon", name: "Salon", occupants: [{ ...MAJA, muted: true }] }],
       },
     });
-    renderRail(new Map([[MAJA.id, { speaking: true, muted: false }]]));
+    renderRail(new Map([[MAJA.id, { speaking: true, muted: false, sharing: false, camera: false }]]));
 
     // Her name is also on the account row, which is never a speaker.
     const rows = screen

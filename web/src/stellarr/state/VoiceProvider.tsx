@@ -58,6 +58,8 @@ export interface VoiceValue {
   applySpeaking: (people: PersonVM[]) => PersonVM[];
   /** Every screen in the call: this user's own first, then the others'. */
   shares: ScreenShareVM[];
+  /** Who watches each screen, by its key; empty for one nobody watches. */
+  viewers: ReadonlyMap<string, readonly PersonVM[]>;
   /** True while this user shares a screen. */
   localShare: boolean;
   cameraStreams: ReadonlyMap<string, MediaStream>;

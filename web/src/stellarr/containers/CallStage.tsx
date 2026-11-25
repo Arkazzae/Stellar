@@ -58,6 +58,7 @@ export function CallStage({ fullscreenTarget }: CallStageProps) {
         soundPlays={ports.soundboard.live}
         onOpenProfile={profile.toggle}
         shares={voice.shares}
+        viewers={voice.viewers}
         onWatchShare={voice.watchShare}
         onStopWatchingShare={voice.stopWatchingShare}
         onStopSharing={voice.toggleShare}

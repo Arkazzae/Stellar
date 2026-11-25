@@ -15,6 +15,7 @@ use super::rooms::{self, broadcast_snapshot};
 use crate::events::{Audience, Event};
 use crate::permissions::privileges::{CONNECT, VIEW_CHANNEL};
 use crate::realtime::method::{Context, Method, Registration, arguments};
+use crate::realtime::presence::VoiceSeatState;
 use crate::realtime::throttle::Policy;
 use crate::state::AppState;
 use crate::values::Id;
@@ -313,12 +314,15 @@ async fn send_voice_signal(cx: Context, arguments: Vec<Value>) -> Result<Value, 
     };
 
     // The room's occupancy follows the sender's own state whether or not
-    // anybody is left to receive the signal.
-    if kind == "state"
-        && let Some(muted) = read_muted(payload)?
-    {
-        presence.presence().set_voice_muted(&connection, muted);
-        broadcast_snapshot(cx.state(), room).await.map_err(internal)?;
+    // anybody is left to receive the signal: their mute as before, and now
+    // whether they share a screen or have their camera on, which the
+    // channel list shows to people outside the call too.
+    if kind == "state" {
+        let said = read_state(payload)?;
+        let changed = presence.presence().set_voice_state(&connection, said);
+        if said.muted.is_some() || changed {
+            broadcast_snapshot(cx.state(), room).await.map_err(internal)?;
+        }
     }
 
     let recipients = recipients(&cx, &signal, room)?;
@@ -361,15 +365,37 @@ fn recipients(cx: &Context, signal: &VoiceSignal, room: Id) -> Result<Vec<String
     }
 }
 
-/// The mute flag of a state payload; none when it does not say.
-fn read_muted(payload: &str) -> Result<Option<bool>, HubError> {
+/// What a state payload says about its sender: the mute flag, and whether a
+/// screen and a camera stream are announced. A member that is absent says
+/// nothing; a stream id of null says the stream is off.
+fn read_state(payload: &str) -> Result<VoiceSeatState, HubError> {
     #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
     struct State {
         muted: Option<bool>,
+        #[serde(default, deserialize_with = "announced")]
+        screen_stream_id: Option<bool>,
+        #[serde(default, deserialize_with = "announced")]
+        camera_stream_id: Option<bool>,
     }
     document::read::<State>(payload)
-        .map(|state| state.muted)
+        .map(|state| VoiceSeatState {
+            muted: state.muted,
+            sharing: state.screen_stream_id,
+            camera: state.camera_stream_id,
+        })
         .ok_or_else(|| visible("Invalid voice state."))
+}
+
+/// A stream id member that is present: whether it names a stream.
+fn announced<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<bool>, D::Error> {
+    Option::<String>::deserialize(deserializer).map(|id| Some(id.is_some_and(|id| !id.is_empty())))
+}
+
+/// The mute flag of a state payload; none when it does not say.
+#[cfg(test)]
+fn read_muted(payload: &str) -> Result<Option<bool>, HubError> {
+    read_state(payload).map(|state| state.muted)
 }
 
 #[cfg(test)]
@@ -384,6 +410,24 @@ mod tests {
         }
         for bad in ["{\"muted\":1}", "{\"muted\":\"yes\"}", "{\"muted\":true,\"muted\":false}"] {
             assert!(read_muted(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_state_says_whether_a_screen_and_a_camera_are_on_only_when_it_names_them() {
+        let said = read_state("{\"muted\":false,\"screenStreamId\":\"s1\",\"cameraStreamId\":null}").unwrap();
+        assert_eq!(
+            said,
+            VoiceSeatState {
+                muted: Some(false),
+                sharing: Some(true),
+                camera: Some(false),
+            }
+        );
+        assert_eq!(read_state("{\"muted\":true}").unwrap().sharing, None);
+        assert_eq!(read_state("{\"screenStreamId\":\"\"}").unwrap().sharing, Some(false));
+        for bad in ["{\"screenStreamId\":1}", "{\"cameraStreamId\":true}"] {
+            assert!(read_state(bad).is_err(), "{bad}");
         }
     }
 

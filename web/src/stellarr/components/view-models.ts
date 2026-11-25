@@ -18,6 +18,10 @@ export interface PersonVM {
   /** Only meaningful for someone in the current call. */
   speaking?: boolean;
   muted?: boolean;
+  /** Someone on a voice channel shares a screen, as the server lists them. */
+  sharing?: boolean;
+  /** Someone on a voice channel has their camera on, as the server lists them. */
+  camera?: boolean;
   /** Overrides the id-derived colour when the server supplies one. */
   color?: string;
   /** In an encrypted call: their sound or picture arrives but does not decrypt. */
@@ -168,10 +172,12 @@ export interface FriendRequestVM {
   when: string;
 }
 
-/** What a seat shows of someone in this client's call: the ring and the microphone. */
+/** What a seat shows of someone in this client's call: the ring, the microphone, a screen and a camera. */
 export interface VoiceSeatVM {
   readonly speaking: boolean;
   readonly muted: boolean;
+  readonly sharing: boolean;
+  readonly camera: boolean;
 }
 
 /**
