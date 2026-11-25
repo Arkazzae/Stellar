@@ -2,6 +2,7 @@ import { translateForDocument } from "@/i18n/defaultLocale";
 import { memo, useCallback, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 
 import { Icon } from "@stellarr/icons";
+import { avatarImageUrl } from "@/components/primitives/Avatar";
 import type { OpenProfile } from "@/components/view-models";
 import type { CustomEmoji } from "@/ports";
 
@@ -23,6 +24,11 @@ import { useTranscriptScroll } from "./useTranscriptScroll";
 export type { TranscriptSectionVM } from "./transcriptRows";
 
 const NO_SECTIONS: TranscriptSectionVM[] = [];
+const RECENT_AVATAR_ROWS = 24;
+
+function groupAvatarUrl({ authorId, authorAvatarUrl, system }: MessageGroupVM) {
+  return avatarImageUrl(authorId, authorAvatarUrl, system) ?? "";
+}
 
 export interface TranscriptProps {
   sections: TranscriptSectionVM[];
@@ -114,6 +120,7 @@ export interface TranscriptProps {
  */
 interface MessageRowProps {
   group: MessageGroupVM;
+  eagerAvatar: boolean;
   hideReplyReferences: boolean;
   editing: { id: string; original: string } | null;
   fresh: boolean;
@@ -133,6 +140,7 @@ interface MessageRowProps {
 
 const MessageRow = memo(function MessageRow({
   group,
+  eagerAvatar,
   hideReplyReferences,
   editing,
   fresh,
@@ -156,6 +164,7 @@ const MessageRow = memo(function MessageRow({
   return (
     <MessageGroup
       {...group}
+      eagerAvatar={eagerAvatar}
       replyTo={hideReplyReferences ? undefined : group.replyTo}
       fresh={fresh}
       highlight={highlight}
@@ -309,6 +318,72 @@ function ReadyTranscript({
     toEnd();
   };
 
+  const canSaveEdit = onEditSave !== undefined;
+  const canCancelEdit = onEditCancel !== undefined;
+  const canReact = onReact !== undefined;
+  const canAct = onAction !== undefined;
+  const unreadLabel = t("message.unread");
+
+  // Crossing the end threshold only updates the catch-up button. Reuse the
+  // row elements so React doesn't reconcile the whole history on that frame.
+  const renderedTranscript = useMemo(
+    () => {
+      // Recent portraits will be needed on opening the chat. Loading copies
+      // of those same URLs eagerly lets the browser reuse the resources
+      // without watching every offscreen portrait for lazy loading.
+      const recentAvatars = new Set<string>();
+      for (const row of rows.slice(-RECENT_AVATAR_ROWS)) {
+        if (row.kind === "group" && (row.group.notice === undefined || renderNotice === undefined)) {
+          const url = groupAvatarUrl(row.group);
+          if (url !== "") recentAvatars.add(url);
+        }
+      }
+      return (
+        <div ref={contentRef} className="transcript-inner">
+          {rows.map((row) => (
+            // One element per row, in the same order as the rows: the scroll
+            // keeper finds a row's box by its position among these.
+            <div key={row.id} data-row-id={row.id}>
+              {row.kind === "day" ? (
+                <div className="day-sep">{row.day}</div>
+              ) : row.kind === "unread" ? (
+                <div className="unread-sep">{unreadLabel}</div>
+              ) : row.group.notice !== undefined && renderNotice !== undefined ? (
+                renderNotice(row.group.notice, row.group)
+              ) : (
+                <MessageRow
+                  group={row.group}
+                  eagerAvatar={recentAvatars.has(groupAvatarUrl(row.group))}
+                  hideReplyReferences={hideReplyReferences}
+                  editing={editingIn(row.group, editing)}
+                  fresh={row.id === freshId}
+                  highlight={row.id === flashId}
+                  onJumpTo={jumpTo}
+                  translation={translation}
+                  attachments={attachments}
+                  customEmoji={customEmoji}
+                  canModerate={canModerate}
+                  developerMode={developerMode}
+                  onEditSave={canSaveEdit ? forwardSave : undefined}
+                  onEditCancel={canCancelEdit ? forwardCancel : undefined}
+                  onReact={canReact ? forwardReact : undefined}
+                  onAction={canAct ? forwardAction : undefined}
+                  onOpenAuthor={onOpenAuthor}
+                />
+              )}
+            </div>
+          ))}
+        </div>
+      );
+    },
+    [
+      contentRef, rows, unreadLabel, renderNotice, hideReplyReferences, editing, freshId,
+      flashId, jumpTo, translation, attachments, customEmoji, canModerate,
+      developerMode, canSaveEdit, canCancelEdit, canReact, canAct, forwardSave,
+      forwardCancel, forwardReact, forwardAction, onOpenAuthor,
+    ],
+  );
+
   return (
     // The scroller keeps its own class and its own box; this only gives the
     // catch-up button something to be positioned against.
@@ -333,40 +408,7 @@ function ReadyTranscript({
             {t(loadingOlder ? "message.loadingOlder" : "message.loadOlder")}
           </button>
         ) : null}
-        <div ref={contentRef} className="transcript-inner">
-          {rows.map((row) => (
-            // One element per row, in the same order as the rows: the scroll
-            // keeper finds a row's box by its position among these.
-            <div key={row.id} data-row-id={row.id}>
-              {row.kind === "day" ? (
-                <div className="day-sep">{row.day}</div>
-              ) : row.kind === "unread" ? (
-                <div className="unread-sep">{t("message.unread")}</div>
-              ) : row.group.notice !== undefined && renderNotice !== undefined ? (
-                renderNotice(row.group.notice, row.group)
-              ) : (
-                <MessageRow
-                  group={row.group}
-                  hideReplyReferences={hideReplyReferences}
-                  editing={editingIn(row.group, editing)}
-                  fresh={row.id === freshId}
-                  highlight={row.id === flashId}
-                  onJumpTo={jumpTo}
-                  translation={translation}
-                  attachments={attachments}
-                  customEmoji={customEmoji}
-                  canModerate={canModerate}
-                  developerMode={developerMode}
-                  onEditSave={onEditSave === undefined ? undefined : forwardSave}
-                  onEditCancel={onEditCancel === undefined ? undefined : forwardCancel}
-                  onReact={onReact === undefined ? undefined : forwardReact}
-                  onAction={onAction === undefined ? undefined : forwardAction}
-                  onOpenAuthor={onOpenAuthor}
-                />
-              )}
-            </div>
-          ))}
-        </div>
+        {renderedTranscript}
       </div>
       {atBottom ? null : (
         <button
@@ -376,7 +418,7 @@ function ReadyTranscript({
           aria-label={missed ? undefined : t("message.goLatest")}
           onClick={catchUp}
         >
-          {missed ? t("message.unread") : null}
+          {missed ? unreadLabel : null}
           <Icon name="caret" size={missed ? 13 : 15} />
         </button>
       )}

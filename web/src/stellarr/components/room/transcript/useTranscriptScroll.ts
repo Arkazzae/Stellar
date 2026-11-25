@@ -88,9 +88,13 @@ function rowElement(keeper: Keeper, content: HTMLElement, id: string): Element |
 
 /** Takes down where the reader is now, for the next change to restore. */
 function remember(keeper: Keeper, scroller: HTMLElement, content: HTMLElement): void {
-  if (!shown(scroller)) return;
   keeper.lastTop = scroller.scrollTop;
   keeper.scrollHeight = scroller.scrollHeight;
+  if (keeper.pinned) {
+    keeper.marks = [];
+    return;
+  }
+  const previousMark = keeper.marks[0];
   const rows = keeper.rows ?? [];
   const elements = content.children;
   const viewportTop = scroller.getBoundingClientRect().top;
@@ -107,15 +111,16 @@ function remember(keeper: Keeper, scroller: HTMLElement, content: HTMLElement): 
       };
     },
     scroller.clientHeight,
+    previousMark === undefined ? undefined : keeper.index.get(previousMark.id),
   );
 }
 
 function goToEnd(keeper: Keeper, scroller: HTMLElement, content: HTMLElement): void {
   keeper.pinned = true;
   keeper.glide = null;
-  if (shown(scroller)) {
-    scroller.scrollTop = endScrollTop(scroller.scrollHeight, scroller.clientHeight);
-  }
+  if (!shown(scroller)) return;
+  const top = endScrollTop(scroller.scrollHeight, scroller.clientHeight);
+  if (Math.abs(top - scroller.scrollTop) >= 0.5) scroller.scrollTop = top;
   remember(keeper, scroller, content);
 }
 

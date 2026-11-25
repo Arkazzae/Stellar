@@ -31,13 +31,32 @@ export interface ReadingMark {
   offset: number;
 }
 
-/** The index of the first row whose bottom edge is below `edge`. */
-function firstBelow(count: number, boxAt: (index: number) => RowBox, edge: number): number {
+/** The index of the first row that extends below the top of the viewport. */
+function firstVisible(
+  count: number,
+  boxAt: (index: number) => RowBox,
+  previous: number | undefined,
+): number {
   let low = 0;
   let high = count;
+  // A wheel or touch scroll usually moves only a few rows. Check near the
+  // last mark first and use binary search for longer jumps.
+  if (previous !== undefined && previous < count) {
+    if (boxAt(previous).bottom <= 0) {
+      low = previous + 1;
+      for (let step = 0; low < count && step < 4; step += 1, low += 1) {
+        if (boxAt(low).bottom > 0) return low;
+      }
+    } else {
+      high = previous;
+      for (let step = 0; high > 0 && step < 4; step += 1, high -= 1) {
+        if (boxAt(high - 1).bottom <= 0) return high;
+      }
+    }
+  }
   while (low < high) {
     const middle = (low + high) >>> 1;
-    if (boxAt(middle).bottom <= edge) low = middle + 1;
+    if (boxAt(middle).bottom <= 0) low = middle + 1;
     else high = middle;
   }
   return low;
@@ -59,9 +78,10 @@ export function readingMarks(
   count: number,
   boxAt: (index: number) => RowBox,
   viewportHeight: number,
+  previous?: number,
 ): ReadingMark[] {
   const marks: ReadingMark[] = [];
-  const first = firstBelow(count, boxAt, 0);
+  const first = firstVisible(count, boxAt, previous);
   const mark = (box: RowBox) => marks.push({ id: box.id, offset: box.top });
 
   let index = first;

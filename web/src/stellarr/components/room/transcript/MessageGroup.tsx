@@ -82,6 +82,7 @@ export interface MessageGroupVM {
 }
 
 export interface MessageGroupProps extends MessageGroupVM {
+  eagerAvatar?: boolean;
   /** Jumps to the answered message; absent leaves the line inert. */
   onOpenReply?: (messageId: string) => void;
   onReact?(messageId: string, emoji: string): void;
@@ -180,6 +181,7 @@ export function MessageGroup({
   authorId,
   authorName,
   authorAvatarUrl,
+  eagerAvatar,
   system = false,
   own = false,
   timestamp,
@@ -266,6 +268,7 @@ export function MessageGroup({
         id={authorId}
         displayName={authorName}
         avatarUrl={authorAvatarUrl}
+        eager={eagerAvatar}
         size="md"
         system={system}
         onOpen={openAuthor}

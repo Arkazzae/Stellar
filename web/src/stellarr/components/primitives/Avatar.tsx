@@ -35,6 +35,8 @@ export interface AvatarProps {
    * only if it fails to load.
    */
   avatarUrl?: string;
+  /** The same image is already needed by a nearby copy of this avatar. */
+  eager?: boolean;
   size?: AvatarSize;
   /**
    * Renders the status dot. Left off for people in a call, where speech state
@@ -65,6 +67,10 @@ export interface AvatarProps {
   title?: string;
 }
 
+export function avatarImageUrl(id: string, upload?: string, system = false): string | undefined {
+  return upload || (system ? undefined : defaultIdentityArt(id).avatarUrl);
+}
+
 /**
  * One face for the whole app.
  *
@@ -76,6 +82,7 @@ export function Avatar({
   displayName,
   initials,
   avatarUrl,
+  eager = false,
   size = "sm",
   presence,
   speaking,
@@ -91,10 +98,8 @@ export function Avatar({
   // The address that failed, not a flag, so a face reused for someone else
   // tries their mascot instead of keeping the last one's failure.
   const [failedArt, setFailedArt] = useState<string>();
-  const hasUpload = avatarUrl !== undefined && avatarUrl !== "";
-  const artUrl =
-    hasUpload || system ? undefined : defaultIdentityArt(id).avatarUrl;
-  const pictureUrl = hasUpload ? avatarUrl : artUrl;
+  const pictureUrl = avatarImageUrl(id, avatarUrl, system);
+  const artUrl = avatarUrl ? undefined : pictureUrl;
   const showsArt = artUrl !== undefined && artUrl !== failedArt;
   const style: CSSProperties = system
     ? ({ "--person-bg": "var(--info-line)" } as CSSProperties)
@@ -128,7 +133,7 @@ export function Avatar({
           className="av-img"
           src={pictureUrl}
           alt=""
-          loading="lazy"
+          loading={eager ? "eager" : "lazy"}
           draggable={false}
           onError={
             artUrl === undefined ? undefined : () => setFailedArt(artUrl)
