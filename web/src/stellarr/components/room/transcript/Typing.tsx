@@ -17,9 +17,8 @@ function useSentence(names: string[]): string {
 }
 
 /**
- * The "who is typing" line under the transcript. It is always rendered: the
- * row fades in and out, and unmounting it would both skip the fade and make
- * the composer jump when the height changed.
+ * The live region stays mounted so assistive technology announces new names.
+ * Its row takes up space only while someone is typing.
  */
 export function Typing({ names }: TypingProps) {
   const sentence = useSentence(names);

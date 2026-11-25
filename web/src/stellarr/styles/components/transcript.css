@@ -677,11 +677,11 @@
 
   /* ---------- TYPING ---------- */
   .typing{
-    height:22px;padding:0 22px;font-size:var(--text-12);color:var(--text-faint);
+    flex:none;height:0;overflow:hidden;padding:0 22px;font-size:var(--text-12);color:var(--text-faint);
     display:flex;align-items:center;gap:6px;
     opacity:0;transition:opacity var(--dur-base) var(--ease-standard);
   }
-  .typing.show{opacity:1}
+  .typing.show{height:22px;opacity:1}
   /*
    * The dots blink only while the row is shown. The row is always there, and
    * an animation under its zero opacity still costs the renderer and the GPU
