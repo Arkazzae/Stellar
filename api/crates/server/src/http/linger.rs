@@ -160,7 +160,15 @@ impl Listener for LingeringListener {
     async fn accept(&mut self) -> (Lingering, SocketAddr) {
         loop {
             match self.0.accept().await {
-                Ok((stream, address)) => return (Lingering(Some(stream)), address),
+                Ok((stream, address)) => {
+                    // An answer goes out as it is written. With Nagle's
+                    // algorithm a body written after its head waits for the
+                    // client to acknowledge the head, which a client that
+                    // delays its acknowledgements does some 40 ms later: every
+                    // file answered on a kept connection took that long.
+                    let _ = stream.set_nodelay(true);
+                    return (Lingering(Some(stream)), address);
+                }
                 // A client that went away between the handshake and the accept
                 // is nobody's trouble; anything else (no file descriptors left)
                 // is waited out, so that the loop does not spin.
