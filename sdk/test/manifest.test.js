@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { manifestOf, roomOptions } from "../dev/files.js";
 
-const { base, cases } = JSON.parse(await readFile(new URL("./fixtures/manifest-parity.json", import.meta.url)));
+const { base, cases, rawCases } = JSON.parse(await readFile(new URL("./fixtures/manifest-parity.json", import.meta.url)));
 const parse = patch => manifestOf(JSON.stringify({ ...base, ...patch }));
 
 test("SDK manifest validation matches the production manifest cases", () => {
@@ -15,6 +15,15 @@ test("SDK manifest validation matches the production manifest cases", () => {
   const defaults = parse({ authority: null, seats: null, icon: null, cover: null, devices: null });
   assert.deepEqual(defaults, base);
   assert.deepEqual(roomOptions(defaults), { authority: undefined, seats: undefined, permissions: undefined });
+});
+
+test("raw manifests match Serde's treatment of duplicate fields", () => {
+  const prefix = JSON.stringify(base).slice(0, -1);
+  for (const { label, members, valid } of rawCases) {
+    const manifest = `${prefix},${members}}`;
+    if (valid) assert.doesNotThrow(() => manifestOf(manifest), label);
+    else assert.throws(() => manifestOf(manifest), { status: 400, message: /Duplicate manifest field/ }, label);
+  }
 });
 
 test("manifest text and hosts use the production byte and count limits", () => {
