@@ -41,9 +41,13 @@ function server() {
 
 function VoiceLibrary() {
   const [open, setOpen] = useState(false);
+  const [bar, setBar] = useState<VoiceActivityBarControl | null>(null);
   return <>
     <button onClick={() => setOpen(true)}>Activities</button>
-    <InstalledActivities channel="voice" pickerOpen={open} onClosePicker={() => setOpen(false)} />
+    <InstalledActivities channel="voice" pickerOpen={open} onClosePicker={() => setOpen(false)} onVoiceBarChange={setBar}>
+      <div>Participant tiles</div>
+    </InstalledActivities>
+    {bar?.joined && <button onClick={bar.leave}>stage.leaveActivity</button>}
   </>;
 }
 const openPicker = () => fireEvent.click(screen.getByRole("button", { name: "Activities" }));
@@ -69,6 +73,28 @@ async function openStatic() {
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.clearAllMocks(); });
+
+it("focuses the joined activity and switches to people without reloading the frame", async () => {
+  await openStatic();
+  const frame = screen.getByTitle(entry.name);
+  const people = screen.getByText("Participant tiles");
+  const activityButton = screen.getByRole("button", { name: entry.name });
+  const peopleButton = screen.getByRole("button", { name: "room.people" });
+
+  expect(frame).toBeVisible();
+  expect(people).not.toBeVisible();
+  expect(activityButton).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(peopleButton);
+  expect(people).toBeVisible();
+  expect(frame).not.toBeVisible();
+  expect(peopleButton).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(activityButton);
+  expect(screen.getByTitle(entry.name)).toBe(frame);
+  expect(frame).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "stage.leaveActivity" }));
+  expect(people).toBeVisible();
+  expect(frame).not.toBeInTheDocument();
+});
 
 it.each([
   ["removed from the library", [], 200],

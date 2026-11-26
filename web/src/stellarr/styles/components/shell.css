@@ -35,6 +35,17 @@
     }
   }
 
+  /* Give a joined activity the desktop roster's width. Switching to People
+     restores the user's current roster setting. Narrow screens use a drawer. */
+  @media (min-width: 1024px) {
+    .app:has(.view.active > .voice-activity-stage[data-view="activity"]) {
+      grid-template-columns: var(--servers-w) var(--rail-w) minmax(0, 1fr) 0px;
+    }
+    .app:has(.view.active > .voice-activity-stage[data-view="activity"]) > .roster {
+      display: none;
+    }
+  }
+
   .srv-rail {
     grid-column: 1;
   }
