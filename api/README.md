@@ -27,7 +27,7 @@ cargo test --workspace --locked
 | `storage` | `stellarr-storage` | Local `files/` object store, S3 backend, and magic-byte MIME validation. |
 | `s3` | `stellarr-s3` | Sans-IO AWS Signature Version 4 request/response builder for S3 and Cloudflare R2 multipart uploads. |
 | `archive` | `stellarr-archive` | Streaming ZIP / ZIP64 backup writer and verifier with per-entry CRC-32 validation. |
-| `deflate` | `stellarr-deflate` | Zero-dependency DEFLATE, gzip, zlib, and CRC-32 implementation (compiled at `opt-level = 3` in dev/test). |
+| `deflate` | `stellarr-deflate` | Zero-dependency DEFLATE, gzip, zlib, and CRC-32 implementation. |
 | `mail` | `stellarr-mail` | Transactional and notification HTML/text email templates (*Midnight* layout with inline CID assets) and Resend transport. |
 | `smtp` | `stellarr-smtp` | MIME message builder and SMTP/STARTTLS/TLS client. |
 | `webpush` | `stellarr-webpush` | Sans-IO RFC 8291 Web Push payload encryption and VAPID JWT signing. |

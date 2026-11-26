@@ -38,8 +38,6 @@ tracing-subscriber = "0.3"
 [profile.dev.package."*"]
 opt-level = 3
 
-# The exception among the workspace's crates: its tests push whole streams
-# through the decoder a byte at a time, and took longer unoptimised than every
-# endpoint test together.
-[profile.dev.package.stellarr-deflate]
+# The split-point tests decode the same streams at many input boundaries.
+[profile.test.package.stellarr-deflate]
 opt-level = 3

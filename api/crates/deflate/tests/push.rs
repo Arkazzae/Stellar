@@ -4,13 +4,15 @@
 mod common;
 
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Instant;
 
 use common::Rng;
 use stellarr_deflate::{
-    Adler32, Crc32, Error, Format, Level, PushDecoder, Step, deflate_to_vec, gunzip_to_vec,
-    inflate_to_vec, zlib_to_vec,
+    Adler32, Crc32, Deflater, Error, Format, Level, PushDecoder, Step, deflate_to_vec,
+    gunzip_to_vec, inflate_to_vec, zlib_to_vec,
 };
 
 /// Pushes `pieces` in order, reading into a buffer of `room` bytes, and
@@ -41,6 +43,38 @@ fn run(format: Format, limit: u64, pieces: &[&[u8]], room: usize) -> Result<Vec<
 
 fn whole(format: Format, stream: &[u8]) -> Result<Vec<u8>, Error> {
     run(format, u64::MAX, &[stream], 4096)
+}
+
+#[test]
+fn stored_bytes_fed_singly_are_available_to_the_next_compressed_block() {
+    // A stored block containing "abc", followed by a fixed block that copies it.
+    let mut stream = vec![0, 3, 0, 0xfc, 0xff, b'a', b'b', b'c'];
+    let mut codes = common::BitWriter::default();
+    codes.bits(1, 1).bits(1, 2);
+    codes.code(1, 7).code(2, 5).code(0, 7);
+    stream.extend(codes.finish());
+    let pieces: Vec<_> = stream.chunks(1).collect();
+    assert_eq!(run(Format::Raw, 6, &pieces, 1).unwrap(), b"abcabc");
+    assert_eq!(run(Format::Raw, 5, &pieces, 1), Err(Error::OutputLimit));
+}
+
+#[test]
+fn buffered_literals_are_delivered_once_before_an_invalid_distance() {
+    let mut codes = common::BitWriter::default();
+    codes.bits(1, 1).bits(1, 2);
+    for &byte in b"abcde" {
+        codes.code(0x30 + u32::from(byte), 8);
+    }
+    codes.code(1, 7).code(30, 5); // Length 3, reserved distance code.
+    let mut stream = codes.finish();
+    stream.extend([0; 16]); // Enough lookahead for the buffered loop.
+    let mut decoder = PushDecoder::new(Format::Raw);
+    decoder.push(&stream);
+    let mut output = [0; 5];
+    assert_eq!(decoder.read(&mut output), Ok(Step::Data(5)));
+    assert_eq!(&output, b"abcde");
+    assert_eq!(decoder.read(&mut output), Err(Error::InvalidSymbol));
+    assert_eq!(decoder.read(&mut output), Err(Error::InvalidSymbol));
 }
 
 fn drip(format: Format, stream: &[u8]) -> Result<Vec<u8>, Error> {
@@ -167,6 +201,94 @@ fn big_inputs_in_odd_pieces_and_small_output_buffers() {
             }
             let got = run(Format::Gzip, u64::MAX, &pieces, room).unwrap();
             assert!(got == data, "{name} room {room}");
+        }
+    }
+}
+
+#[test]
+fn pushing_ahead_preserves_pending_input_and_output() {
+    let data = Rng::new(19).bytes(500_000);
+    let stream = zlib_wrap(&data, Level::Fast);
+    let mut decoder = PushDecoder::new(Format::ZlibOrRaw);
+    decoder.push(&stream[..1]);
+    decoder.push(&stream[1..200_000]);
+    let mut out = Vec::new();
+    let mut buf = [0; 4096];
+    let Step::Data(n) = decoder.read(&mut buf).unwrap() else {
+        panic!("expected buffered output");
+    };
+    out.extend_from_slice(&buf[..n]);
+    for piece in stream[200_000..].chunks(8191) {
+        decoder.push(piece);
+    }
+    decoder.finish();
+    loop {
+        match decoder.read(&mut buf).unwrap() {
+            Step::Data(n) => out.extend_from_slice(&buf[..n]),
+            Step::End => break,
+            Step::NeedInput => panic!("input already finished"),
+        }
+    }
+    assert!(out == data);
+}
+
+#[test]
+fn single_bytes_queued_during_a_gzip_body_preserve_the_trailer_and_next_member() {
+    let first = b"abcabc123abc".repeat(50);
+    let second = b"the next member";
+    let mut stream = gzip_wrap(&first, Level::Default);
+    stream.extend(gzip_wrap(second, Level::Default));
+    let mut decoder = PushDecoder::new(Format::Gzip);
+    let mut bytes = stream.chunks(1);
+    let mut buf = [0; 7];
+    let mut output = Vec::new();
+    for byte in bytes.by_ref() {
+        decoder.push(byte);
+        if let Step::Data(n) = decoder.read(&mut buf).unwrap() {
+            output.extend_from_slice(&buf[..n]);
+            break;
+        }
+    }
+    assert!(!output.is_empty());
+    // Queue the rest while the first member still has pending output.
+    for byte in bytes {
+        decoder.push(byte);
+    }
+    decoder.finish();
+    loop {
+        match decoder.read(&mut buf).unwrap() {
+            Step::Data(n) => output.extend_from_slice(&buf[..n]),
+            Step::End => break,
+            Step::NeedInput => panic!("input already finished"),
+        }
+    }
+    assert_eq!(output, [first.as_slice(), second].concat());
+}
+
+/// Run with `--test push pushed_throughput -- --ignored --nocapture`.
+#[test]
+#[ignore = "a throughput measurement"]
+fn pushed_throughput() {
+    let data = sample("records-400000");
+    let packed = deflate_to_vec(&data, Level::Default);
+    let mut encoder = Deflater::new(Vec::new(), Level::Default);
+    for block in data.chunks(1024) {
+        encoder.write_all(block).unwrap();
+        encoder.sync_flush().unwrap();
+    }
+    let flushed = encoder.finish().unwrap();
+    for (name, stream) in [("records", packed), ("records, flush per KiB", flushed)] {
+        for chunk in [1, 16 * 1024] {
+            let pieces: Vec<_> = stream.chunks(chunk).collect();
+            let mut times = [std::time::Duration::ZERO; 5];
+            for elapsed in &mut times {
+                let start = Instant::now();
+                let output = run(Format::Raw, data.len() as u64, &pieces, 8192).unwrap();
+                *elapsed = start.elapsed();
+                assert!(output == data);
+            }
+            times.sort_unstable();
+            eprintln!("{name}, {chunk} B chunks: {:.2?}", times[times.len() / 2]);
         }
     }
 }

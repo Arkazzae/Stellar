@@ -11,9 +11,8 @@
 //! delivering it one byte at a time, gives the same result as delivering it
 //! whole.
 //!
-//! Memory is the decoder's window and one input buffer, plus the pieces the
-//! caller pushes and has not yet had consumed. The caller bounds the output
-//! by the size of the buffer it reads into and by the limit it sets.
+//! Pushed bytes live in the decoder's input buffer. The caller bounds the
+//! output by the size of its read buffer and by the limit it sets.
 
 use std::io::{self, Read};
 
@@ -50,34 +49,6 @@ pub enum Step {
     End,
 }
 
-/// The pushed bytes the decoder has not taken yet.
-struct Feed {
-    bytes: Vec<u8>,
-    taken: usize,
-    ended: bool,
-}
-
-impl Feed {
-    fn available(&self) -> &[u8] {
-        &self.bytes[self.taken..]
-    }
-}
-
-impl Read for Feed {
-    fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
-        let n = out.len().min(self.bytes.len() - self.taken);
-        if n > 0 {
-            out[..n].copy_from_slice(&self.bytes[self.taken..self.taken + n]);
-            self.taken += n;
-            Ok(n)
-        } else if self.ended {
-            Ok(0)
-        } else {
-            Err(io::ErrorKind::WouldBlock.into())
-        }
-    }
-}
-
 /// Where in the wrapped stream the decoder is.
 enum Stage {
     /// Zlib or raw is not known yet.
@@ -105,7 +76,7 @@ enum Stage {
 
 /// A decoder that is given its input in pieces. See the module comment.
 pub struct PushDecoder {
-    inflate: Inflate<Feed>,
+    inflate: Inflate<io::Empty>,
     format: Format,
     stage: Stage,
     /// Whether the body is wrapped in zlib (known once `ZlibOrRaw` has looked).
@@ -120,11 +91,6 @@ pub struct PushDecoder {
 
 impl PushDecoder {
     pub fn new(format: Format) -> Self {
-        let feed = Feed {
-            bytes: Vec::new(),
-            taken: 0,
-            ended: false,
-        };
         let (stage, zlib) = match format {
             Format::Raw => (Stage::Body, false),
             Format::Zlib => (
@@ -138,7 +104,7 @@ impl PushDecoder {
             Format::ZlibOrRaw => (Stage::Sniff, false),
         };
         Self {
-            inflate: Inflate::new(feed).resumable(),
+            inflate: Inflate::pushed(),
             format,
             stage,
             zlib,
@@ -161,22 +127,13 @@ impl PushDecoder {
     /// Adds input. Call it when [`read`](Self::read) has said `NeedInput`:
     /// what is pushed is held until it is used.
     pub fn push(&mut self, data: &[u8]) {
-        let feed = self.inflate_feed();
-        if feed.taken == feed.bytes.len() {
-            feed.bytes.clear();
-            feed.taken = 0;
-        }
-        feed.bytes.extend_from_slice(data);
+        self.inflate.push(data);
     }
 
     /// Says that no more input will come. A stream that is not complete then
     /// fails with [`Error::Truncated`].
     pub fn finish(&mut self) {
-        self.inflate_feed().ended = true;
-    }
-
-    fn inflate_feed(&mut self) -> &mut Feed {
-        self.inflate.src_mut()
+        self.inflate.finish_input();
     }
 
     /// The next piece of output, written to the start of `out`, which must
@@ -216,9 +173,8 @@ impl PushDecoder {
             match &mut self.stage {
                 Stage::End => return Ok(Step::End),
                 Stage::Sniff => {
-                    let feed = self.inflate.src_mut();
-                    let have = feed.available();
-                    if have.len() < 2 && !feed.ended {
+                    let (have, finished) = self.inflate.pushed_input();
+                    if have.len() < 2 && !finished {
                         return Ok(Step::NeedInput);
                     }
                     // A header that looks like zlib's is zlib's, and is refused
