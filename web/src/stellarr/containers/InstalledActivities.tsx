@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { Icon } from "@stellarr/icons";
@@ -46,6 +46,7 @@ export interface VoiceActivityBarControl {
 }
 
 interface ActivityScope {
+  children?: ReactNode;
   channel?: string;
   muted?: boolean;
   cameraOn?: boolean;
@@ -188,6 +189,7 @@ export function InstalledActivities(props: ActivityScope) {
 }
 
 function ActivitiesForScope({
+  children,
   channel,
   muted,
   cameraOn,
@@ -205,6 +207,7 @@ function ActivitiesForScope({
   const [selection, setSelection] = useState<Selection | null>(null);
   const [liveRemote, setLiveRemote] = useState<VoiceActivitySummary | null>(null);
   const [problem, setProblem] = useState<"stage.activityEnded" | "stage.activityLaunchFailed" | null>(null);
+  const [showPeople, setShowPeople] = useState(false);
   const [query, setQuery] = useState("");
   const [wasOpen, setWasOpen] = useState(pickerOpen);
   if (pickerOpen !== wasOpen) {
@@ -230,7 +233,10 @@ function ActivitiesForScope({
 
   const select = useCallback((next: Selection | null) => {
     current.current?.request?.abort();
-    if (current.current?.session !== next?.session) activeFrame.current = null;
+    if (current.current?.session !== next?.session) {
+      activeFrame.current = null;
+      setShowPeople(false);
+    }
     current.current = next;
     setSelection(next);
   }, []);
@@ -487,7 +493,12 @@ function ActivitiesForScope({
         voice
         busy={busy}
         currentInstall={session?.install}
-        onChoose={install => install === session?.install ? dismissPicker() : void launch(install)}
+        onChoose={install => {
+          if (install === session?.install) {
+            setShowPeople(false);
+            dismissPicker();
+          } else void launch(install);
+        }}
       />
     ) : (
       <div className="asset-empty ap-empty" role="status">
@@ -536,21 +547,24 @@ function ActivitiesForScope({
     </div>
   );
 
-  const player = session && (
-    <>
-      <button type="button" className="st-chip st-button" onClick={leave}>{t("stage.leaveActivity")}</button>
-      <ActivityFrame {...session} room={room} tile={tile} onLost={lost} muted={muted} cameraOn={cameraOn} />
-    </>
-  );
-
   return (
     <>
-      {(session || (problem && !pickerOpen)) && (
-        <section aria-label={t("stage.installedActivities")}>
-          {player}
-          {!pickerOpen && notice}
+      {session && (
+        <section className="voice-activity-stage" aria-label={session.title} data-view={showPeople ? "people" : "activity"}>
+          <ActivityFrame {...session} room={room} tile={tile} onLost={lost} muted={muted} cameraOn={cameraOn} hidden={showPeople}>
+            <div className="activity-stage-switch" role="group" aria-label={t("stage.callView")}>
+              <button type="button" aria-pressed={!showPeople} onClick={() => setShowPeople(false)}>
+                <Icon name="game" size={16} /><span>{session.title}</span>
+              </button>
+              <button type="button" aria-pressed={showPeople} onClick={() => setShowPeople(true)}>
+                <Icon name="users" size={16} /><span>{t("room.people")}</span>
+              </button>
+            </div>
+          </ActivityFrame>
         </section>
       )}
+      {!pickerOpen && notice}
+      <div className="call-participants" hidden={Boolean(session) && !showPeople}>{children}</div>
       {pickerOpen && createPortal(
         <Modal open onClose={dismissPicker} labelledBy={titleId} className="sv-wrap">
           <div className="sv activity-picker" data-count={countMode}>

@@ -33,6 +33,78 @@
     container:stage / inline-size;
   }
 
+  .call-participants:not([hidden]),
+  .voice-activity-stage {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-block-size: 0;
+    min-inline-size: 0;
+  }
+  .voice-activity-stage {
+    gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3) 0;
+  }
+  .voice-activity-stage[data-view="people"] { flex: none; }
+  .activity-frame-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-2);
+  }
+  .activity-stage-switch {
+    display: inline-flex;
+    min-width: 0;
+    max-width: 100%;
+    gap: 2px;
+    margin-inline-end: auto;
+    padding: 2px;
+    border-radius: var(--radius-md);
+    background: var(--surface-base);
+  }
+  .activity-stage-switch button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    gap: 6px;
+    padding: 5px 10px;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .activity-stage-switch button svg { flex: none; }
+  .activity-stage-switch button span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .activity-stage-switch button[aria-pressed="true"] { background: var(--surface-overlay); color: var(--text); }
+  .activity-stage-switch button:hover { color: var(--text); }
+  .activity-stage-switch button:focus-visible { outline: 2px solid var(--accent); }
+  .activity-volume { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); }
+  .activity-volume input { width: 72px; accent-color: var(--accent); }
+  .activity-viewport iframe { display: block; width: 100%; height: clamp(320px, 58vh, 680px); border: 0; }
+  .voice-activity-stage .activity-viewport:not([hidden]) {
+    container: activity-space / size;
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border-radius: var(--radius-md);
+    background: var(--surface-stage);
+  }
+  /* Fit the available stage between 16:9 and 16:10. On a phone in portrait
+     the activity can use the full height for its own mobile layout. */
+  .voice-activity-stage iframe {
+    width: min(100cqw, calc(100cqh * 16 / 9));
+    height: min(100cqh, calc(100cqw * 10 / 16));
+  }
+  @container activity-space (max-width: 550px) and (orientation: portrait) {
+    .voice-activity-stage iframe { width: 100%; height: 100%; }
+  }
+
   /* Referenced by `.am-card` and `.sv` too; the mockup defines it here, beside
      the band it was written for. */
   @keyframes actIn{from{opacity:0;transform:scale(0.985) translateY(8px)}to{opacity:1;transform:none}}

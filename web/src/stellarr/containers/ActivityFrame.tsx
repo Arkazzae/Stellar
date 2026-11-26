@@ -1,10 +1,13 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
+import { Icon } from "@stellarr/icons";
 import { useLanguage } from "@/state/LanguageProvider";
 import { bindMediaHost, type HostMediaControls } from "../../../../sdk/host/media-host.js";
 
 type Action = Record<string, unknown>;
 interface ActivityFrameProps {
+  children?: ReactNode;
+  hidden?: boolean;
   src: string;
   title: string;
   permissions: string[];
@@ -15,7 +18,7 @@ interface ActivityFrameProps {
   onLost: () => void;
 }
 
-export function ActivityFrame({ src, title, permissions, muted = false, cameraOn, room, tile, onLost }: ActivityFrameProps) {
+export function ActivityFrame({ children, hidden = false, src, title, permissions, muted = false, cameraOn, room, tile, onLost }: ActivityFrameProps) {
   const { t } = useLanguage();
   const frame = useRef<HTMLIFrameElement>(null);
   const volume = useRef<HTMLInputElement>(null);
@@ -67,9 +70,17 @@ export function ActivityFrame({ src, title, permissions, muted = false, cameraOn
   }, [src, title, permissions, room, tile, onLost]);
 
   return <>
-    <label>{t("stage.gameAudio")} <input type="range" min="0" max="100" defaultValue="100" ref={volume} /></label>
-    <span ref={controls} />
-    <iframe ref={frame} src={src} title={title} width="100%" height="320" style={{ height: "clamp(320px, 58vh, 680px)", border: 0 }} referrerPolicy="no-referrer"
-      sandbox="allow-scripts allow-same-origin allow-forms allow-presentation" allow="autoplay; fullscreen" />
+    <div className="activity-frame-controls">
+      {children}
+      <label className="activity-volume" title={t("stage.gameAudio")}>
+        <Icon name="speaker" size={16} />
+        <input type="range" aria-label={t("stage.gameAudio")} min="0" max="100" defaultValue="100" ref={volume} />
+      </label>
+      <span ref={controls} />
+    </div>
+    <div className="activity-viewport" hidden={hidden}>
+      <iframe ref={frame} src={src} title={title} referrerPolicy="no-referrer"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-presentation" allow="autoplay; fullscreen" />
+    </div>
   </>;
 }

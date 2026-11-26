@@ -1867,6 +1867,7 @@ export const en = {
   "share.noAudio": "No sound",
   "share.pictureInPicture": "Picture in picture",
   "share.watchedBy": "Watching: {names}",
+  "stage.callView": "Call view",
   "stage.gameAudio": "Game audio",
   "friends.tabActivities": "Activities",
   "stage.voicePickerTitle": "Shared activity",

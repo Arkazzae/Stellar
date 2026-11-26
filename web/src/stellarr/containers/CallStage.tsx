@@ -46,10 +46,33 @@ export function CallStage({ fullscreenTarget }: CallStageProps) {
   const joinedChannelId = voice.channelId;
   const activeVoiceBar = joinedChannelId !== null ? barActivity : null;
 
+  const participants = (
+    <VoiceStage
+      people={voice.people}
+      cameraStreams={voice.cameraStreams}
+      heldCameras={voice.heldCameras}
+      localPersonId={user?.id ?? ""}
+      participantVolumes={voice.participantVolumes}
+      onParticipantVolumeChange={voice.setParticipantVolume}
+      participantGates={voice.participantGates}
+      onParticipantGateChange={voice.setParticipantGate}
+      participantSuppressions={voice.participantSuppressions}
+      onParticipantSuppressionChange={voice.setParticipantSuppression}
+      soundPlays={ports.soundboard.live}
+      onOpenProfile={profile.toggle}
+      shares={voice.shares}
+      viewers={voice.viewers}
+      onWatchShare={voice.watchShare}
+      onStopWatchingShare={voice.stopWatchingShare}
+      onStopSharing={voice.toggleShare}
+      cinema={ui.cinema}
+    />
+  );
+
   return (
     <>
       <VoiceProblemNotice />
-      {joinedChannelId && (
+      {joinedChannelId ? (
         <InstalledActivities
           channel={joinedChannelId}
           pickerOpen={pickerOpen}
@@ -57,31 +80,13 @@ export function CallStage({ fullscreenTarget }: CallStageProps) {
           onVoiceBarChange={setBarActivity}
           muted={voice.state.muted}
           cameraOn={voice.call?.cameraOn}
-        />
-      )}
+        >
+          {participants}
+        </InstalledActivities>
+      ) : participants}
       {import.meta.env.DEV && typeof __ACTIVITY_PREVIEW__ !== "undefined" &&
         __ACTIVITY_PREVIEW__ && joinedChannelId &&
         <ActivityDevPreview key={"preview-" + joinedChannelId} channel={joinedChannelId} muted={voice.state.muted} cameraOn={voice.call?.cameraOn} />}
-      <VoiceStage
-        people={voice.people}
-        cameraStreams={voice.cameraStreams}
-        heldCameras={voice.heldCameras}
-        localPersonId={user?.id ?? ""}
-        participantVolumes={voice.participantVolumes}
-        onParticipantVolumeChange={voice.setParticipantVolume}
-        participantGates={voice.participantGates}
-        onParticipantGateChange={voice.setParticipantGate}
-        participantSuppressions={voice.participantSuppressions}
-        onParticipantSuppressionChange={voice.setParticipantSuppression}
-        soundPlays={ports.soundboard.live}
-        onOpenProfile={profile.toggle}
-        shares={voice.shares}
-        viewers={voice.viewers}
-        onWatchShare={voice.watchShare}
-        onStopWatchingShare={voice.stopWatchingShare}
-        onStopSharing={voice.toggleShare}
-        cinema={ui.cinema}
-      />
       <VoiceControlBar
         muted={voice.state.muted}
         deafened={voice.call?.deafened ?? false}
