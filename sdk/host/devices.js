@@ -1,7 +1,7 @@
 /** Capture is owned by the trusted Stellarr page. Every returned resource has a single stop path. */
 export async function capture(kind, { file, muted, send, tile, ended, signal }) {
   const mic = kind === "microphoneLevel";
-  const player = document.createElement(mic ? "audio" : "video");
+  const player = mic ? document.createElement("audio") : document.createElement("video");
   player.playsInline = true;
   player.muted = !mic;
   player.loop = Boolean(file);
