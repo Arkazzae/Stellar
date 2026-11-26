@@ -29,6 +29,9 @@ const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 const maximumVersionNumber = "18446744073709551615";
 const versionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const optionalFields = ["icon", "cover", "devices", "seats", "authority"];
+const manifestFields = new Set(["protocol", "id", "name", "description", "version", "permissions", "connects",
+  "launchModes", ...optionalFields]);
+const connectFields = new Set(["host", "why"]);
 
 function portablePath(path) {
   return typeof path === "string" && path && path.isWellFormed() && Buffer.byteLength(path) <= 512 &&
@@ -87,17 +90,63 @@ function semver(version) {
     match.slice(1, 4).every(part => part.length < 20 || (part.length === 20 && part <= maximumVersionNumber));
 }
 
+function afterWhitespace(source, index) {
+  while (index < source.length && " \t\r\n".includes(source[index])) index++;
+  return index;
+}
+
+// JSON.parse checks the grammar first. Walk the original field names because
+// its result keeps only the last value, while Serde rejects duplicate known fields.
+function checkDuplicateFields(source) {
+  const scopes = [];
+  const manifest = new Set();
+  const connects = Symbol();
+  let connectsAt = -1;
+  for (let index = 0; index < source.length; index++) {
+    switch (source[index]) {
+      case "{":
+        scopes.push(scopes.length === 0 ? manifest : scopes.at(-1) === connects ? new Set() : null);
+        break;
+      case "[":
+        scopes.push(index === connectsAt ? connects : null);
+        break;
+      case "}":
+      case "]":
+        scopes.pop();
+        break;
+      case '"': {
+        const start = index++;
+        while (source[index] !== '"') index += source[index] === "\\" ? 2 : 1;
+        const scope = scopes.at(-1);
+        if (!(scope instanceof Set)) break;
+        const colon = afterWhitespace(source, index + 1);
+        if (source[colon] !== ":") break;
+        const key = JSON.parse(source.slice(start, index + 1));
+        const known = scope === manifest ? manifestFields : connectFields;
+        if (!known.has(key)) break;
+        if (scope.has(key)) fail(400, `Duplicate manifest field: ${scope === manifest ? key : "connects." + key}.`);
+        scope.add(key);
+        if (scope === manifest && key === "connects") connectsAt = afterWhitespace(source, colon + 1);
+        break;
+      }
+    }
+  }
+}
+
 export function manifestOf(bytes) {
+  let source;
   let value;
   const nonInteger = { protocol: new WeakSet(), seats: new WeakSet() };
   try {
-    value = JSON.parse(typeof bytes === "string" ? bytes : utf8.decode(bytes), function (key, field, context) {
+    source = typeof bytes === "string" ? bytes : utf8.decode(bytes);
+    value = JSON.parse(source, function (key, field, context) {
       // Rust's unsigned manifest fields accept integer JSON tokens only.
       if ((key === "protocol" || key === "seats") && typeof field === "number" && !/^\d+$/.test(context.source))
         nonInteger[key].add(this);
       return field;
     });
   } catch { fail(400, "Invalid stellarr.json."); }
+  if (record(value)) checkDuplicateFields(source);
   if (!record(value) || value.protocol !== 1 || nonInteger.protocol.has(value))
     fail(400, "Unsupported protocol. This SDK supports protocol 1.");
   if (typeof value.id !== "string" || !value.id || value.id.length > 100 || /[^a-z0-9-]/.test(value.id) ||

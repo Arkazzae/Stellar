@@ -37,5 +37,19 @@
     { "label": "large prerelease identifier and zero-prefixed build", "fields": { "version": "1.0.0-18446744073709551616+0001" }, "valid": true },
     { "label": "invalid numeric prerelease", "fields": { "version": "1.0.0-01" }, "valid": false },
     { "label": "version with trailing newline", "fields": { "version": "1.0.0\n" }, "valid": false }
+  ],
+  "rawCases": [
+    {"label": "duplicate known manifest field", "members": "\"name\":\"Second name\"", "valid": false},
+    {"label": "duplicate escaped manifest field", "members": "\"n\\u0061me\" : \"Second name\"", "valid": false},
+    {"label": "duplicate nullable optional field", "members": "\"icon\":null,\"icon\":null", "valid": false},
+    {"label": "duplicate launch modes field", "members": "\"launchModes\":[\"voice\"],\"launchModes\":[\"personal\"]", "valid": false},
+    {"label": "duplicate connects field", "members": "\"connects\":[],\"connects\":[]", "valid": false},
+    {"label": "duplicate host within connects entry", "members": "\"connects\":[{\"host\":\"one.example\",\"h\\u006fst\":\"two.example\",\"why\":\"Video\"}]", "valid": false},
+    {"label": "duplicate why in escaped connects array", "members": "\"c\\u006fnnects\" : [{\"host\":\"one.example\",\"why\":\"Video\",\"wh\\u0079\" : \"Other reason\"}]", "valid": false},
+    {"label": "host and why in separate connections", "members": "\"connects\":[{\"host\":\"one.example\",\"why\":\"Video\"},{\"host\":\"two.example\",\"why\":\"Video\"}]", "valid": true},
+    {"label": "duplicate unknown root and extension fields", "members": "\"extension\":{\"name\":7,\"n\\u0061me\":9,\"connects\":[{\"host\":1,\"host\":2}]},\"custom\":1,\"custom\":2", "valid": true},
+    {"label": "duplicate unknown fields in a connection", "members": "\"connects\":[{\"host\":\"one.example\",\"why\":\"Video\",\"name\":false,\"name\":true,\"metadata\":{\"host\":\"A\",\"host\":\"B\",\"why\":1,\"why\":2}}]", "valid": true},
+    {"label": "key-shaped text in a known field", "members": "\"connects\":[{\"host\":\"one.example\",\"why\":\"An embedded JSON example: {\\\"name\\\": 1, \\\"name\\\": 2, \\\"host\\\": [\\\"videos\\\"]}\"}]", "valid": true},
+    {"label": "trailing odd backslashes and escaped quotes in strings", "members": "\"connects\":[{\"host\":\"one.example\",\"why\":\"Path \\\\\\\", then \\\"host\\\" and \\\"host\\\" and \\\\\\\\\"}]", "valid": true}
   ]
 }
