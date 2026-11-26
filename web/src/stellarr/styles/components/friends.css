@@ -395,16 +395,6 @@
     list-style: none;
   }
 
-  .activity-picker .personal-activity-library {
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
-    gap: var(--sp-4);
-  }
-
-  @media (min-width: 768px) {
-    .activity-picker:has(li:nth-child(2)) .am-card { width: min(640px, 100%); }
-    .activity-picker:has(li:nth-child(3)) .am-card { width: min(920px, 100%); }
-  }
-
   .personal-activity-library li {
     overflow: hidden;
     border: 1px solid var(--line);
@@ -414,6 +404,7 @@
 
   .personal-activity-image {
     position: relative;
+    display: block;
     aspect-ratio: 16 / 9;
     background: var(--surface-overlay);
   }
@@ -444,6 +435,82 @@
   .personal-activity-details p {
     color: var(--text-muted);
     margin: 0 0 var(--sp-2);
+  }
+
+  .sv.activity-picker {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .activity-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 212px), 1fr));
+    gap: var(--sp-4);
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .activity-picker-card {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    padding: 0 0 var(--sp-4);
+    overflow: hidden;
+    border: 1px solid var(--line-subtle);
+    border-radius: var(--radius-lg);
+    background: var(--set-group);
+    color: var(--text);
+    text-align: start;
+    overflow-wrap: anywhere;
+  }
+
+  .activity-picker-card:hover:enabled,
+  .activity-picker-card:focus-visible {
+    border-color: var(--accent-quiet);
+    background: color-mix(in oklab, var(--text) 5%, var(--set-group));
+  }
+
+  .activity-picker-card:disabled { opacity: var(--ui-button-disabled-opacity); }
+
+  .activity-picker-card .personal-activity-image {
+    width: 100%;
+    margin-bottom: calc(20px + var(--sp-3));
+  }
+
+  .activity-picker-card .personal-activity-icon {
+    inset: auto auto -20px var(--sp-4);
+    width: 72px;
+    height: 72px;
+    object-fit: contain;
+    border: 3px solid var(--set-group);
+    border-radius: var(--radius-md);
+    background: var(--set-group);
+  }
+
+  .activity-picker-name,
+  .activity-picker-description,
+  .activity-picker-action { margin-inline: var(--sp-4); }
+
+  .activity-picker-name { font-size: var(--text-16); font-weight: 600; }
+
+  .activity-picker-description {
+    margin-top: var(--sp-1);
+    margin-bottom: var(--sp-4);
+    color: var(--text-muted);
+    font-size: var(--text-13);
+    line-height: 1.45;
+  }
+
+  .activity-picker-action {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    margin-top: auto;
+    color: var(--accent-text);
+    font-size: var(--text-13);
+    font-weight: 600;
   }
 
   /* Spans the list it filters, so its right edge lands where the row actions
