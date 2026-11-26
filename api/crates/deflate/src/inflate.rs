@@ -27,12 +27,40 @@ enum Kind {
     CodeLength,
 }
 
+/// A code uses at most four width bits. Keeping the next two bits zero
+/// lets a wrapping u64 shift consume the code using the packed entry directly.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct Code(u16);
+
+impl Code {
+    const MISSING: Self = Self(u16::MAX);
+
+    fn new(symbol: usize, width: usize) -> Self {
+        Self(((symbol as u16) << 6) | width as u16)
+    }
+
+    fn width(self) -> u32 {
+        u32::from(self.0 & 15)
+    }
+
+    fn symbol(self) -> usize {
+        usize::from(self.0 >> 6)
+    }
+
+    fn is_literal(self) -> bool {
+        self.0 < (256 << 6)
+    }
+
+    fn skip(self, bits: u64) -> u64 {
+        bits.wrapping_shr(u32::from(self.0))
+    }
+}
+
 /// A canonical Huffman decoding table: one lookup for codes up to
 /// `FAST_BITS` long, and a bit-by-bit walk for the rare longer ones.
 #[derive(Clone)]
 struct Huffman {
-    /// `symbol << 4 | length`, or 0 when the code is longer or unassigned.
-    fast: [u16; 1 << FAST_BITS],
+    fast: [Code; 1 << FAST_BITS],
     mask: usize,
     count: [u16; 16],
     symbols: [u16; 288],
@@ -41,11 +69,15 @@ struct Huffman {
 impl Huffman {
     fn new() -> Box<Self> {
         Box::new(Self {
-            fast: [0; 1 << FAST_BITS],
+            fast: [Code::MISSING; 1 << FAST_BITS],
             mask: 0,
             count: [0; 16],
             symbols: [0; 288],
         })
+    }
+
+    fn lookup(&self, bits: u64) -> Code {
+        self.fast[bits as usize & self.mask]
     }
 
     /// Builds the table for `lengths`, refusing every set of lengths that is
@@ -62,7 +94,7 @@ impl Huffman {
         self.count[0] = 0;
         let longest = self.count.iter().rposition(|&n| n != 0).unwrap_or(0);
         self.mask = (1 << longest.min(FAST_BITS as usize)) - 1;
-        self.fast[..=self.mask].fill(0);
+        self.fast[..=self.mask].fill(Code::MISSING);
         if codes == 0 {
             return if kind == Kind::Distance {
                 Ok(())
@@ -104,7 +136,7 @@ impl Huffman {
             next_code[length] += 1;
             if length as u32 <= FAST_BITS {
                 let reversed = (code as u16).reverse_bits() >> (16 - length);
-                let entry = ((symbol as u16) << 4) | length as u16;
+                let entry = Code::new(symbol, length);
                 let mut slot = usize::from(reversed);
                 while slot <= self.mask {
                     self.fast[slot] = entry;
@@ -131,6 +163,44 @@ static FIXED: LazyLock<(Box<Huffman>, Box<Huffman>)> = LazyLock::new(|| {
         .expect("fixed distance codes");
     (literals, distances)
 });
+
+/// Appends four bytes when the accumulator has room for a full word.
+/// The buffered loop reserves input for both refills before starting a token.
+#[inline(always)]
+fn refill_word(input: &[u8], pos: &mut usize, bits: &mut u64, count: &mut u32) {
+    if *count < 32 {
+        let word = u32::from_le_bytes(input[*pos..*pos + 4].try_into().unwrap());
+        *bits |= u64::from(word) << *count;
+        *count += 32;
+        *pos += 4;
+    }
+}
+
+#[inline(always)]
+fn copy_match(window: &mut [u8], filled: usize, distance: usize, length: usize) {
+    let from = filled - distance;
+    if distance >= length {
+        if length <= 16 {
+            // The decode loop reserves MAX_MATCH bytes here. Copy a fixed
+            // width and commit only the match length to the output history.
+            window.copy_within(from..from + 16, filled);
+        } else {
+            window.copy_within(from..from + length, filled);
+        }
+    } else if distance == 1 {
+        let byte = window[from];
+        window[filled..filled + length].fill(byte);
+    } else {
+        // The history is periodic. Each copy doubles the prefix that can
+        // be used by the next, including for matches longer than a period.
+        let mut copied = 0;
+        while copied < length {
+            let n = (distance + copied).min(length - copied);
+            window.copy_within(from..from + n, filled + copied);
+            copied += n;
+        }
+    }
+}
 
 enum State {
     BlockHeader,
@@ -211,7 +281,7 @@ impl Inflate<io::Empty> {
         if let [byte] = data
             && self.in_pos == self.in_len
             && self.bit_count < 56
-            && matches!(self.state, State::Codes)
+            && matches!(self.state, State::Codes | State::Stored(_))
         {
             self.bits |= u64::from(*byte) << self.bit_count;
             self.bit_count += 8;
@@ -231,6 +301,19 @@ impl Inflate<io::Empty> {
 
     pub(crate) fn finish_input(&mut self) {
         self.supply = Supply::Finished;
+    }
+
+    #[inline]
+    pub(crate) fn needs_body_input(&self) -> bool {
+        self.in_pos == self.in_len
+            && self.taken == self.filled
+            && self.supply == Supply::Pushing
+            && self.failed.is_none()
+            && match self.state {
+                State::Stored(n) => n != 0 && self.bit_count == 0 && self.produced < self.limit,
+                State::Codes => self.bit_count < 32,
+                _ => false,
+            }
     }
 
     pub(crate) fn pushed_input(&self) -> (&[u8], bool) {
@@ -397,15 +480,15 @@ impl<R: Read> Inflate<R> {
             Kind::Distance => &*self.distances,
             _ => &*self.literals,
         };
-        let entry = table.fast[self.bits as usize & table.mask];
-        if entry != 0 {
-            let length = u32::from(entry & 15);
+        let entry = table.lookup(self.bits);
+        if entry != Code::MISSING {
+            let length = entry.width();
             if length > self.bit_count {
                 return Err(Error::Truncated.into());
             }
-            self.bits >>= length;
+            self.bits = entry.skip(self.bits);
             self.bit_count -= length;
-            return Ok(usize::from(entry >> 4));
+            return Ok(entry.symbol());
         }
         self.decode_slow(kind)
     }
@@ -589,6 +672,12 @@ impl<R: Read> Inflate<R> {
             if self.filled > end {
                 return Ok(());
             }
+            if matches!(self.state, State::Codes) && self.in_len - self.in_pos >= 8 {
+                self.decode_buffered_codes();
+                if self.filled > end {
+                    return Ok(());
+                }
+            }
             // Pushed input stays in place throughout the step. An incomplete
             // symbol or header can be retried from this bit position.
             let (bits, bit_count, in_pos) = (self.bits, self.bit_count, self.in_pos);
@@ -630,6 +719,15 @@ impl<R: Read> Inflate<R> {
             State::Stored(0) => self.finish_block(),
             State::Stored(remaining) => {
                 if self.filled > start && self.in_pos == self.in_len && self.bit_count < 8 {
+                    return Ok(true);
+                }
+                if self.bit_count == 8 && self.in_pos == self.in_len && self.produced < self.limit {
+                    self.window[self.filled] = self.bits as u8;
+                    self.bits = 0;
+                    self.bit_count = 0;
+                    self.filled += 1;
+                    self.produced += 1;
+                    self.state = State::Stored(remaining - 1);
                     return Ok(true);
                 }
                 let allowed = self.limit - self.produced;
@@ -677,6 +775,75 @@ impl<R: Read> Inflate<R> {
         Ok(false)
     }
 
+    /// Decode complete tokens from buffered input. Leave long codes, block
+    /// ends and invalid tokens at their bit position for the incremental decoder.
+    fn decode_buffered_codes(&mut self) {
+        let input = &self.input[..self.in_len];
+        let mut pos = self.in_pos;
+        let mut bits = self.bits;
+        let mut count = self.bit_count;
+        let mut filled = self.filled;
+        let room = self
+            .limit
+            .saturating_sub(self.produced)
+            .min((CAP - filled) as u64) as usize;
+        let end = filled + room;
+        while filled + MAX_MATCH < end && pos + 8 <= input.len() {
+            refill_word(input, &mut pos, &mut bits, &mut count);
+            // One literal can precede a complete match in this iteration.
+            let mut lit = self.literals.lookup(bits);
+            if lit.is_literal() {
+                let width = lit.width();
+                self.window[filled] = lit.symbol() as u8;
+                filled += 1;
+                bits = lit.skip(bits);
+                count -= width;
+                lit = self.literals.lookup(bits);
+            }
+            let width = lit.width();
+            let symbol = lit.symbol();
+            if symbol < 256 {
+                self.window[filled] = symbol as u8;
+                filled += 1;
+                bits = lit.skip(bits);
+                count -= width;
+            } else {
+                let index = symbol.wrapping_sub(257);
+                if index >= LEN_BASE.len() {
+                    break;
+                }
+                refill_word(input, &mut pos, &mut bits, &mut count);
+                let word = lit.skip(bits);
+                let extra = LEN_EXTRA[index];
+                let length = usize::from(LEN_BASE[index]) + (word as usize & ((1 << extra) - 1));
+                let word = word >> extra;
+                let dist = self.distances.lookup(word);
+                let index = dist.symbol();
+                if index >= DIST_BASE.len() {
+                    break;
+                }
+                let dist_width = dist.width();
+                let dist_extra = DIST_EXTRA[index];
+                let distance = usize::from(DIST_BASE[index])
+                    + ((word >> dist_width) as usize & ((1 << dist_extra) - 1));
+                let used = width + u32::from(extra) + dist_width + u32::from(dist_extra);
+                if used > count || distance > filled {
+                    break;
+                }
+                copy_match(&mut self.window, filled, distance, length);
+                filled += length;
+                bits >>= used;
+                count -= used;
+            }
+        }
+        self.bits = bits;
+        self.bit_count = count;
+        self.in_pos = pos;
+        let output = filled - self.filled;
+        self.produced += output as u64;
+        self.filled = filled;
+    }
+
     /// One literal, one match, or the end of the block.
     #[inline(always)]
     fn decode_symbol_run(&mut self) -> Result<(), Fail> {
@@ -713,29 +880,7 @@ impl<R: Read> Inflate<R> {
         let allowed = self.limit - self.produced;
         let over = length as u64 > allowed;
         let length = if over { allowed as usize } else { length };
-        let from = self.filled - distance;
-        if distance >= length {
-            if length <= 16 {
-                // The decode loop reserves MAX_MATCH bytes here. Copy a fixed
-                // width and commit only the match length to the output history.
-                self.window.copy_within(from..from + 16, self.filled);
-            } else {
-                self.window.copy_within(from..from + length, self.filled);
-            }
-        } else if distance == 1 {
-            let byte = self.window[from];
-            self.window[self.filled..self.filled + length].fill(byte);
-        } else {
-            // The history is periodic. Each copy doubles the prefix that can
-            // be used by the next, including for matches longer than a period.
-            let mut copied = 0;
-            while copied < length {
-                let n = (distance + copied).min(length - copied);
-                self.window
-                    .copy_within(from..from + n, self.filled + copied);
-                copied += n;
-            }
-        }
+        copy_match(&mut self.window, self.filled, distance, length);
         self.filled += length;
         self.produced += length as u64;
         if over {

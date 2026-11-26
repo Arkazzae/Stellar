@@ -213,6 +213,7 @@ impl PushDecoder {
                     let byte = byte.ok_or(Error::Truncated)?;
                     self.gzip_header_byte(byte)?;
                 }
+                Stage::Body if self.inflate.needs_body_input() => return Ok(Step::NeedInput),
                 Stage::Body => match self.inflate.read(out) {
                     Ok(0) => {
                         self.stage = match (self.format, self.zlib) {
