@@ -46,7 +46,7 @@ async function worklet(engine, entry, alias = {}) {
 }
 
 try {
-  const manifest = JSON.parse(await readFile(join(root, "artifacts/manifest.json"), "utf8"));
+  const manifest = JSON.parse(await readFile(join(root, "artifacts/npm/sources.json"), "utf8"));
   const audio = name === "audio-filters";
   const registry = {};
   for (const e of manifest.artifacts) {

@@ -1,0 +1,179 @@
+{
+  "artifacts": [
+    {
+      "id": "noise-suppression/rnnoise-wasm",
+      "path": "audio/rnnoise.wasm",
+      "source": {
+        "recipe": "rnnoise",
+        "output": "rnnoise.wasm"
+      },
+      "sha256": "2bf153f7b34378891a0dd92bb377bc3180eb337e44b11ae4259a8a2b2261d97e",
+      "size": 3611686,
+      "upstream": {
+        "project": "https://github.com/xiph/rnnoise",
+        "from": "https://github.com/xiph/rnnoise.git#70f1d256acd4b34a572f999a05c87bf00b67730d, with the model https://media.xiph.org/rnnoise/models/rnnoise_data-0a8755f8e2d834eff6a54714ecc7d75f9932e845df35f8b59bc52a7cfe6e8b37.tar.gz",
+        "verified": "Built here from that commit and the model archive its model_version names by sha256, by artifacts/recipes/rnnoise/, in the wasi-sdk 33 image its stage in the root Dockerfile pins by digest."
+      },
+      "license": "BSD-3-Clause AND MIT AND SunPro AND CC0-1.0"
+    },
+    {
+      "id": "noise-suppression/gtcrn-wasm",
+      "path": "audio/gtcrn.wasm",
+      "source": {
+        "recipe": "gtcrn",
+        "output": "gtcrn.wasm"
+      },
+      "sha256": "01a5286ddaa1ce6d0dd5510bd9241f3bf0cc727a05d5767ae6881d85d9983719",
+      "size": 196884,
+      "upstream": {
+        "project": "https://github.com/sapphi-red/gtcrn-wasm",
+        "from": "24662ff13f184b96edf91f1568e186341a8ac988"
+      },
+      "license": "MIT AND LicenseRef-pffft"
+    },
+    {
+      "id": "noise-suppression/speex-wasm",
+      "path": "audio/speex.wasm",
+      "source": {
+        "recipe": "speex",
+        "output": "speex.wasm"
+      },
+      "sha256": "abfe2165d4d4445596ca53869db48c374374dfe9cc83c12c17ed65c986f5246a",
+      "size": 61084,
+      "upstream": {
+        "project": "https://github.com/xiph/speexdsp",
+        "from": "https://github.com/xiph/speexdsp.git#7a158783df74efe7c2d1c6ee8363c1e695c71226",
+        "verified": "Built here from that commit by artifacts/recipes/speex/, in the wasi-sdk 33 image its stage in the root Dockerfile pins by digest. The build gave these bytes on arm64 and on amd64 build machines. Driven by our worklet, it puts out, sample for sample, what the build it replaced did (dist/speex.wasm of @sapphi-red/speex-preprocess-wasm 0.4.0 with its worklet) for every input within full scale: seven of the eight voice fixtures. Past full scale our worklet clamps where the old one wrapped, which only the clipping fixture reaches. web/bench/voice/records/suppressor/speex.txt holds the output."
+      },
+      "license": "BSD-3-Clause AND MIT AND SunPro AND CC0-1.0"
+    },
+    {
+      "id": "translation/bergamot-glue",
+      "path": "codecs/bergamot/bergamot-translator.js",
+      "source": {
+        "recipe": "bergamot",
+        "output": "bergamot-translator.js"
+      },
+      "sha256": "d922c29474b05d7ddf5ee8a30dcd6d332e0898eaae8f483779b2044dbf02e180",
+      "size": 91869,
+      "upstream": {
+        "project": "https://github.com/mozilla/translations",
+        "from": "https://github.com/mozilla/translations.git#1de4a085d3a7afb625c51a60aabb5ad298e4059f",
+        "verified": "Built here from that commit, v0.6.0 of the engine, by artifacts/recipes/bergamot/, with Emscripten 3.1.8 on linux/amd64, in the same build as the WASM beside it, whose bytes are Mozilla's. No published copy has these bytes: Firefox keeps the glue in its own source tree (toolkit/components/translations/bergamot-translator/), built from eea6e5a8, patched and reformatted by its linter."
+      },
+      "license": "MPL-2.0 AND (MIT OR NCSA)"
+    },
+    {
+      "id": "translation/bergamot-wasm",
+      "path": "codecs/bergamot/bergamot-translator.wasm",
+      "source": {
+        "recipe": "bergamot",
+        "output": "bergamot-translator.wasm"
+      },
+      "sha256": "a3a89d9ad0a4ed8f27bf3e403701b23f5709816f6376438503f2fa5b0182c2dc",
+      "size": 4960506,
+      "upstream": {
+        "project": "https://github.com/mozilla/translations",
+        "from": "https://github.com/mozilla/translations.git#1de4a085d3a7afb625c51a60aabb5ad298e4059f",
+        "verified": "Built here from that commit, v0.6.0 of the engine, by artifacts/recipes/bergamot/, with Emscripten 3.1.8 on linux/amd64. Byte for byte the attachment Firefox downloads: Remote Settings, collection translations-wasm, bergamot-translator version 3.0 (release v0.6.0, revision 1de4a085), 4960506 bytes, sha256 a3a89d9ad0a4ed8f27bf3e403701b23f5709816f6376438503f2fa5b0182c2dc."
+      },
+      "license": "MPL-2.0 AND MIT AND Apache-2.0 AND Apache-2.0 WITH LLVM-exception AND BSD-3-Clause AND BSD-2-Clause AND Zlib AND CC0-1.0 AND (MIT OR NCSA)"
+    },
+    {
+      "id": "translation/plen-model",
+      "path": "bergamot-models/plen/model.plen.intgemm.alphas.bin",
+      "source": {
+        "archive": "translation-models.tar.gz",
+        "file": "plen/model.plen.intgemm.alphas.bin"
+      },
+      "sha256": "06dbab3baa3bbceab746bc6a3bba807878f38536382c03acddf59d3edf3b5d94",
+      "size": 31561787,
+      "upstream": {
+        "project": "https://github.com/mozilla/translations",
+        "from": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/dd8a7ab8-b12f-4ad4-8827-0922510df232.bin",
+        "verified": "sha256 and size match Firefox Remote Settings (translations-models, pl-en 2.0) and the uncompressedHash of models/pl-en/retrain_hr_HLLa6ZwsSomB0kyBr7Iz6w/exported/model.plen.intgemm.alphas.bin.gz in Mozilla's model registry (db/models.json of the moz-fx-translations-data bucket)."
+      },
+      "license": "MPL-2.0"
+    },
+    {
+      "id": "translation/plen-lex",
+      "path": "bergamot-models/plen/lex.50.50.plen.s2t.bin",
+      "source": {
+        "archive": "translation-models.tar.gz",
+        "file": "plen/lex.50.50.plen.s2t.bin"
+      },
+      "sha256": "b295dfefa7022a62e105276e8c39fdfd67bffe588f4fd78583edd4e04ee0cb3b",
+      "size": 4964208,
+      "upstream": {
+        "project": "https://github.com/mozilla/translations",
+        "from": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/9a072be8-d900-4062-a2ab-c53c8eb8e619.bin",
+        "verified": "sha256 and size match Firefox Remote Settings (translations-models, pl-en 2.0)."
+      },
+      "license": "MPL-2.0"
+    },
+    {
+      "id": "translation/plen-vocab",
+      "path": "bergamot-models/plen/vocab.plen.spm",
+      "source": {
+        "archive": "translation-models.tar.gz",
+        "file": "plen/vocab.plen.spm"
+      },
+      "sha256": "2000f182efa8ce5f69bc3f9e574666b5bc2c0af684eedd32f69d15aa9021ea85",
+      "size": 821612,
+      "upstream": {
+        "project": "https://github.com/mozilla/translations",
+        "from": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/47b0f4cd-7d3c-4cf5-b7b4-0aecfbdc51f6.spm",
+        "verified": "sha256 and size match Firefox Remote Settings (translations-models, pl-en 2.0)."
+      },
+      "license": "MPL-2.0"
+    },
+    {
+      "id": "translation/enpl-model",
+      "path": "bergamot-models/enpl/model.enpl.intgemm.alphas.bin",
+      "source": {
+        "archive": "translation-models.tar.gz",
+        "file": "enpl/model.enpl.intgemm.alphas.bin"
+      },
+      "sha256": "b0b59716bcc8f46b8dc6ab5c32a2732acaad42a5a6d9ae9b472526a1bb0d71d4",
+      "size": 31561787,
+      "upstream": {
+        "project": "https://github.com/mozilla/translations",
+        "from": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/640bd7ef-a977-417f-903c-00b5217cb7de.bin",
+        "verified": "sha256 and size match Firefox Remote Settings (translations-models, en-pl 2.1) and the uncompressedHash of models/en-pl/retrain_hr_fix_names_YmTlfuUsSKCbUp75UXaUuw/exported/model.enpl.intgemm.alphas.bin.gz in Mozilla's model registry (db/models.json of the moz-fx-translations-data bucket)."
+      },
+      "license": "MPL-2.0"
+    },
+    {
+      "id": "translation/enpl-lex",
+      "path": "bergamot-models/enpl/lex.50.50.enpl.s2t.bin",
+      "source": {
+        "archive": "translation-models.tar.gz",
+        "file": "enpl/lex.50.50.enpl.s2t.bin"
+      },
+      "sha256": "d7d7b364673f633763c9f8f2e8ee9c7a184e92f4086e8b84abe870a2a8dbe5d5",
+      "size": 3540052,
+      "upstream": {
+        "project": "https://github.com/mozilla/translations",
+        "from": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/12451e17-4901-4327-b78d-903e9ff7529d.bin",
+        "verified": "sha256 and size match Firefox Remote Settings (translations-models, en-pl 2.1)."
+      },
+      "license": "MPL-2.0"
+    },
+    {
+      "id": "translation/enpl-vocab",
+      "path": "bergamot-models/enpl/vocab.enpl.spm",
+      "source": {
+        "archive": "translation-models.tar.gz",
+        "file": "enpl/vocab.enpl.spm"
+      },
+      "sha256": "2000f182efa8ce5f69bc3f9e574666b5bc2c0af684eedd32f69d15aa9021ea85",
+      "size": 821612,
+      "upstream": {
+        "project": "https://github.com/mozilla/translations",
+        "from": "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/translations-models/dd8a3019-bd2f-405e-b95d-0cce7a29be2d.spm",
+        "verified": "sha256 and size match Firefox Remote Settings (translations-models, en-pl 2.1)."
+      },
+      "license": "MPL-2.0"
+    }
+  ]
+}

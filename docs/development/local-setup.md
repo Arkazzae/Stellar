@@ -2,15 +2,9 @@
 
 `infra/compose/dev.yml` runs each service from a bind mount so edits to TypeScript, CSS, or Rust reload without rebuilding the production image.
 
-## 1. Build WebAssembly recipes once
+## 1. Browser packages
 
-Three browser WebAssembly binaries (`speex`, `rnnoise`, and `bergamot`) are compiled from pinned C/C++ sources in `artifacts/recipes/`. Build them once into `artifacts/recipes/*/out/` before starting `web`:
-
-```bash
-docker buildx bake recipes
-```
-
-Cached runs take seconds; a cold first run downloads `wasi-sdk` and Bergamot's Emscripten archive (on Apple silicon, `bergamot` compiles once under `linux/amd64` emulation so its output matches Firefox Remote Settings). `web/` scripts run `artifacts/assemble.mjs` automatically to copy binaries into `web/public/` and verify SHA-256 hashes against `artifacts/manifest.json`. See [`artifacts/recipes/README.md`](../../artifacts/recipes/README.md).
+The web workspace installs the pinned Stellarr audio and translation packages. Its npm hooks verify and assemble the files served by the instance. See [browser runtime files](../../artifacts/README.md).
 
 ## 2. Start the development stack
 
@@ -57,7 +51,6 @@ Requires Node.js `22+` / `26`, Rust `stable`, and Python `3.9+` (for seed script
 
 ```bash
 npm ci
-docker buildx bake recipes
 
 # Terminal 1: stellarr-media (0.0.0.0:49000 and 127.0.0.1:5200)
 cd media && cargo run

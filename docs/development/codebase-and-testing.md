@@ -11,7 +11,7 @@
 | [`init/`](../../init/README.md) | Rust (`std`, `libc`) | `stellarr-init` PID 1 supervisor, readiness probes, and Unix control socket. |
 | [`init/installer/`](../../init/installer/README.md) | Rust (`std`, `libc`, `ureq`) | `stellarr-installer`, the host installer that the root `install.sh` downloads from a release and runs. |
 | [`infra/`](../../infra/README.md) | Shell, Nginx, coturn | `entrypoint.sh`, `settings.sh`, `stellarr-cli.sh`, `tls-maintenance.sh`, `nginx.conf`, and `infra/tests/`. |
-| [`artifacts/`](../../artifacts/README.md) | BuildKit, `wasi-sdk`, Emscripten | `manifest.json`, `assemble.mjs`, source [`recipes/`](../../artifacts/recipes/README.md) (`speex`, `rnnoise`, `bergamot`), `files/`, and `NOTICES`. |
+| [`artifacts/`](../../artifacts/README.md) | BuildKit, `wasi-sdk`, Emscripten | `manifest.json`, `assemble.mjs`, source [`recipes/`](../../artifacts/recipes/README.md) and package metadata in `npm/`, and `NOTICES`. |
 | [`sdk/`](../../sdk/README.md) | JavaScript, Node.js CLI | Activity client, local simulator, release tooling and voice-channel preview. |
 | `docs/` | VitePress, Mermaid | Documentation site (`navigation.ts` builds the nav and sidebar from `docs/README.md`). |
 | [`website/`](../../website/README.md) | Vanilla JS, CSS, Vite | `stellarr.online` landing page and `/install.sh` build (standalone npm project). |
@@ -28,7 +28,7 @@
 
 ### Web client, Cockpit, and packages
 
-From the repository root (after `npm ci` and `docker buildx bake recipes`):
+From the repository root (after `npm ci`):
 
 ```bash
 npm run lint:web

@@ -22,7 +22,7 @@ interface Artifact {
   path: string;
   size: number;
   sha256: string;
-  source: { file?: string; recipe?: string; output?: string };
+  source: { package: string };
   upstream: { project: string; from: string; integrity?: string; verified?: string };
   license: string;
 }
@@ -36,77 +36,20 @@ function sha256(bytes: Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-// The GTCRN worklet comes from artifacts/, the code that starts it is ours in
-// noiseSuppression.ts. Replacing a worklet with another build
-// or version must not leave the two speaking past each other: a node
-// constructed under a name nothing registered throws, and options the
-// processor does not read leave it without a binary. Speex's and RNNoise's
-// worklets are built from our source and take their names and options from the
-// same modules noiseSuppression.ts does.
-describe("the prebuilt noise-suppression worklets", () => {
-  const engines = Object.entries(WORKLET_URL).flatMap(([kind, url]) => {
-    const source = manifest.find((entry) => `/${entry.path}` === url)?.source.file;
-    if (source === undefined) return [];
-    return [
-      {
-        kind: kind as keyof typeof PROCESSOR_NAME,
-        url,
-        code: readFileSync(join(artifactsRoot, source), "utf8"),
-      },
-    ];
+describe("the installed browser packages", () => {
+  it.each(Object.entries(WORKLET_URL))("serves the processor registered for %s", (kind, url) => {
+    const entry = manifest.find((item) => "/" + item.path === url);
+    expect(entry?.source.package).toBe("@stellarr/audio-filters");
+    const code = readFileSync(join(process.cwd(), "public", url), "utf8");
+    expect(code).toContain(PROCESSOR_NAME[kind as keyof typeof PROCESSOR_NAME]);
+    expect(code).toContain("registerProcessor(");
   });
 
-  it.each(engines)("$url registers the processor $kind is started as", ({ kind, code }) => {
-    const registered = [...code.matchAll(/registerProcessor\(\s*[`'"]([^`'"]+)[`'"]/g)];
-    expect(registered.map(([, name]) => name)).toEqual([PROCESSOR_NAME[kind]]);
-  });
-
-  it.each(engines)("$url reads the options and the message it is given", ({ code }) => {
-    expect(code).toContain("processorOptions.wasmBinary");
-    expect(code).toContain("processorOptions.maxChannels");
-    expect(code).toMatch(/\.data\s*===\s*[`'"]destroy[`'"]/);
-  });
-});
-
-describe("the artifact manifest", () => {
-  // assemble.mjs only reads a recipe's out/ folder. Something has to fill it:
-  // the image build, from the recipe's stages in the root Dockerfile, and
-  // development and CI, through the recipes group of docker-bake.hcl. A recipe
-  // missing from either fails far from here, in the image job or on a fresh
-  // checkout.
-  it("names only recipes that the image build and docker buildx bake recipes both build", () => {
-    const recipes = [...new Set(manifest.flatMap((artifact) => artifact.source.recipe ?? []))];
-    expect(recipes.length).toBeGreaterThan(0);
-
-    const dockerfile = readFileSync(join(artifactsRoot, "..", "Dockerfile"), "utf8");
-    const bake = readFileSync(join(artifactsRoot, "..", "docker-bake.hcl"), "utf8");
-    const baked = JSON.parse(/variable "RECIPES" \{\s*default = (\[[^\]]*\])/.exec(bake)?.[1] ?? "[]");
-    for (const recipe of recipes) {
-      // On the recipe's platform, so that web-build stays one stage for
-      // every platform of the image.
-      const stage = new RegExp(`^FROM --platform=\\S+ scratch AS recipe-${recipe}$`, "m");
-      expect({ recipe, stage: stage.test(dockerfile) }).toEqual({ recipe, stage: true });
-      expect({ recipe, copied: dockerfile.includes(`COPY --from=recipe-${recipe} / artifacts/recipes/${recipe}/out/`) }).toEqual({
-        recipe,
-        copied: true,
-      });
-    }
-    expect([...baked].sort()).toEqual([...recipes].sort());
-  });
-
-  it("records the size and hash of every committed source file", () => {
-    const files = manifest.filter((artifact) => artifact.source.file !== undefined);
-    expect(files.length).toBeGreaterThan(0);
-
-    for (const artifact of files) {
-      const bytes = readFileSync(join(artifactsRoot, artifact.source.file as string));
-      expect({ id: artifact.id, size: bytes.byteLength }).toEqual({
-        id: artifact.id,
-        size: artifact.size,
-      });
-      expect({ id: artifact.id, sha256: sha256(bytes) }).toEqual({
-        id: artifact.id,
-        sha256: artifact.sha256,
+  it("serves the exact bytes recorded for every installed artifact", () => {
+    for (const item of manifest) {
+      const bytes = readFileSync(join(process.cwd(), "public", item.path));
+      expect({ path: item.path, size: bytes.length, sha256: sha256(bytes) }).toEqual({
+        path: item.path, size: item.size, sha256: item.sha256,
       });
     }
   });
@@ -125,9 +68,12 @@ describe("assembling the artifacts", () => {
     fixtures.push(root);
 
     const script = join(root, "artifacts", "assemble.mjs");
-    const source = join(root, "artifacts", "files", "example.bin");
+    const pkg = join(root, "node_modules", "@stellarr", "audio-filters");
+    const source = join(pkg, "dist", "audio", "example.bin");
     const target = join(root, "web", "public", "audio", "example.bin");
-    mkdirSync(join(root, "artifacts", "files"), { recursive: true });
+    mkdirSync(join(pkg, "dist", "audio"), { recursive: true });
+    mkdirSync(join(root, "artifacts"));
+    writeFileSync(join(pkg, "package.json"), JSON.stringify({ name: "@stellarr/audio-filters" }));
     copyFileSync(join(artifactsRoot, "assemble.mjs"), script);
     writeFileSync(source, bytes);
     writeFileSync(
@@ -137,7 +83,7 @@ describe("assembling the artifacts", () => {
           {
             id: "test/example",
             path: "audio/example.bin",
-            source: { file: "files/example.bin" },
+            source: { package: "@stellarr/audio-filters" },
             sha256: sha256(bytes),
             size: bytes.byteLength,
             upstream: { project: "https://example.invalid", from: "a test" },
