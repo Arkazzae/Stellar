@@ -61,6 +61,19 @@
   --cockpit-panel-gap: 8px;
   --cockpit-radius: 12px;
   --cockpit-nav-active: #ebebef;
+
+  /*
+   * The page inside the panel. The text is 40 px in from the panel's sides.
+   * Its top margin is 8 px less, because the first heading's capitals start
+   * about 8 px into its line; they then sit as far from the top edge as the
+   * text does from the left one.
+   */
+  --docs-page-inset: 40px;
+  --docs-page-top: 32px;
+  --docs-text-width: 800px;
+  --docs-outline-width: 224px;
+  --docs-outline-gap: 56px;
+  --docs-local-nav-height: 48px;
 }
 
 .dark {
@@ -77,9 +90,10 @@
     background-color: var(--vp-c-bg-alt);
   }
 
-  /* The top bar is in the sidebar's tone, with no rule under it; the page scrolls under it. */
-  :root .Layout .VPNav .VPNavBar.has-sidebar .content-body,
-  :root .Layout .VPNav .VPNavBar.has-sidebar.screen-open .content-body {
+  /* The top bar is in the sidebar's tone across the whole window, with no rule
+     under it; the page scrolls under it. */
+  :root .Layout .VPNav .VPNavBar.has-sidebar,
+  :root .Layout .VPNav .VPNavBar.has-sidebar .content-body {
     background-color: var(--vp-c-bg-alt);
   }
 
@@ -87,13 +101,29 @@
     display: none;
   }
 
-  :root .Layout .VPNav .VPNavBar.has-sidebar .title {
-    padding-left: 24px;
+  /* The brand row is as wide as the sidebar, and the logo starts on the line
+     of the sidebar's text, 24 px in. The theme's widths at 1440 px and up
+     assume a window without a scrollbar, so they are set here outright. */
+  :root .Layout .VPNav .VPNavBar.has-sidebar .container > .title {
+    width: var(--vp-sidebar-width);
+    padding: 0 24px;
   }
 
   /* Cockpit's brand row has no rule under it either. */
   :root .Layout .VPNav .VPNavBarTitle.has-sidebar .title {
     border-bottom-color: transparent;
+  }
+
+  /* The bar's controls run from the panel's left edge to its right one. The
+     last control's icon ends on the panel's edge; its hit area reaches past it. */
+  :root .Layout .VPNav .VPNavBar.has-sidebar .container > .content {
+    padding-left: var(--vp-sidebar-width);
+    padding-right: var(--cockpit-panel-gap);
+  }
+
+  /* 16 px on both sides of each rule: the links have 12 px of padding of their own. */
+  :root .Layout .VPNav .VPNavBar.has-sidebar .menu + .appearance::before {
+    margin-left: 4px;
   }
 
   /* The search field reads as a field on the tinted bar, as Cockpit's inputs do. */
@@ -113,31 +143,83 @@
     border-radius: var(--cockpit-radius);
   }
 
-  /* Cockpit's page margins: 32 px around, more room for tables than the theme's default. */
+  /* The page scrolls under the bar, but the panel keeps its top edge and
+     corners: a fixed copy of them sits over the page, filled with the bar's
+     tone outside the corners and the panel's inside. */
+  :root .Layout .VPContent.has-sidebar::before,
+  :root .Layout .VPContent.has-sidebar::after {
+    content: '';
+    position: fixed;
+    top: var(--vp-nav-height);
+    left: var(--vp-sidebar-width);
+    right: var(--cockpit-panel-gap);
+    z-index: 10;
+    height: var(--cockpit-radius);
+    pointer-events: none;
+  }
+
+  :root .Layout .VPContent.has-sidebar::before {
+    background-color: var(--vp-c-bg-alt);
+  }
+
+  :root .Layout .VPContent.has-sidebar::after {
+    border: 1px solid var(--vp-c-divider);
+    border-bottom: 0;
+    border-radius: var(--cockpit-radius) var(--cockpit-radius) 0 0;
+    background-color: var(--vp-c-bg);
+  }
+
   :root .Layout .VPContent.has-sidebar .VPDoc {
-    padding: 32px 32px 0;
+    padding: var(--docs-page-top) var(--docs-page-inset) 0;
+  }
+
+  /* The pager at the end keeps the side margin below it. */
+  :root .Layout .VPContent.has-sidebar .VPDoc > .container > .content {
+    padding: 0 0 var(--docs-page-inset);
   }
 
   :root .Layout .VPDoc.has-aside .content-container {
-    max-width: 800px;
+    max-width: var(--docs-text-width);
   }
 
   :root .Layout .VPDoc:not(.has-aside) .content-container {
     max-width: 960px;
   }
 
+  /* The outline starts level with the page's first heading and ends inside the
+     panel. The theme's curtain, a fade at the window's bottom, went over the
+     panel's bottom edge. */
+  :root .Layout .VPContent.has-sidebar .VPDoc .aside-container {
+    padding-top: calc(var(--vp-nav-height) + 1px + var(--docs-page-top));
+    height: calc(100vh - var(--cockpit-panel-gap) - 1px);
+  }
+
+  :root .Layout .VPContent.has-sidebar .VPDoc .aside-curtain {
+    display: none;
+  }
+
   /* Navigation: 12 px from the sidebar's edges, each page a 36 px row. */
   :root .Layout .VPSidebar {
+    width: var(--vp-sidebar-width);
     padding-left: 12px;
     padding-right: 12px;
   }
 
-  :root .Layout .VPSidebar .group + .group {
-    border-top: 0;
+  /* Groups span the sidebar, so a row is 12 px from both of its edges. A
+     group's name sits 22 px under the last row before it, and the first one
+     close under the bar. */
+  :root .Layout .VPSidebar .group {
+    width: auto;
+    padding-top: 4px;
   }
 
-  :root .Layout .VPSidebar .group {
-    padding-top: 12px;
+  :root .Layout .VPSidebar .group + .group {
+    border-top: 0;
+    padding-top: 14px;
+  }
+
+  :root .Layout .VPSidebar .VPSidebarItem.level-0 {
+    padding-bottom: 0;
   }
 
   :root .Layout .VPSidebar .VPSidebarItem.level-0 > .item > .text,
@@ -178,6 +260,72 @@
   :root .Layout .VPSidebar .VPSidebarItem.level-1.is-active > .item .link > .text,
   :root .Layout .VPSidebar .VPSidebarItem.level-1 > .item:hover .link > .text {
     color: var(--vp-c-text-1);
+  }
+}
+
+/*
+ * From 1280 px the text and the outline are one group with a fixed gap,
+ * centred in the panel, so on a wide screen the outline stays beside the text
+ * instead of at the window's edge.
+ */
+@media (min-width: 1280px) {
+  :root .Layout .VPContent.has-sidebar .VPDoc.has-aside > .container {
+    max-width: calc(var(--docs-text-width) + var(--docs-outline-gap) + var(--docs-outline-width));
+  }
+
+  :root .Layout .VPContent.has-sidebar .VPDoc.has-aside > .container > .content {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  :root .Layout .VPContent.has-sidebar .VPDoc.has-aside > .container > .aside {
+    flex: none;
+    width: calc(var(--docs-outline-gap) + var(--docs-outline-width));
+    max-width: none;
+    padding-left: var(--docs-outline-gap);
+  }
+}
+
+/*
+ * Below 1280 px the outline is a menu, "On this page". It is the panel's first
+ * row, as Cockpit's page header is: it carries the panel's top edge and
+ * corners, has a rule under it, and stays while the page scrolls under it. Its
+ * label lines up with the text column.
+ */
+@media (min-width: 960px) and (max-width: 1279px) {
+  :root .Layout .VPLocalNav.has-sidebar {
+    position: fixed;
+    top: var(--vp-nav-height);
+    left: var(--vp-sidebar-width);
+    right: var(--cockpit-panel-gap);
+    width: auto;
+    height: var(--docs-local-nav-height);
+    padding: 0;
+    border: 1px solid var(--vp-c-divider);
+    border-radius: var(--cockpit-radius) var(--cockpit-radius) 0 0;
+    background-color: var(--vp-c-bg);
+  }
+
+  :root .Layout .VPLocalNav.has-sidebar > .container {
+    position: relative;
+    max-width: calc(var(--docs-text-width) + 2 * var(--docs-page-inset));
+    height: 100%;
+    margin: 0 auto;
+    padding: 0 var(--docs-page-inset);
+  }
+
+  :root .Layout .VPLocalNav.has-sidebar .VPLocalNavOutlineDropdown {
+    padding: 0;
+  }
+
+  /* The menu opens under the label, its entries in line with it. */
+  :root .Layout .VPLocalNav.has-sidebar .VPLocalNavOutlineDropdown .items {
+    top: calc(var(--docs-local-nav-height) - 6px);
+    left: calc(var(--docs-page-inset) - 16px);
+  }
+
+  :root .Layout:has(.VPLocalNav.has-sidebar:not(.empty)) .VPContent.has-sidebar .VPDoc {
+    padding-top: calc(var(--docs-local-nav-height) + var(--docs-page-top));
   }
 }
 
