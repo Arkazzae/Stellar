@@ -5,14 +5,14 @@ export async function capture(kind, { file, muted, send, tile, ended, signal }) 
   player.playsInline = true;
   player.muted = !mic;
   player.loop = Boolean(file);
-  let stream, fileURL, context, interval, closed = false;
+  let stream, fileURL, sourceElement, context, interval, closed = false;
   const cleanup = () => {
     if (closed) return;
     closed = true;
     clearInterval(interval);
     player.pause();
     player.srcObject = null;
-    player.removeAttribute("src");
+    sourceElement?.remove();
     if (fileURL) URL.revokeObjectURL(fileURL);
     stream?.getTracks().forEach(track => track.stop());
     if (context) void context.close().catch(() => {});
@@ -23,8 +23,16 @@ export async function capture(kind, { file, muted, send, tile, ended, signal }) 
     // Resume during the trusted allow-button gesture, including for a file input.
     if (mic) { context = new AudioContext(); await context.resume(); }
     if (file) {
-      fileURL = URL.createObjectURL(file);
-      player.src = fileURL;
+      // Decode user-selected bytes only as media. Files without a media MIME
+      // type can still be identified by the browser's audio/video decoder.
+      const type = file.type.startsWith(mic ? "audio/" : "video/") ? file.type : "application/octet-stream";
+      fileURL = URL.createObjectURL(file.slice(0, file.size, type));
+      sourceElement = document.createElement("source");
+      sourceElement.setAttribute("src", fileURL);
+      sourceElement.addEventListener("error", () => {
+        if (!closed) { player.pause(); ended(); }
+      }, { once: true });
+      player.append(sourceElement);
     } else {
       stream = await navigator.mediaDevices.getUserMedia(mic ? { audio: true } : { video: { width: 320, height: 240 }, audio: false });
       if (signal.aborted) { stream.getTracks().forEach(track => track.stop()); throw new Error("Device request closed."); }
