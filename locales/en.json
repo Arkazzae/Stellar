@@ -926,6 +926,7 @@
     "voice.microphoneLevel": "Microphone level",
     "voice.testOff": "Test is off.",
     "voice.hearYou": "I can hear you. This would be sent to the call.",
+    "voice.hearYouPushToTalk": "I can hear you. In a call this is sent only while you hold the talk key.",
     "voice.silence": "Silence. This would be treated as background noise.",
     "voice.microphoneNotWorking": "Microphone is not working",
     "_context.voiceError.micDenied": "Voice connection and device errors shown to the person in a call.",

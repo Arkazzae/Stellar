@@ -911,6 +911,7 @@
     "voice.microphoneLevel": "Poziom mikrofonu",
     "voice.testOff": "Test wyłączony.",
     "voice.hearYou": "Słyszę Cię. To trafiłoby do rozmowy.",
+    "voice.hearYouPushToTalk": "Słyszę Cię. W rozmowie trafi to do innych tylko, gdy trzymasz klawisz mówienia.",
     "voice.silence": "Cisza. To zostałoby uznane za tło.",
     "voice.microphoneNotWorking": "Mikrofon nie działa",
     "voiceError.micDenied": "Otwórz uprawnienia witryny obok paska adresu, zezwól na dostęp do mikrofonu i dołącz ponownie.",

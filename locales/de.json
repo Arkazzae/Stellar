@@ -911,6 +911,7 @@
     "voice.microphoneLevel": "Mikrofonpegel",
     "voice.testOff": "Test ist ausgeschaltet.",
     "voice.hearYou": "Ihr Mikrofon nimmt Ton auf. So würde er im Anruf klingen.",
+    "voice.hearYouPushToTalk": "Ihr Mikrofon nimmt Ton auf. Im Anruf wird das nur gesendet, solange Sie die Sprechtaste halten.",
     "voice.silence": "Schweigen. Dies würde als Hintergrundgeräusch behandelt werden.",
     "voice.microphoneNotWorking": "Mikrofon funktioniert nicht",
     "voiceError.micDenied": "Öffnen Sie die Site-Berechtigungen neben der Adressleiste, erlauben Sie das Mikrofon und verbinden Sie es dann erneut.",

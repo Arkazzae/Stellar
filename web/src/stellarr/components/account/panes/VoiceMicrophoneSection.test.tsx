@@ -121,6 +121,11 @@ describe("VoiceMicrophoneSection test", () => {
       <MicrophoneCheck mic={{ ...idleMic, running: true, speaking: false, level: 0.1 }} />,
     );
     expect(screen.getByText(/To zostałoby uznane za tło/)).toBeInTheDocument();
+
+    // In push to talk speech is not simply sent: only while the key is held.
+    rerender(<MicrophoneCheck mic={{ ...idleMic, running: true, speaking: true }} pushToTalk />);
+    expect(screen.queryByText(/To trafiłoby do rozmowy/)).toBeNull();
+    expect(screen.getByText(/tylko, gdy trzymasz klawisz mówienia/)).toBeInTheDocument();
   });
 
   it("shows the failure with a retry in place of the status line", async () => {

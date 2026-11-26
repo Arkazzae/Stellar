@@ -103,7 +103,7 @@ export function VoicePane({
       <aside className="vc-check" aria-label={t("voice.checkDevices")}>
         <div className="vc-check-part">
           <h3>{t("voice.microphone")}</h3>
-          <MicrophoneCheck mic={mic} />
+          <MicrophoneCheck mic={mic} pushToTalk={settings.inputMode === "pushToTalk"} />
         </div>
         <div className="vc-check-part">
           <h3>{t("voice.speakers")}</h3>
