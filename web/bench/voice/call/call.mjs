@@ -153,14 +153,16 @@ const voiceSettings = (who) =>
 async function chooseFilter(who, filter, origin) {
   if (!["speex", "rnnoise", "gtcrn"].includes(filter)) throw new Error("Unknown test filter: " + filter);
   const page = people[who].page;
-  const { body } = await api(page, "GET", "/api/session");
-  const id = JSON.parse(body).user.id;
-  const key = "stellarr.voice.settings.user." + encodeURIComponent(id);
-  await page.eval(`localStorage.setItem(${JSON.stringify(key)}, JSON.stringify({
-    ...JSON.parse(localStorage.getItem(${JSON.stringify(key)}) || "{}"),
-    version: 1, noiseSuppression: ${JSON.stringify(filter)}
-  }))`);
+  // The account's saved voice settings are applied again on every sign-in.
+  const saved = await api(page, "GET", "/api/me/settings");
+  if (saved.status !== 200) throw new Error(`${who}: reading voice settings returned ${saved.status}`);
+  const response = await api(page, "PUT", "/api/me/settings/voice", {
+    ...JSON.parse(saved.body).voice, version: 1, noiseSuppression: filter,
+  });
+  if (response.status !== 204) throw new Error(`${who}: saving ${filter} returned ${response.status}`);
   await page.goto(origin + "/");
+  await page.waitFor(`Object.keys(localStorage).some(key => key.startsWith("stellarr.voice.settings.user.") &&
+    JSON.parse(localStorage.getItem(key))?.noiseSuppression === ${JSON.stringify(filter)})`);
   await page.waitFor('document.querySelector("button.channel-main")');
 }
 
@@ -252,6 +254,7 @@ function ringVerdict({ samples }) {
 }
 
 const options = parseArgs(process.argv.slice(2));
+if (process.env.STELLARR_CALL_FILTER) console.log("Voice call filter:", process.env.STELLARR_CALL_FILTER);
 const work = mkdtempSync(join(tmpdir(), "stellarr-voice-call-"));
 const result = { origin: options.origin, at: new Date().toISOString() };
 try {
