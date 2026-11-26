@@ -100,11 +100,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     },
     [store],
   );
-  // The person's own palette and their wallpaper are not axes but things they
-  // made: going back to the defaults selects Midnight and keeps both.
+  // The saved palette stays available. The defaults use Midnight without a wallpaper.
   const reset = useCallback(() => {
-    const { custom, wallpaper } = store.read();
-    store.write({ ...DEFAULT_THEME, custom, wallpaper });
+    const { custom } = store.read();
+    store.write({ ...DEFAULT_THEME, custom });
   }, [store]);
 
   const value = useMemo<ThemeContextValue>(

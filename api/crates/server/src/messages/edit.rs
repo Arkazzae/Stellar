@@ -8,7 +8,7 @@ use serde::Deserialize;
 use stellarr_messages::MessageKey;
 
 use super::dto::{self, MessageDeletedDto};
-use super::{MAX_CONTENT_UNITS, field_problem, trimmed, units};
+use super::{content_limit, field_problem, trimmed, units};
 use crate::auth::Caller;
 use crate::events::{Audience, Event};
 use crate::http::{ApiError, ApiResult, Json, Path, json_response};
@@ -59,12 +59,14 @@ pub async fn edit(
 ) -> ApiResult<Response> {
     let messages = *state.messages();
     let content = trimmed(request.content.as_deref().unwrap_or("")).to_string();
-    if content.is_empty() || units(&content) > MAX_CONTENT_UNITS {
+    let length = units(&content);
+    let max = content_limit(&content, length);
+    if content.is_empty() || length > max {
         return Err(field_problem(
             "content",
             &messages,
             MessageKey::MessageEditContentInvalid,
-            &[("max", &MAX_CONTENT_UNITS)],
+            &[("max", &max)],
         ));
     }
 

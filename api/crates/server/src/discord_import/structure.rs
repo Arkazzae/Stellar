@@ -68,6 +68,25 @@ impl ChannelRecord {
     }
 }
 
+impl Import {
+    pub(super) fn record(&self, db: &Connection) -> rusqlite::Result<()> {
+        db.execute(
+            "INSERT INTO \"DiscordImports\" (\"Id\", \"ServerId\", \"DiscordServerId\",
+                                              \"DiscordServerName\", \"StartedById\", \"StartedAt\")
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                self.id,
+                self.server,
+                self.discord_server_id,
+                self.discord_server_name,
+                self.started_by,
+                self.started_at
+            ],
+        )?;
+        Ok(())
+    }
+}
+
 impl ImportWriter {
     /// Records the start of an import of `snapshot`'s server into `server`.
     pub async fn start(
@@ -98,18 +117,7 @@ impl ImportWriter {
                         "There is no such server to import into.".to_string(),
                     ));
                 }
-                tx.execute(
-                    "INSERT INTO \"DiscordImports\" (\"Id\", \"ServerId\", \"DiscordServerId\", \"DiscordServerName\", \"StartedById\", \"StartedAt\")
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                    params![
-                        row.id,
-                        row.server,
-                        row.discord_server_id,
-                        row.discord_server_name,
-                        row.started_by,
-                        row.started_at
-                    ],
-                )?;
+                row.record(tx)?;
                 Ok(())
             })
             .await?;

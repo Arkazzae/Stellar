@@ -13,7 +13,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use stellarr_discord::{AuthorSnapshot, ImportResolver, MessageSnapshot, ServerSnapshot, rewrite};
 
 use super::journal::{self, json_texts};
@@ -22,7 +22,9 @@ use super::{
     Import, ImportError, ImportWriter, MESSAGES_PER_TRANSACTION, Outcome, PageResult, RecordKind,
     SkipReason, moment, names, require_same_server, require_server,
 };
+use crate::link_previews;
 use crate::messages::MAX_CONTENT_UNITS;
+use crate::uploads::Attachment;
 use crate::values::{Id, Timestamp};
 
 /// How a role reads in a message: its name, with the at sign it is mentioned by.
@@ -157,6 +159,85 @@ struct Chunk {
 }
 
 impl ImportWriter {
+    pub(super) async fn attach(
+        &self,
+        import: &Import,
+        channel: Id,
+        message: &MessageSnapshot,
+        attachment: Attachment,
+    ) -> Result<bool, ImportError> {
+        let server = require_server(import)?;
+        let actor = import
+            .started_by
+            .ok_or_else(|| ImportError::State("Missing import owner.".into()))?;
+        let now = Timestamp::now();
+        let original = message.id.clone();
+        let created = moment(message.created_at);
+        let edited = message.edited_at.map(moment);
+        let pinned = message.pinned.then_some(created);
+        let chunk = Chunk {
+            import: import.id,
+            server,
+            source: message.channel_id.clone(),
+            channel: Some((channel, true)),
+            messages: Vec::new(),
+            pinned_at: HashMap::new(),
+            roles: Arc::default(),
+            members: HashMap::new(),
+            now,
+        };
+        let author = message.author.clone();
+        self.pause().await;
+        let stored = self.database.write(move |tx| -> Result<bool, ImportError> {
+            let current: Option<(Outcome, Option<Id>, Timestamp)> = tx.query_row(
+                "SELECT d.\"Outcome\", d.\"MessageId\", d.\"CreatedAt\"
+                 FROM \"DiscordImportMessages\" d
+                 JOIN \"DiscordImportChannels\" c ON c.\"ServerId\" = d.\"ServerId\" AND c.\"DiscordId\" = d.\"ChannelDiscordId\"
+                 JOIN \"ServerMembers\" m ON m.\"ServerId\" = d.\"ServerId\" AND m.\"UserId\" = ?5 AND m.\"OwnerSlot\" IS NOT NULL
+                 WHERE d.\"ImportId\" = ?1 AND d.\"DiscordId\" = ?2 AND d.\"ChannelDiscordId\" = ?3
+                   AND c.\"ChannelId\" = ?4 AND d.\"AttachmentsPending\" = 1",
+                params![chunk.import, original, chunk.source, channel, actor],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            ).optional()?;
+            let root = match current {
+                Some((Outcome::Written, Some(id), _)) => id,
+                Some((Outcome::AwaitingAttachments, None, original_time)) if !author_key(&author).is_empty() => {
+                    let id = names::message_id(server, &original);
+                    if taken_ids(tx, vec![id])?.contains(&id) {
+                        return Ok(false);
+                    }
+                    let key = author_key(&author);
+                    let mut accounts = placeholders_of(tx, vec![key.to_owned()])?;
+                    make_placeholders(tx, &chunk, &[&author], &mut accounts, &mut Counts::default())?;
+                    tx.execute(
+                        "INSERT INTO \"Messages\" (\"Id\", \"ChannelId\", \"AuthorId\", \"IsSystem\", \"Content\", \"CreatedAt\", \"EditedAt\", \"PinnedAt\")
+                         VALUES (?1, ?2, ?3, 0, '', ?4, ?5, ?6)",
+                        params![id, channel, accounts[key].user, original_time, edited, pinned],
+                    )?;
+                    journal::forget_post_times(tx, channel, &[accounts[key].user])?;
+                    tx.execute(
+                        "UPDATE \"DiscordImportMessages\" SET \"MessageId\" = ?3, \"Outcome\" = ?4
+                         WHERE \"ImportId\" = ?1 AND \"DiscordId\" = ?2",
+                        params![chunk.import, original, id, Outcome::Written],
+                    )?;
+                    id
+                }
+                _ => return Ok(false),
+            };
+            attachment.insert(tx)?;
+            tx.execute(
+                "INSERT INTO \"MessageAttachments\" (\"MessageId\", \"AttachmentId\") VALUES (?1, ?2)",
+                params![root, attachment.id],
+            )?;
+            journal::reset(tx, channel, &[root], now)?;
+            Ok(true)
+        }).await?;
+        if stored {
+            self.committed();
+        }
+        Ok(stored)
+    }
+
     /// Writes one page of a channel's or a thread's history, as the reader gives
     /// it: newest first, and each page older than the one before.
     ///
@@ -341,7 +422,27 @@ fn write_chunk(tx: &rusqlite::Transaction<'_>, input: &Chunk) -> Result<Counts, 
     )?;
     let author_by_key: HashMap<&str, &AuthorSnapshot> = authors.iter().copied().collect();
     let mut user_names: HashMap<String, String> = HashMap::new();
+    for mentioned in candidates.iter().flat_map(|message| &message.mentions) {
+        if !asked_users.contains(&mentioned.id) {
+            continue;
+        }
+        let label = names::display_name(
+            "",
+            &[
+                mentioned.nickname.as_deref(),
+                input.members.get(&mentioned.id).map(String::as_str),
+                mentioned.display_name.as_deref(),
+                mentioned.username.as_deref(),
+            ],
+        );
+        if !label.is_empty() {
+            user_names.entry(mentioned.id.clone()).or_insert(label);
+        }
+    }
     for id in &asked_users {
+        if user_names.contains_key(id) {
+            continue;
+        }
         if let Some(account) = accounts.get(id) {
             user_names.insert(id.clone(), account.display_name.clone());
         } else if let Some(author) = author_by_key.get(id.as_str()) {
@@ -421,6 +522,7 @@ fn write_chunk(tx: &rusqlite::Transaction<'_>, input: &Chunk) -> Result<Counts, 
                 pinned
             ],
         )?;
+        link_previews::remember_imported(tx, *id, content, &message.embeds)?;
     }
     for (message, outcome, reason, message_id) in &bookkeeping {
         tx.execute(

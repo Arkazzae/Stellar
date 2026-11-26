@@ -8,6 +8,7 @@ import { useFriends, useLanguage, useProfile, useUi, useVoice } from "@/state/ho
 
 import { DmCallContainer } from "./DmCallContainer";
 import { DmChatContainer } from "./DmChatContainer";
+import { InstalledActivities } from "./InstalledActivities";
 import { FriendsActivityContainer } from "./FriendsActivityContainer";
 import { NotificationInboxButton } from "./NotificationInboxContainer";
 import { toPerson } from "./toPerson";
@@ -131,6 +132,7 @@ export function FriendsRoomContainer() {
       onOpenProfile={profile.toggle}
       notificationButton={<NotificationInboxButton />}
       activityPanel={<FriendsActivityContainer />}
+      personalActivities={<InstalledActivities muted={voice.channelId ? voice.state.muted : false} cameraOn={voice.call?.cameraOn} />}
     />
   );
 }

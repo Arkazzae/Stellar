@@ -165,6 +165,34 @@ describe("hub payload decoders", () => {
     expect(HUB_DECODERS.SocialChanged(undefined)).toEqual({});
     expect(HUB_DECODERS.EmojiChanged({ anything: true })).toEqual({});
   });
+
+  it("decodes live voice channel activity updates and clears", () => {
+    expect(
+      HUB_DECODERS.VoiceActivityChanged({
+        channelId: "v1",
+        activity: { install: "act-1", name: "Sketch", icon: "/art/icon.png" },
+      }),
+    ).toEqual({
+      channelId: "v1",
+      activity: { install: "act-1", name: "Sketch", icon: "/art/icon.png" },
+    });
+    expect(
+      HUB_DECODERS.VoiceActivityChanged({
+        channelId: "v1",
+        activity: { install: "act-1", name: "Sketch", icon: null },
+      }),
+    ).toEqual({
+      channelId: "v1",
+      activity: { install: "act-1", name: "Sketch", icon: null },
+    });
+    expect(
+      HUB_DECODERS.VoiceActivityChanged({ channelId: "v1", activity: null }),
+    ).toEqual({ channelId: "v1", activity: null });
+    expect(
+      HUB_DECODERS.VoiceActivityChanged({ channelId: "v1", activity: { install: "act-1" } }),
+    ).toBeNull();
+    expect(HUB_DECODERS.VoiceActivityChanged({ channelId: "", activity: null })).toBeNull();
+  });
 });
 
 describe("parseVoiceSignal", () => {

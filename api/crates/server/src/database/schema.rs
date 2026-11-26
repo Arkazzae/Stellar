@@ -3,8 +3,7 @@
 //! `schema.sql` is the schema the first server creates on an empty folder,
 //! dumped from a real run and kept as it is: nothing in it is renamed,
 //! retyped or tidied, so that both servers can run on copies of one file.
-//! There is no migration machinery. A database that already has the schema is
-//! opened as it is.
+//! Additive tables are installed when an existing database is opened.
 
 use rusqlite::{Connection, TransactionBehavior};
 
@@ -51,6 +50,10 @@ pub fn prepare(connection: &mut Connection) -> Result<(), DbError> {
             )?;
         }
     }
+    transaction.execute_batch(include_str!("../discord_import/jobs.sql"))?;
+    transaction.execute_batch(include_str!("../link_previews/imported.sql"))?;
+    transaction.execute_batch(include_str!("upload_limits.sql"))?;
+    transaction.execute_batch(include_str!("../activities/schema.sql"))?;
     transaction.commit()?;
     Ok(())
 }

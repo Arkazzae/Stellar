@@ -177,6 +177,16 @@
   -webkit-text-fill-color: transparent;
 }
 
+.field[data-plain-code] {
+  --gutter: 0px;
+}
+
+.field[data-plain-code] textarea,
+.field[data-plain-code] textarea::selection {
+  color: var(--text-muted);
+  -webkit-text-fill-color: var(--text-muted);
+}
+
 .gutter {
   position: absolute;
   top: 0;

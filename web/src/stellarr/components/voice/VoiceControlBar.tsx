@@ -32,6 +32,12 @@ function CaretButton({ label, ...trigger }: PopoverTriggerProps & { label: strin
   );
 }
 
+export interface LiveVoiceActivity {
+  install: string;
+  name: string;
+  icon: string | null;
+}
+
 export interface VoiceControlBarProps {
   muted: boolean;
   /** Everything you would hear is silenced: the call and the soundboard. */
@@ -70,6 +76,12 @@ export interface VoiceControlBarProps {
   onToggleCamera: () => void;
   onSelectMicrophone: () => void;
   onSelectCamera: () => void;
+  liveActivity?: LiveVoiceActivity | null;
+  activityJoined?: boolean;
+  activityBusy?: boolean;
+  onOpenActivities?: () => void;
+  onJoinActivity?: () => void;
+  onLeaveActivity?: () => void;
   onToggleShare: () => void;
   /** Absent where the call has no soundboard, which is a private one. */
   onPlaySound?: (soundId: string) => void;
@@ -82,10 +94,9 @@ export interface VoiceControlBarProps {
 }
 
 /**
- * The controls under the stage: what you say and hear in one pill, what you
- * show in the next, then hanging up, and the controls of the view itself
- * together on the right. Every control that opens a panel is wrapped with it,
- * so the panel is centred on the control that opened it.
+ * Under the stage, the microphone, headphones and camera share the first group.
+ * Screen sharing and activities share the second. The view controls sit on the
+ * right. Each popover is centred on the control that opened it.
  *
  * Two pieces of state live here because props cannot describe them: full
  * screen, which the browser can leave on its own (Esc), and which panel is
@@ -112,6 +123,12 @@ export function VoiceControlBar({
   onToggleCamera,
   onSelectMicrophone,
   onSelectCamera,
+  liveActivity = null,
+  activityJoined = false,
+  activityBusy = false,
+  onOpenActivities,
+  onJoinActivity,
+  onLeaveActivity,
   onToggleShare,
   onPlaySound,
   onInvite,
@@ -199,9 +216,6 @@ export function VoiceControlBar({
           >
             <Icon name={deafened ? "headphonesSlash" : "headphones"} size={19} />
           </button>
-        </div>
-
-        <div className="vc-grp">
           <div className="vc-ctl">
             <button
               type="button"
@@ -227,13 +241,15 @@ export function VoiceControlBar({
               )}
             />
           </div>
-          {/* A narrow bar keeps only the camera in this pill; "more" has the rest. */}
-          <div className="vc-ctl vc-wide-only">
+        </div>
+
+        <div className="vc-grp">
+          <div className="vc-ctl">
             <button
               type="button"
               className={sharing ? "vc-btn on" : "vc-btn"}
               aria-pressed={sharing}
-              title={t("voiceBar.shareScreen")}
+              title={sharing ? t("shell.stopSharing") : t("voiceBar.shareScreen")}
               aria-label={t("voiceBar.shareScreen")}
               onClick={onToggleShare}
             >
@@ -249,39 +265,93 @@ export function VoiceControlBar({
               )}
             />
           </div>
-          {onPlaySound === undefined ? null : (
-            <div className="vc-ctl vc-wide-only">
-              <SoundboardPopover
-                sounds={sounds}
-                live={soundboardLive}
-                canPlay={soundboardSupported}
-                open={boardOpen}
-                onOpenChange={setBoardOpen}
-                onPlaySound={onPlaySound}
-                onManage={onManageSounds}
-                volume={settings.soundboardVolume}
-                onVolumeChange={changeSoundboardVolume}
-                renderTrigger={(triggerProps) => (
-                  <button
-                    type="button"
-                    className="vc-btn"
-                    title={t("voice.soundboard")}
-                    aria-label={t("voice.soundboard")}
-                    {...triggerProps}
-                  >
-                    <Icon name="board" size={19} />
-                  </button>
+          {activityJoined ? (
+            <button
+              type="button"
+              className="vc-btn on"
+              aria-pressed={true}
+              aria-label={t("stage.leaveActivity")}
+              title={
+                liveActivity
+                  ? `${t("stage.leaveActivity")}: ${liveActivity.name}`
+                  : t("stage.leaveActivity")
+              }
+              onClick={onLeaveActivity ?? onOpenActivities}
+            >
+              <Icon name="game" size={20} />
+            </button>
+          ) : liveActivity !== null && onJoinActivity !== undefined ? (
+            <>
+              <span className="vc-act-sep" aria-hidden="true" />
+              <button
+                type="button"
+                className="vc-btn vc-act-join"
+                aria-label={`${t("stage.joinActivity")}: ${liveActivity.name}`}
+                title={`${t("stage.joinActivity")}: ${liveActivity.name}`}
+                aria-busy={activityBusy || undefined}
+                disabled={activityBusy}
+                onClick={onJoinActivity}
+              >
+                {liveActivity.icon ? (
+                  <img className="vc-act-ico" src={liveActivity.icon} alt="" />
+                ) : (
+                  <span className="vc-act-ico vc-act-fallback" aria-hidden="true">
+                    <Icon name="game" size={16} />
+                  </span>
                 )}
-              />
-            </div>
+                <span className="vc-act-txt">
+                  <span className="vc-act-name">{liveActivity.name}</span>
+                  <span className="vc-act-sub">{t("stage.liveJoinSub")}</span>
+                </span>
+              </button>
+            </>
+          ) : (
+            onOpenActivities && (
+              <button
+                type="button"
+                className="vc-btn"
+                aria-haspopup="dialog"
+                aria-label={t("friends.tabActivities")}
+                title={t("friends.tabActivities")}
+                onClick={onOpenActivities}
+              >
+                <Icon name="game" size={20} />
+              </button>
+            )
           )}
         </div>
+
+        {onPlaySound === undefined ? null : (
+          <div className="vc-ctl vc-wide-only">
+            <SoundboardPopover
+              sounds={sounds}
+              live={soundboardLive}
+              canPlay={soundboardSupported}
+              open={boardOpen}
+              onOpenChange={setBoardOpen}
+              onPlaySound={onPlaySound}
+              onManage={onManageSounds}
+              volume={settings.soundboardVolume}
+              onVolumeChange={changeSoundboardVolume}
+              renderTrigger={(triggerProps) => (
+                <button
+                  type="button"
+                  className="vc-btn"
+                  title={t("voice.soundboard")}
+                  aria-label={t("voice.soundboard")}
+                  {...triggerProps}
+                >
+                  <Icon name="board" size={19} />
+                </button>
+              )}
+            />
+          </div>
+        )}
 
         <div className="vc-mobile-overflow">
           <VoiceMobileMenu
             open={compactMenuOpen}
             onOpenChange={changeCompactMenu}
-            sharing={sharing}
             cinema={cinema}
             fullscreen={fullscreen}
             sounds={sounds}
@@ -290,7 +360,6 @@ export function VoiceControlBar({
             onManageSounds={onManageSounds}
             soundboardVolume={settings.soundboardVolume}
             onSoundboardVolumeChange={changeSoundboardVolume}
-            onToggleShare={onToggleShare}
             onToggleCinema={onToggleCinema}
             onToggleFullscreen={toggleFullscreen}
             onSelectMicrophone={onSelectMicrophone}

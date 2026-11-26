@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 
 import { VoiceControlBar } from "@/components/voice/VoiceControlBar";
 import { VoiceStage } from "@/components/voice/VoiceStage";
@@ -11,6 +11,8 @@ import {
   useVoice,
 } from "@/state/hooks";
 
+import { ActivityDevPreview } from "./ActivityDevPreview";
+import { InstalledActivities, type VoiceActivityBarControl } from "./InstalledActivities";
 import { popOutCall } from "./callPopout";
 import { VoiceProblemNotice } from "./VoiceProblemNotice";
 
@@ -22,6 +24,8 @@ interface CallStageProps {
 /** The call's own view of the room: who is in it, what is shared, and the controls. */
 export function CallStage({ fullscreenTarget }: CallStageProps) {
   const voice = useVoice();
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [barActivity, setBarActivity] = useState<VoiceActivityBarControl | null>(null);
   const ui = useUi();
   const profile = useProfile();
   const { user } = useSession();
@@ -40,10 +44,24 @@ export function CallStage({ fullscreenTarget }: CallStageProps) {
   // is the wrong place: the microphone arrow once raised roles and invites.
   const openDeviceSettings = () => ui.openModal("voice");
   const joinedChannelId = voice.channelId;
+  const activeVoiceBar = joinedChannelId !== null ? barActivity : null;
 
   return (
     <>
       <VoiceProblemNotice />
+      {joinedChannelId && (
+        <InstalledActivities
+          channel={joinedChannelId}
+          pickerOpen={pickerOpen}
+          onClosePicker={() => setPickerOpen(false)}
+          onVoiceBarChange={setBarActivity}
+          muted={voice.state.muted}
+          cameraOn={voice.call?.cameraOn}
+        />
+      )}
+      {import.meta.env.DEV && typeof __ACTIVITY_PREVIEW__ !== "undefined" &&
+        __ACTIVITY_PREVIEW__ && joinedChannelId &&
+        <ActivityDevPreview key={"preview-" + joinedChannelId} channel={joinedChannelId} muted={voice.state.muted} cameraOn={voice.call?.cameraOn} />}
       <VoiceStage
         people={voice.people}
         cameraStreams={voice.cameraStreams}
@@ -85,6 +103,12 @@ export function CallStage({ fullscreenTarget }: CallStageProps) {
         onToggleCamera={voice.toggleCamera}
         onSelectMicrophone={openDeviceSettings}
         onSelectCamera={openDeviceSettings}
+        liveActivity={activeVoiceBar?.live ?? null}
+        activityJoined={activeVoiceBar?.joined ?? false}
+        activityBusy={activeVoiceBar?.busy ?? false}
+        onOpenActivities={joinedChannelId ? () => setPickerOpen(true) : undefined}
+        onJoinActivity={activeVoiceBar?.join}
+        onLeaveActivity={activeVoiceBar?.leave}
         onToggleShare={voice.toggleShare}
         onPlaySound={voice.playSound}
         onInvite={canManageServer ? () => ui.openModal("invite") : undefined}

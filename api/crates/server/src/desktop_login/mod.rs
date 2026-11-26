@@ -16,7 +16,7 @@ mod approval;
 mod exchange;
 mod form;
 mod page;
-mod same_origin;
+pub(crate) mod same_origin;
 mod start;
 
 use crate::http::{Endpoints, RateLimitPolicy, no_store};

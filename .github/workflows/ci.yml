@@ -28,6 +28,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       api: ${{ steps.filter.outputs.api }}
+      sdk: ${{ steps.filter.outputs.sdk }}
       web: ${{ steps.filter.outputs.web }}
       media: ${{ steps.filter.outputs.media }}
       init: ${{ steps.filter.outputs.init }}
@@ -63,18 +64,18 @@ jobs:
               echo "$1=false" >> "$GITHUB_OUTPUT"
             fi
           }
-          # The API tests also read the message-syntax cases kept in web/, so a
-          # case added there checks the renderer and the API together.
-          check api '^(api/|web/src/stellarr/lib/messages/message-syntax\.json$|\.github/workflows/ci\.yml$)'
+          # Run the native tests when either shared fixture changes.
+          check api '^(api/|sdk/(client|media|dev/room)\.js$|sdk/test/fixtures/manifest-parity\.json$|web/src/stellarr/lib/messages/message-syntax\.json$|\.github/workflows/ci\.yml$)'
           # web/ holds the web client and Cockpit (web/src/cockpit/). It is a
           # workspace of one npm project with the shared packages, so a change
           # to them or to the root manifest or lockfile runs the web job too.
           # Its tests also read nginx's configuration and the entrypoint, which
           # must answer the apps' addresses and write the instance language
-          # file as web/ does. It checks the recipes' outputs against the
+          # file as web/ does. It checks the installed package files against the
           # manifest, so the Dockerfile stages and the bake file that build
           # them count too.
-          check web '^(web/|artifacts/|packages/|package(-lock)?\.json$|branding/icons/|infra/(nginx\.conf|entrypoint\.sh)$|Dockerfile$|docker-bake\.hcl$|\.github/workflows/ci\.yml$)'
+          check sdk '^(sdk/|package(-lock)?\.json$|\.github/workflows/ci\.yml$)'
+          check web '^(web/|sdk/(dev/|host/|package\.json$)|artifacts/|packages/|package(-lock)?\.json$|branding/icons/|infra/(nginx\.conf|entrypoint\.sh)$|Dockerfile$|docker-bake\.hcl$|\.github/workflows/ci\.yml$)'
           check media '^(media/|\.github/workflows/ci\.yml$)'
           check init '^(init/|\.github/workflows/ci\.yml$)'
           # website/ is the project site, its own npm project outside the root
@@ -93,7 +94,21 @@ jobs:
           # image, so its sources count, not only its manifest. It takes the
           # recipes' outputs from the recipes job, which builds them with the
           # bake file.
-          check image '^(Dockerfile$|docker-bake\.hcl$|\.dockerignore$|artifacts/|infra/|api/(Cargo\.(toml|lock)$|crates/[^/]+/(Cargo\.toml$|build\.rs$|src/|assets/))|packages/|package(-lock)?\.json$|\.npmrc$|web/|media/(Cargo\.(toml|lock)$|src/|build\.rs$)|docker-compose\.yml$|infra/compose/|init/(Cargo\.(toml|lock)$|src/)|\.github/workflows/ci\.yml$)'
+          check image '^(Dockerfile$|sdk/(dev/|host/|client\.js$|media\.js$|package\.json$)|docker-bake\.hcl$|\.dockerignore$|artifacts/|infra/|api/(Cargo\.(toml|lock)$|crates/[^/]+/(Cargo\.toml$|build\.rs$|src/|assets/))|packages/|package(-lock)?\.json$|\.npmrc$|web/|media/(Cargo\.(toml|lock)$|src/|build\.rs$)|docker-compose\.yml$|infra/compose/|init/(Cargo\.(toml|lock)$|src/)|\.github/workflows/ci\.yml$)'
+
+  sdk:
+    needs: changes
+    if: needs.changes.outputs.sdk == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 22
+      - run: npm run test:sdk
 
   # The API and the operator's tool, one Cargo workspace. --locked fails when
   # Cargo.lock no longer matches the manifests, as the image build would.
@@ -130,50 +145,8 @@ jobs:
         env:
           TMPDIR: /mnt/stellarr-tmp
 
-  # The recipes of artifacts/recipes/ build some of the browser's binaries from
-  # source. This is the one job of a run that builds them; the web and image
-  # jobs take its outputs, so neither depends on how long a recipe takes. Each
-  # recipe keeps a GitHub Actions cache of its own (docker-bake.hcl). A run
-  # reads the caches of its own branch or pull request and of main, so a
-  # recipe that did not change costs seconds, and one that did is built once,
-  # here, and again only when it changes again.
-  recipes:
-    needs: changes
-    if: needs.changes.outputs.web == 'true' || needs.changes.outputs.image == 'true'
-    runs-on: ubuntu-latest
-    # Room for a cold build of the slowest recipe.
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - name: Build the recipes
-        uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
-        env:
-          RECIPE_CACHE: gha
-        with:
-          source: .
-          files: docker-bake.hcl
-          targets: recipes
-      # The manifest records one sha256 per output, and these are the bytes a
-      # runner built: the summary keeps them next to the run.
-      - name: Report the outputs
-        run: |
-          {
-            printf '### Recipe outputs\n\n```\n'
-            (cd artifacts/recipes && sha256sum */out/*)
-            printf '```\n'
-          } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: recipe-outputs
-          path: artifacts/recipes/*/out/
-          if-no-files-found: error
-          retention-days: 7
-
   web-tests:
-    needs: [changes, recipes]
+    needs: changes
     if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -181,12 +154,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      # Every npm script below assembles the browser's binaries first, the
-      # recipes' outputs among them.
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: recipe-outputs
-          path: artifacts/recipes/
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 26
@@ -194,6 +161,7 @@ jobs:
           cache-dependency-path: package-lock.json
       # One install at the repository root covers every workspace.
       - run: npm ci
+      - run: node scripts/npm/sync-manifest.mjs --check
       # Lint, typecheck and tests cover both apps in web/: the web client and
       # Cockpit, whose tests run as their own Vitest project.
       - run: npm run lint:web
@@ -365,6 +333,8 @@ jobs:
           cache: npm
           cache-dependency-path: website/package-lock.json
       - run: npm ci
+      - run: node --test test/server-downloads.test.js
+      - run: ./node_modules/.bin/wrangler pages functions build --outdir "$RUNNER_TEMP/server-downloads-worker"
       - run: npm run build
       # The site serves the repository's installer as it is.
       - run: cmp dist/install.sh ../install.sh
@@ -499,7 +469,7 @@ jobs:
   # configuration or a dependency list changes. On main it also refreshes the
   # build cache that the release workflow reuses.
   image:
-    needs: [changes, recipes]
+    needs: changes
     if: needs.changes.outputs.image == 'true'
     runs-on: ubuntu-latest
     # A cold run builds the API, the media server and Stellarr Init in Rust,
@@ -516,29 +486,10 @@ jobs:
       # The same test runs the CLI's wrapper against a stub of the tool.
       - name: Check the entrypoint and the CLI's wrapper
         run: docker run --rm -v "$PWD":/w:ro -w /w ubuntu:24.04@sha256:9c7f200c07e3d4a03e7249d2c16bf66a51120fb876aa2242cf31451412543289 bash infra/tests/entrypoint.test.sh
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: recipe-outputs
-          path: artifacts/recipes/
-      # A build context named like a stage replaces that stage, so each
-      # recipe-<name> stage is the recipes job's output instead of a build of
-      # its own here. The rest of the Dockerfile is built as a release builds
-      # it.
-      - id: recipes
-        name: Hand the recipes' outputs to the build
-        run: |
-          {
-            echo 'contexts<<EOF'
-            for out in artifacts/recipes/*/out; do
-              echo "recipe-$(basename "$(dirname "$out")")=$out"
-            done
-            echo 'EOF'
-          } >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          build-contexts: ${{ steps.recipes.outputs.contexts }}
           platforms: linux/amd64
           load: true
           tags: stellarr:ci
@@ -552,6 +503,8 @@ jobs:
       # its retries are the image's own.
       - name: Start the image
         run: |
+          docker run --rm --user stellarr:stellarr --entrypoint bash stellarr:ci -ec \
+            'source /usr/local/lib/stellarr/settings.sh; declare -F read_or_create_secret >/dev/null'
           docker run -d --name stellarr -e STELLARR_DOMAIN=localhost -e STELLARR_LANGUAGE=pl \
             -e STELLARR_HTTPS_PORT=8443 --health-interval 5s -p 127.0.0.1:8443:443 stellarr:ci
           for _ in $(seq 1 60); do
@@ -624,22 +577,11 @@ jobs:
           printf 'window.stellarrInstanceLanguage="pl";\n' | cmp -s - "$RUNNER_TEMP/body" \
             || fail "/stellarr-instance.js does not hold the language the container was given."
 
-          # The browser's binaries are served from the image, committed and
-          # built by a recipe alike.
-          for path in /codecs/bergamot/bergamot-translator.js \
-                      /bergamot-models/plen/vocab.plen.spm; do
-            get "$path" 200
-          done
-          for path in audio/speex.wasm audio/rnnoise.wasm codecs/bergamot/bergamot-translator.wasm; do
+          while read -r path recorded; do
             get "/$path" 200
-            recorded=$(jq -r --arg path "$path" '.artifacts[] | select(.path == $path) | .sha256' artifacts/manifest.json)
-            [[ $(sha256sum < "$RUNNER_TEMP/body" | cut -d' ' -f1) == "$recorded" ]] \
-              || fail "/$path is not the binary the manifest records."
-          done
-          # The worklets the build writes from the app's source to a fixed
-          # address (web/worklets.ts); under another name one would be missing
-          # here.
-          for path in /audio/detector-worklet.js /audio/speex-worklet.js /audio/rnnoise-worklet.js; do
+            [[ $(sha256sum < "$RUNNER_TEMP/body" | cut -d' ' -f1) == "$recorded" ]] || fail "Unexpected bytes for /$path."
+          done < <(jq -r '.artifacts[] | [.path,.sha256] | @tsv' artifacts/manifest.json)
+          for path in /audio/{detector,speex,rnnoise,gtcrn}-worklet.js; do
             get "$path" 200
             [[ $(header cache-control) == no-cache ]] || fail "$path is cached."
             body_has 'registerProcessor(' || fail "$path registers no processor."

@@ -233,5 +233,12 @@ export function toggleMarker(
 
 /** The body of a message sent in code mode. */
 export function fencedCode(language: string, source: string): string {
-  return `\`\`\`${language}\n${source}\n\`\`\``;
+  const used = new Set<number>();
+  for (const [marker] of source.matchAll(/^`{3,}(?=[ \t]*$)/gm)) {
+    used.add(marker.length);
+  }
+  let length = 3;
+  while (used.has(length)) length += 1;
+  const marker = "`".repeat(length);
+  return `${marker}${language}\n${source}\n${marker}`;
 }

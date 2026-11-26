@@ -83,6 +83,8 @@ export interface EmbedPart {
   url?: string;
   /** Preview image, already served from our own origin. */
   thumb?: string;
+  animationUrl?: string;
+  showFullImage?: boolean;
 }
 
 /**

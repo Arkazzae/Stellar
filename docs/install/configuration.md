@@ -34,6 +34,8 @@ docker compose up -d
 | `STELLARR_HTTP_PORT` | port or `ip:port` | `127.0.0.1:8888` | Host TCP binding for the local HTTP reverse-proxy upstream on container port `80/tcp`. Read by Compose only. |
 | `STELLARR_PUBLIC_PORT` | port | `STELLARR_HTTPS_PORT` | External HTTPS port browsers connect to (`443` when behind a [reverse proxy](reverse-proxy-and-tls.md#run-behind-a-reverse-proxy)). Omitted from generated URLs when set to `443`. |
 | `STELLARR_PUBLIC_URL` | origin URL | empty | Explicit public origin (`http://` or `https://`, without credentials, query, or fragment), overriding the URL derived from `STELLARR_DOMAIN` and `STELLARR_PUBLIC_PORT`. |
+| `STELLARR_ACTIVITY_DOMAIN` | DNS suffix | empty | Serves installed activities from dedicated hostnames under this suffix. The instance hostname must be outside the suffix. Route wildcard DNS and trusted wildcard TLS (for example, `*.activities.example.com`) to the same Stellarr instance. |
+| `STELLARR_ACTIVITY_ORIGIN` | HTTPS origin | instance public URL | Origin of the Stellarr web client that may embed activity frames. Activity hosts use this origin's public HTTPS port. |
 | `STELLARR_TRUSTED_PROXIES` | IP / CIDR list | empty | Comma- or space-separated IPv4/IPv6 addresses or CIDR networks of upstream [reverse proxies](reverse-proxy-and-tls.md#client-addresses). |
 
 - **Certificates**: When `/data/stellarr/tls/fullchain.pem` or `privkey.pem` is absent, the container generates a 365-day self-signed certificate and renews it automatically when `STELLARR_DOMAIN` changes or fewer than 30 days remain. Mounted CA-signed certificates are never overwritten; see [Reverse proxy and TLS](reverse-proxy-and-tls.md).
@@ -56,6 +58,8 @@ docker compose up -d
 Without TURN the API returns an empty `rtc.iceServers` list and browsers use the SFU candidates in SDP. Disabled TURN transports are turned off in `/etc/turnserver.conf` (`no-tcp`, `no-tls`, `no-dtls`) as well as omitted from `/api/bootstrap`. See [RTC and ports](../rtc-and-ports.md) for relay sizing and firewall rules.
 
 ## Uploads and quotas
+
+Set the per-account quota in **Cockpit → Settings → File storage**. The saved value applies to each account across the instance, including Discord attachment imports, and takes effect on the next upload. The value in Cockpit overrides `STELLARR_UPLOAD_USER_BYTES`, which supplies the default until a value is saved.
 
 Set byte limits to `0` (or a negative integer) to disable the corresponding quota check.
 
@@ -264,6 +268,9 @@ Advanced internal subsystems that rarely need tuning can be configured in `.env`
 | `STELLARR_DEV_MAILPIT_SMTP_PORT` | `1025` | Host TCP port for Mailpit's SMTP listener on `127.0.0.1`. |
 | `STELLARR_DEV_ALLOWED_HOSTS` | empty | Comma-separated additional hostnames accepted by Vite's dev server (`localhost` and IP addresses are always allowed). |
 | `STELLARR_DEV_POLLING` | `true` | Enables file-watcher polling for Vite inside Docker bind mounts (macOS/Windows). |
+| `STELLARR_ACTIVITY_DEV_ENABLED` | `false` | Opt in to private activity pairing and previews on the Vite development server. The API must run in Development. |
+| `STELLARR_ACTIVITY_DEV_ORIGIN` | `http://localhost:3000` | Exact origin of the test instance. The Compose stack uses `STELLARR_DEV_WEB_PORT` when set. |
+| `STELLARR_ACTIVITY_DEV_DOMAIN` | `activity.localhost` | Separate DNS suffix for the test server's activity frames. For remote testers, configure HTTPS and route the wildcard to the Vite server. |
 
 Use a separate Compose project to start the dev stack with its own empty database volume. The default ports must be free.
 

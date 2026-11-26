@@ -32,6 +32,7 @@ import { useVoiceFx } from "./useVoiceFx";
 import { useVoiceSettingsSync } from "./useVoiceSettingsSync";
 import { VoiceHolder } from "./voiceHolder";
 import { voiceProblemForUi, type VoiceProblem } from "./voiceProblems";
+import { readVoiceResume, saveVoiceResume } from "./voiceResume";
 import {
   deriveVoiceView,
   sameCall,
@@ -211,8 +212,67 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     const queued = pendingJoin.current;
     pendingJoin.current = null;
     if (queued !== null) void client.join(queued.channelId, { private: queued.private }).catch(() => {});
-    return () => holder.detach();
+    let active = true;
+    let stopWaiting: (() => void) | undefined;
+    if (queued === null && readVoiceResume(userId) !== null) {
+      const restore = () => {
+        if (ports.connection.getStatus() !== "connected") return;
+        // StrictMode's first effect is cleaned up before it may take the call.
+        queueMicrotask(() => {
+          if (!active) return;
+          if (ports.connection.getStatus() !== "connected") return;
+          stopWaiting?.();
+          const resume = readVoiceResume(userId);
+          if (resume === null) return;
+          saveVoiceResume(null);
+          const room = resume.privateLabel === null
+            ? null
+            : { id: resume.channelId, label: resume.privateLabel, privateCall: true };
+          presented.current = room;
+          setPresentation(room);
+          setDeafened(resume.deafened);
+          client.setDeafened(resume.deafened);
+          ports.soundboard.setDeafened(resume.deafened);
+          client.setMuted(resume.muted);
+          void client.join(resume.channelId, { private: room !== null }).catch(() => {});
+        });
+      };
+      stopWaiting = ports.connection.subscribe(restore);
+      restore();
+    }
+    return () => {
+      active = false;
+      stopWaiting?.();
+      holder.detach();
+    };
   }, [holder, ports, userId, translate]);
+
+  useEffect(() => {
+    if (userId === null) return;
+    const save = () => {
+      const { channelId, connection, muted } = holder.getState();
+      if (channelId !== null && connection !== "idle" && connection !== "failed") {
+        const room = presented.current;
+        saveVoiceResume({
+          userId,
+          channelId,
+          privateLabel: room?.id === channelId && room.privateCall === true ? room.label : null,
+          muted,
+          deafened,
+        });
+      }
+    };
+    window.addEventListener("pagehide", save);
+    // A page returned from the back/forward cache still owns its voice client.
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) saveVoiceResume(null);
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      window.removeEventListener("pagehide", save);
+      window.removeEventListener("pageshow", onPageShow);
+    };
+  }, [holder, userId, deafened]);
 
   const state = useSyncExternalStore(holder.subscribe, holder.getState, () => IDLE_VOICE_STATE);
   const startedAt = useSyncExternalStore(holder.subscribe, holder.getStartedAt, () => null);
@@ -297,6 +357,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
   const join = useCallback(
     (channelId: string, next?: VoiceRoomPresentation) => {
+      saveVoiceResume(null);
       // Runs inside the click's user activation. Priming Web Audio here lets
       // clips received later from another participant pass the autoplay policy.
       ports.soundboard.preparePlayback();
@@ -335,6 +396,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   );
 
   const leave = useCallback(async () => {
+    saveVoiceResume(null);
     const client = holder.getClient();
     const inCall =
       pendingJoin.current !== null || (client !== null && client.getSnapshot().channelId !== null);

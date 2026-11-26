@@ -211,6 +211,9 @@ pub(crate) fn text(key: MessageKey) -> &'static str {
             "Cloudflare R2 requires HTTPS, a bucket, a region, a safe prefix and both credentials. Save the credentials before turning offsite copies on."
         }
         MessageKey::CockpitLogRetentionRange => "Log retention must be 1 to {max} days.",
+        MessageKey::CockpitUploadQuotaRange => {
+            "Enter a non-negative storage limit in the supported range."
+        }
         MessageKey::CockpitOrphanRetentionRange => {
             "Orphaned object retention must be 1 to {max} days."
         }

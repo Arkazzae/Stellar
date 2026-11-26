@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Stellarr activity preview</title>
+<style>
+* { box-sizing:border-box } html, body { margin:0;height:100%;background:#14171b;color:#f4f3ee;font:14px system-ui,sans-serif }
+body { display:flex;flex-direction:column } header { display:flex;flex-wrap:wrap;align-items:center;gap:.8rem;padding:.65rem 1rem;border-bottom:1px solid #43474b }
+header strong { margin-right:auto } header label, .activity-device-controls { display:inline-flex;align-items:center;gap:.5rem;flex-wrap:wrap }
+a, button { color:inherit } header button, header a { background:#282c30;border:1px solid #545a60;border-radius:5px;padding:.35rem .65rem;text-decoration:none;font:inherit }
+input[type=file] { max-width:11rem } input { accent-color:#95d4af } iframe { display:block;border:0;width:100%;flex:1;min-height:0;background:white }
+dialog::backdrop { background:#10151bb5 } dialog button { margin:.5rem .6rem 0 0;padding:.45rem 1rem }
+</style>
+<header><strong id="name">Stellarr</strong><a href="/" target="_blank" rel="noopener">New player</a>
+<label>Game audio <input type="range" id="volume" aria-label="Game audio" min="0" max="100" value="100"></label><span id="devices"></span></header>
+<iframe id="activity" title="Activity" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation" allow="autoplay; fullscreen"></iframe>
+<script type="module" src="/_stellarr/host/local.js"></script>
+</html>

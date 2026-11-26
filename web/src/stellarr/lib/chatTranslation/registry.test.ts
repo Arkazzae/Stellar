@@ -33,7 +33,7 @@ describe("the model registry", () => {
         sha256: file.sha256,
       })),
     );
-    const served = manifest.filter((entry) => entry.path.startsWith("bergamot-models/"));
+    const served = manifest.filter((entry) => entry.path.startsWith("bergamot-models/") && entry.path !== "bergamot-models/registry.json");
 
     expect(byPath(listed)).toEqual(byPath(served));
   });

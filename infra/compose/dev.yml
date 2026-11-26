@@ -24,9 +24,7 @@
 #
 # The first start installs the npm packages and compiles the API's and the
 # media server's crates into named volumes, so it is slow. The web
-# service checks the browser's binaries before it starts; those that
-# artifacts/recipes/ builds from source are built on the host first, once:
-# `docker buildx bake recipes`.
+# service verifies and serves the browser files from its pinned npm packages.
 #
 # Published ports are for clients on this machine. Media advertises both the
 # host loopback port and its Docker address, which the optional TURN relay uses.
@@ -51,6 +49,9 @@ services:
       # Where the dev server proxies /api, /assets, /health, /hubs and
       # /.well-known/stellarr/client, as Nginx does in production.
       STELLARR_API_ORIGIN: http://api:5000
+      STELLARR_ACTIVITY_DEV_ENABLED:
+      STELLARR_ACTIVITY_DEV_ORIGIN: ${STELLARR_ACTIVITY_DEV_ORIGIN:-http://localhost:${STELLARR_DEV_WEB_PORT:-3000}}
+      STELLARR_ACTIVITY_DEV_DOMAIN:
       STELLARR_DEV_ALLOWED_HOSTS:
       # Answered at /stellarr-instance.js, which the entrypoint writes in
       # production.
@@ -86,7 +87,8 @@ services:
       - -ec
       - |
         export Rtc__TurnSharedSecret="$$(cat /run/stellarr-turn/secret)"
-        exec watchexec --restart --poll=1s --watch crates --watch Cargo.toml -- cargo run -p stellarr-api
+        exec watchexec --restart --poll=1s --watch crates --watch Cargo.toml \
+          --watch /sdk/client.js --watch /sdk/media.js --watch /sdk/dev/room.js -- cargo run -p stellarr-api
     environment:
       STELLARR_TURN_ENABLED: ${STELLARR_TURN_ENABLED:-false}
       STELLARR_ENVIRONMENT: Development
@@ -123,6 +125,7 @@ services:
       - "127.0.0.1:${STELLARR_DEV_API_PORT:-5000}:5000"
     volumes:
       - ../../api:/app
+      - ../../sdk:/sdk:ro
       # Build output and the crate cache stay in the container, apart from a
       # cargo build on the host.
       - api_target:/app/target

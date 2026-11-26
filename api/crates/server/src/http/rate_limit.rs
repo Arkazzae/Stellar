@@ -35,6 +35,8 @@ pub enum RateLimitPolicy {
     /// visit; the budget leaves room for a few people behind one address and
     /// none for walking through codes.
     InvitePreview,
+    /// Requests that use a bot credential against Discord.
+    DiscordImport,
     /// Tries of the encryption PIN, counted per address here and per account
     /// by [`AttemptLimiter`]: the limiter runs before authentication, so it
     /// cannot tell whose PIN is being tried.
@@ -150,6 +152,7 @@ impl RateLimiter {
             RateLimitPolicy::AuthWrite => (self.limits.auth_write, QUARTER_HOUR),
             RateLimitPolicy::SecurityWrite => (self.limits.security_write, QUARTER_HOUR),
             RateLimitPolicy::InvitePreview => (self.limits.invite_preview, MINUTE),
+            RateLimitPolicy::DiscordImport => (20, MINUTE),
             RateLimitPolicy::PinUnlock => (self.limits.pin_unlock, PIN_UNLOCK_WINDOW),
             RateLimitPolicy::Uploads => return None,
         };

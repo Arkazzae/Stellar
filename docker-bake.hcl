@@ -1,14 +1,5 @@
-# Builds every recipe of artifacts/recipes/ into its out/ folder, where
-# artifacts/assemble.mjs reads it:
-#
-#   docker buildx bake recipes
-#
-# Run it once in a fresh checkout or worktree, and again after a recipe
-# changes, before `npm run dev`, `npm test` or `npm run build` in web/. The
-# stages are the root Dockerfile's, so this builds exactly what the image
-# build does; artifacts/recipes/README.md says more.
-
-# Each recipe that artifacts/manifest.json names, by the name of its folder.
+# Build the compiler outputs used in the browser package workflow.
+# Each recipe that artifacts/npm/sources.json names, by the name of its folder.
 variable "RECIPES" {
   default = ["speex", "bergamot", "rnnoise"]
 }
@@ -31,7 +22,7 @@ group "recipes" {
 target "recipe" {
   name       = "recipe-${name}"
   matrix     = { name = RECIPES }
-  dockerfile = "Dockerfile"
+  dockerfile = "artifacts/recipes/Dockerfile"
   context    = "."
   target     = "recipe-${name}"
   output     = ["type=local,dest=artifacts/recipes/${name}/out"]

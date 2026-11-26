@@ -6,7 +6,8 @@ import type { DragHandleProps } from "@/lib/drag/useRailDrag";
 export interface CollapsibleGroupProps {
   /** Id of the body; the caption button points at it with `aria-controls`. */
   id: string;
-  caption: ReactNode;
+  /** Omit a caption when the body is only an empty drop target. */
+  caption?: ReactNode;
   captionTitle?: string;
   open: boolean;
   onToggle: () => void;
@@ -36,23 +37,25 @@ export function CollapsibleGroup({
 }: CollapsibleGroupProps) {
   return (
     <>
-      <div className="rail-cap">
-        <button
-          type="button"
-          className="group-caption"
-          aria-expanded={open}
-          aria-controls={id}
-          title={captionTitle}
-          {...drag}
-          onClick={onToggle}
-        >
-          {caption}{" "}
-          <span className="caret">
-            <Icon name="caret" size={10} />
-          </span>
-        </button>
-        {actions}
-      </div>
+      {caption !== undefined && (
+        <div className="rail-cap">
+          <button
+            type="button"
+            className="group-caption"
+            aria-expanded={open}
+            aria-controls={id}
+            title={captionTitle}
+            {...drag}
+            onClick={onToggle}
+          >
+            {caption}{" "}
+            <span className="caret">
+              <Icon name="caret" size={10} />
+            </span>
+          </button>
+          {actions}
+        </div>
+      )}
       <div id={id} className={open ? "collapsible" : "collapsible closed"} inert={!open}>
         <div className="collapsible-body">{children}</div>
       </div>

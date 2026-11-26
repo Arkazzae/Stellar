@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use crate::cdn::{self, StickerFormat};
 use crate::snapshot::{
     AttachmentSnapshot, AuthorSnapshot, ChannelKind, ChannelSnapshot, DiscordChannelType,
-    EmbedSummary, EmojiSnapshot, ForwardedSnapshot, MemberSnapshot, MessageSnapshot,
+    EmbedSummary, EmojiSnapshot, ForwardedSnapshot, MemberSnapshot, MentionedUser, MessageSnapshot,
     OverwriteTarget, PermissionOverwriteSnapshot, ReactionEmoji, ReactionSnapshot, ReactionUser,
     RoleSnapshot, SectionSnapshot, ServerSnapshot, SnapshotSource, StickerReference,
     StickerSnapshot, ThreadSnapshot,
@@ -264,6 +264,22 @@ pub(crate) fn message(message: &WireMessage) -> Option<MessageSnapshot> {
         channel_id: channel_id.to_owned(),
         author: author(message.author.0.as_ref(), message.webhook_id.get()),
         content: message.content.get().unwrap_or("").to_owned(),
+        mentions: message
+            .mentions
+            .present()
+            .filter_map(|user| {
+                Some(MentionedUser {
+                    id: user.id.owned()?,
+                    username: user.username.owned(),
+                    display_name: user.global_name.owned(),
+                    nickname: user
+                        .member
+                        .0
+                        .as_ref()
+                        .and_then(|member| member.nick.owned()),
+                })
+            })
+            .collect(),
         created_at: time(message.timestamp.get())
             .or_else(|| snowflake_time(id))
             .unwrap_or(Timestamp::UNIX_EPOCH),
@@ -282,23 +298,22 @@ pub(crate) fn message(message: &WireMessage) -> Option<MessageSnapshot> {
         embeds: message
             .embeds
             .present()
-            .map(|embed| EmbedSummary {
-                kind: embed.kind.owned(),
-                url: embed.url.owned(),
-                title: embed.title.owned(),
-                description: embed.description.owned(),
-                image_url: embed
+            .map(|embed| {
+                let image = embed
                     .image
                     .0
                     .as_ref()
-                    .and_then(|image| image.url.owned())
-                    .or_else(|| {
-                        embed
-                            .thumbnail
-                            .0
-                            .as_ref()
-                            .and_then(|thumb| thumb.url.owned())
-                    }),
+                    .filter(|image| image.url.get().is_some())
+                    .or(embed.thumbnail.0.as_ref());
+                EmbedSummary {
+                    kind: embed.kind.owned(),
+                    url: embed.url.owned(),
+                    title: embed.title.owned(),
+                    description: embed.description.owned(),
+                    image_url: image.and_then(|image| image.url.owned()),
+                    image_proxy_url: image.and_then(|image| image.proxy_url.owned()),
+                    video_url: embed.video.0.as_ref().and_then(|video| video.url.owned()),
+                }
             })
             .collect(),
         stickers: message

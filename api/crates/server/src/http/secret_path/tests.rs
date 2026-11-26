@@ -21,6 +21,20 @@ fn a_secret_segment_is_replaced_and_the_rest_is_kept() {
 }
 
 #[test]
+fn an_activity_launch_ticket_is_masked_with_the_rest_of_the_file_path() {
+    for path in [
+        "/_activity-files/_stellarr/start/example-ticket",
+        "/_activity-files/assets/nested/game.js",
+        "/_activity-files/",
+    ] {
+        assert_eq!(
+            masked("/_activity-files/{*path}", path),
+            "/_activity-files/***"
+        );
+    }
+}
+
+#[test]
 fn every_parameter_of_every_route_is_an_id_or_a_secret_and_a_secret_is_masked() {
     let mut all = crate::http::Endpoints::new();
     for group in crate::groups() {

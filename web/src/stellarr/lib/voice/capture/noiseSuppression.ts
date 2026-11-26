@@ -1,15 +1,6 @@
 /**
- * Neural and DSP noise suppressors for the microphone path.
- *
- * Three engines, each a WASM binary driven by an AudioWorklet processor on the
- * render thread, so none of them competes with React for the main thread.
- * Speex and RNNoise are ours: artifacts/recipes/speex/ and
- * artifacts/recipes/rnnoise/ build their binaries from the libraries' source,
- * and their processors, `speex/processor.ts` and `rnnoise/processor.ts`, are
- * built into /audio/speex-worklet.js and /audio/rnnoise-worklet.js like the
- * detector's. GTCRN's processor and binary are still prebuilt files from
- * web-noise-suppressor and the projects it builds on. All are served from
- * /audio/ (see artifacts/manifest.json); this module is the main-thread side
+ * The Stellarr audio package supplies the three denoisers and their worklets
+ * under /audio/. This module is the main-thread side
  * that loads and starts them. Everything is loaded lazily: the binaries weigh
  * 61 KB (Speex), 3.6 MB (RNNoise, which holds its network's weights) and
  * 197 KB (GTCRN), and most sessions ask for exactly one.
@@ -90,14 +81,7 @@ interface ProcessorOptions {
  * WASM state. Disconnecting alone frees nothing: a processor without input
  * still reports itself alive and keeps its heap.
  *
- * Speex and RNNoise hear it: their processors free the library's state,
- * return false from then on and output silence. The GTCRN worklet as
- * published (0.4.1) listens for it with addEventListener and never starts its
- * port, which leaves its messages queued: in Chromium it was seen not to hear
- * it. Going by its code, its state then lasts as long as the AudioContext.
- * The capture graph closes its context on every recapture; the remote mixer
- * keeps one, with GTCRN in it, for the whole call. It is sent to every engine
- * regardless.
+ * All three worklets consume the message and release their WASM state.
  */
 const DESTROY = "destroy";
 

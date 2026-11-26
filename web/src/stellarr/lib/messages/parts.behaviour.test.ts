@@ -108,6 +108,32 @@ describe("inline text recognisers", () => {
 });
 
 describe("toParts — text and code", () => {
+  it("uses the whole GIF image as a clickable preview", () => {
+    for (const [provider, domain, path] of [
+      ["gif", "cdn.example.org", "/cat.gif"],
+      ["tenor.com", "tenor.com", "/view/cat-gif-123"],
+      ["klipy.com", "klipy.com", "/gifs/cat"],
+    ]) {
+      const url = `https://${domain}${path}`;
+      const parts = toParts(message({
+        content: url,
+        embeds: [embed({ url, domain, provider, thumbnailUrl: "/assets/animation" })],
+      }));
+      expect(parts).toMatchObject([{ kind: "embed", url, showFullImage: true }]);
+    }
+  });
+
+  it("keeps a Tenor animation playable even without a thumbnail", () => {
+    const url = "https://tenor.com/view/cat-gif-123";
+    const parts = toParts(message({
+      content: url,
+      embeds: [embed({ url, domain: "tenor.com", animationUrl: "/assets/animation" })],
+    }));
+    expect(parts).toMatchObject([{
+      kind: "embed", url, showFullImage: true, animationUrl: "/assets/animation",
+    }]);
+  });
+
   it("keeps prose and fenced blocks in the order they were written", () => {
     const parts = toParts(
       message({ content: "przed\n```ts\nconst a = 1;\n```\npo\n```\n{\"a\":1}\n```" }),

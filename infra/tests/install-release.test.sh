@@ -2,36 +2,34 @@
 # Sourced by install.test.sh, which supplies the isolated installer harness.
 case_release_choices() {
   new_case release-series
-  local release_list="$http/api.github.com/repos/Arkazzae/Stellarr/releases"
-  mkdir -p "${release_list%/*}"
-  cat >"$release_list" <<'JSON'
-[
-  {"tag_name":"v1.10.0","prerelease":false,"draft":false},
-  {"tag_name":"v1.4.8","prerelease":false,"draft":true},
-  {"tag_name":"v1.4.9-rc.1","prerelease":true,"draft":false},
-  {"tag_name":"v1.4.0","prerelease":false,"draft":false},
-  {"tag_name":"v1.4.3","prerelease":false,"draft":false}
-]
-JSON
-  mkdir -p "$raw/v1.4.3"
-  cp "$fixtures/compose-1.4.0" "$raw/v1.4.3/docker-compose.yml"
-  cp "$fixtures/env.example" "$raw/v1.4.3/.env.example"
+  local channel="$http/stellarr.online/server-downloads/1.4"
+  echo 1.4.3 >"$channel"
+  mkdir -p "$raw/server-v1.4.3"
+  cp "$fixtures/compose-1.4.0" "$raw/server-v1.4.3/docker-compose.yml"
+  cp "$fixtures/env.example" "$raw/server-v1.4.3/.env.example"
   release 1.5.0
   run --yes --version 1.4
   expect_success
   expect_line "$home/stellarr/.env" STELLARR_VERSION=1.4.3
   expect_line "$home/stellarr/.env" STELLARR_TRACK=1.4
-  expect_called "/v1.4.3/docker-compose.yml"
+  expect_called "/server-v1.4.3/docker-compose.yml"
   expect_called "image inspect ghcr.io/arkazzae/stellarr:1.4.3"
-  expect_not_called "/v1.5.0/docker-compose.yml"
+  expect_not_called "/server-v1.5.0/docker-compose.yml"
 
   # In the absence of a new choice, re-running follows the stored series.
   : >"$case_dir/calls"
   run --yes --no-start
   expect_success
   expect_line "$home/stellarr/.env" STELLARR_VERSION=1.4.3
-  expect_called "api.github.com/repos/Arkazzae/Stellarr/releases"
-  expect_not_called "github.com/Arkazzae/Stellarr/releases/latest"
+  expect_called "stellarr.online/server-downloads/1.4"
+  expect_not_called "stellarr.online/server-downloads/latest"
+
+  for bad in 1.4.5-rc.1 1.5.0 malformed; do
+    echo "$bad" >"$channel"
+    run --yes --no-start
+    expect_failure
+    expect_shown "Invalid server version for the 1.4 track"
+  done
 
   new_case release-latest
   release 1.5.0
@@ -67,7 +65,7 @@ JSON
   run --yes --no-start
   expect_failure
   expect_shown "experimental is not an exact release"
-  expect_not_called "/releases/latest"
+  expect_not_called "/server-downloads/latest"
   cmp -s "$case_dir/env-before" "$dir/.env" || fail "a custom image tag was changed."
 
   new_case release-custom-image
@@ -78,6 +76,6 @@ JSON
   run --yes --no-start
   expect_failure
   expect_shown "The installation uses a custom image"
-  expect_not_called "/releases/latest"
+  expect_not_called "/server-downloads/latest"
   cmp -s "$case_dir/env-before" "$dir/.env" || fail "a custom image was changed."
 }

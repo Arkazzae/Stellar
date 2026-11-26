@@ -673,6 +673,8 @@ pub struct Settings {
     pub secrets: EnvironmentSecrets,
     pub clients: ClientSettings,
     pub desktop: DesktopSettings,
+    pub activity_domain: Option<String>,
+    pub activity_origin: Option<String>,
     pub discovery: DiscoverySettings,
     pub rate_limits: RateLimitSettings,
     pub storage: StorageSettings,
@@ -762,6 +764,10 @@ impl Settings {
             secrets: EnvironmentSecrets::load(config),
             clients: ClientSettings::load(config)?,
             desktop: DesktopSettings::load(config)?,
+            activity_domain: config
+                .text("Activities:Domain")
+                .map(str::to_ascii_lowercase),
+            activity_origin: config.text("Activities:Origin").map(str::to_owned),
             discovery: DiscoverySettings::load(config)?,
             rate_limits: RateLimitSettings::load(config, &environment)?,
             storage: StorageSettings::load(config)?,

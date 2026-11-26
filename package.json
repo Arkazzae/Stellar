@@ -3,6 +3,7 @@
   "private": true,
   "workspaces": [
     "web",
+    "sdk",
     "packages/*"
   ],
   "scripts": {
@@ -15,7 +16,8 @@
     "typecheck:web": "npm run typecheck -w stellarr-web",
     "typecheck:ui": "npm run typecheck -w @stellarr/ui",
     "typecheck:icons": "npm run typecheck -w @stellarr/icons",
-    "typecheck:router": "npm run typecheck -w @stellarr/router"
+    "typecheck:router": "npm run typecheck -w @stellarr/router",
+    "test:sdk": "npm test -w @stellarr/sdk"
   },
   "overrides": {
     "@eslint/config-array": {
@@ -36,5 +38,8 @@
     "eslint-plugin-react": {
       "eslint": "^10.14.0"
     }
+  },
+  "devDependencies": {
+    "rolldown": "1.2.18"
   }
 }

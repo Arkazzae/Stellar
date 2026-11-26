@@ -1,0 +1,41 @@
+{
+  "name": "@stellarr/sdk",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./client.d.ts",
+      "default": "./client.js"
+    }
+  },
+  "bin": {
+    "stellarr": "./cli.js"
+  },
+  "files": [
+    "cli.js",
+    "client.js",
+    "client.d.ts",
+    "media.js",
+    "media.d.ts",
+    "CONTRACT.md",
+    "dev/",
+    "host/",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT",
+  "description": "Browser client and development CLI for Stellarr activities",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Arkazzae/Stellarr.git",
+    "directory": "sdk"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -150,6 +150,22 @@ const voiceSettings = (who) =>
     return key ? JSON.parse(localStorage.getItem(key)) : "defaults (nothing stored)";
   })()`);
 
+async function chooseFilter(who, filter, origin) {
+  if (!["speex", "rnnoise", "gtcrn"].includes(filter)) throw new Error("Unknown test filter: " + filter);
+  const page = people[who].page;
+  // The account's saved voice settings are applied again on every sign-in.
+  const saved = await api(page, "GET", "/api/me/settings");
+  if (saved.status !== 200) throw new Error(`${who}: reading voice settings returned ${saved.status}`);
+  const response = await api(page, "PUT", "/api/me/settings/voice", {
+    ...JSON.parse(saved.body).voice, version: 1, noiseSuppression: filter,
+  });
+  if (response.status !== 204) throw new Error(`${who}: saving ${filter} returned ${response.status}`);
+  await page.goto(origin + "/");
+  await page.waitFor(`Object.keys(localStorage).some(key => key.startsWith("stellarr.voice.settings.user.") &&
+    JSON.parse(localStorage.getItem(key))?.noiseSuppression === ${JSON.stringify(filter)})`);
+  await page.waitFor('document.querySelector("button.channel-main")');
+}
+
 const joinLounge = (who) =>
   people[who].page.eval(`(() => {
     const button = [...document.querySelectorAll("button.channel-main")]
@@ -238,6 +254,7 @@ function ringVerdict({ samples }) {
 }
 
 const options = parseArgs(process.argv.slice(2));
+if (process.env.STELLARR_CALL_FILTER) console.log("Voice call filter:", process.env.STELLARR_CALL_FILTER);
 const work = mkdtempSync(join(tmpdir(), "stellarr-voice-call-"));
 const result = { origin: options.origin, at: new Date().toISOString() };
 try {
@@ -263,12 +280,19 @@ try {
   await signIn(options.origin, "guest", { inviteCode: code });
 
   for (const who of Object.keys(people)) {
+    if (process.env.STELLARR_CALL_FILTER) await chooseFilter(who, process.env.STELLARR_CALL_FILTER, options.origin);
     result[who] = { settings: await voiceSettings(who) };
     if (!(await joinLounge(who))) throw new Error(`${who}: no voice channel to join`);
     await sleep(3000);
   }
   await sleep(4000);
 
+  if (process.env.STELLARR_CALL_FILTER) {
+    const path = "/audio/" + process.env.STELLARR_CALL_FILTER + ".wasm";
+    for (const { page } of Object.values(people)) {
+      await page.waitFor(`performance.getEntriesByName(location.origin + ${JSON.stringify(path)}).length > 0`);
+    }
+  }
   const before = { owner: await rtp("owner"), guest: await rtp("guest") };
   const [ownerHeard, guestHeard] = await Promise.all([watch("owner"), watch("guest")]);
   const after = { owner: await rtp("owner"), guest: await rtp("guest") };

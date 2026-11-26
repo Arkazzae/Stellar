@@ -25,10 +25,19 @@ pub fn placeholder_username(discord_id: &str) -> String {
 /// Discord's id, so the same message written twice is the same row, and a page
 /// read again inserts nothing.
 pub fn message_id(server: Id, discord_message_id: &str) -> Id {
-    let input = format!(
+    derived_id(format!(
         "stellarr.discord.message/{}/{discord_message_id}",
-        server.to_string().replace('-', "")
-    );
+        crate::uploads::compact(server)
+    ))
+}
+
+pub(super) fn attachment_id(message: Id, discord_attachment_id: &str) -> Id {
+    derived_id(format!(
+        "stellarr.discord.attachment/{message}/{discord_attachment_id}"
+    ))
+}
+
+fn derived_id(input: String) -> Id {
     let hash = digest::digest(&digest::SHA256, input.as_bytes());
     let mut bytes = [0u8; 16];
     bytes.copy_from_slice(&hash.as_ref()[..16]);

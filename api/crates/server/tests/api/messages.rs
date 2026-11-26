@@ -241,10 +241,23 @@ async fn the_length_of_a_message_is_counted_in_utf16_units_after_trimming() {
         ("a".repeat(20_001), 400),
         (format!("{}\u{1F600}", "a".repeat(19_998)), 201),
         (format!("{}\u{1F600}", "a".repeat(19_999)), 400),
+        (format!("````\n```\n{}\n````", "😀".repeat(49_993)), 201),
+        (format!("````\n```\n{}x\n````", "😀".repeat(49_993)), 400),
     ] {
         let response = w.post(&w.owner, &w.general, json!({ "content": content })).await;
         assert_eq!(response.status, status, "{} units", content.encode_utf16().count());
     }
+}
+
+#[tokio::test]
+async fn a_message_can_be_rewritten_as_a_long_code_block() {
+    let w = world().await;
+    let message = w.say(&w.owner, &w.general, "before").await;
+    let content = format!("```plaintext\n{}\n```", "x".repeat(60_000));
+
+    let response = w.edit(&w.owner, &id_of(&message), json!({ "content": content })).await;
+    assert_eq!(response.status, 200);
+    assert_eq!(response.json::<Value>()["content"], content);
 }
 
 #[tokio::test]
@@ -1258,7 +1271,12 @@ mod previews {
     }
 
     async fn with_previews() -> World {
-        let server = Server::start_with(&[("Testing__Workers", "link-previews"), ("Stellarr__Embeds__AllowPrivateNetworks", "true")]).await;
+        let server = Server::start_with(&[
+            ("Testing__Workers", "link-previews"),
+            ("Stellarr__Embeds__AllowPrivateNetworks", "true"),
+            ("STELLARR_MIN_FREE_BYTES", "0"),
+        ])
+        .await;
         let owner = server.found("owner").await;
         let db = server.database();
         let general: String = db.query_row("SELECT \"Id\" FROM \"Channels\" WHERE \"Kind\" = 0 ORDER BY \"Position\" LIMIT 1", [], |row| row.get(0)).unwrap();

@@ -1,0 +1,28 @@
+name: Publish activity SDK
+on:
+  push:
+    tags: ["sdk-v*"]
+permissions:
+  contents: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 26
+      - name: Test and pack the tagged SDK
+        run: |
+          version=$(node -p 'require("./sdk/package.json").version')
+          test "$GITHUB_REF_NAME" = "sdk-v$version"
+          npm run test:sdk
+          npm pack ./sdk --pack-destination "$RUNNER_TEMP"
+          bash scripts/npm/test-sdk.sh "$RUNNER_TEMP/stellarr-sdk-$version.tgz"
+      - name: Publish the verified archive through npm trusted publishing
+        run: npm publish "$RUNNER_TEMP"/stellarr-sdk-*.tgz --access public

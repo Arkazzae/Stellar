@@ -1,12 +1,12 @@
 import { act, render, renderHook } from "@testing-library/react";
-import type { ReactNode } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { StrictMode, type ReactNode } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { playSystemFx } from "@/lib/audio/systemFx";
 import { triggerHaptic } from "@/lib/platform/haptics";
 import { DEFAULT_SETTINGS } from "@/lib/voice/settings";
 import type { VoiceClient } from "@/lib/voice/types";
-import type { Ports, SoundboardState } from "@/ports";
+import type { ConnectionStatus, Ports, SoundboardState } from "@/ports";
 import { FakeVoiceClient } from "@/test/fakes";
 
 import { VoiceProvider, useVoiceContext, type VoiceValue } from "./VoiceProvider";
@@ -58,6 +58,7 @@ function mount() {
 const fake = () => harness.client as FakeVoiceClient;
 
 beforeEach(() => {
+  window.sessionStorage.clear();
   vi.mocked(playSystemFx).mockClear();
   vi.mocked(triggerHaptic).mockClear();
   harness.client = new FakeVoiceClient();
@@ -226,6 +227,63 @@ describe("VoiceProvider joining and leaving", () => {
 
     expect(fake().reconnect).toHaveBeenCalledOnce();
     expect(fake().leave).not.toHaveBeenCalled();
+  });
+});
+
+describe("VoiceProvider page reload", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  function reload(status: ConnectionStatus = "connected") {
+    vi.spyOn(performance, "getEntriesByType").mockReturnValue([
+      { type: "reload" } as PerformanceNavigationTiming,
+    ]);
+    let notify = () => {};
+    harness.ports.connection = {
+      getStatus: () => status,
+      subscribe(listener) {
+        notify = listener;
+        return () => { notify = () => {}; };
+      },
+    };
+    harness.client = new FakeVoiceClient();
+    const view = renderHook(() => useVoiceContext(), {
+      wrapper: ({ children }) => <StrictMode><VoiceProvider>{children}</VoiceProvider></StrictMode>,
+    });
+    return { view, connect: () => { status = "connected"; notify(); } };
+  }
+
+  it("waits for signaling and resumes the same private room with mute and deafen restored", async () => {
+    const original = mount();
+    act(() => {
+      original.result.current.join("dm", { label: "Ada", privateCall: true });
+      fake().set({ connection: "connected" });
+      original.result.current.toggleMute();
+      original.result.current.toggleDeafen();
+    });
+    window.dispatchEvent(new Event("pagehide"));
+    original.unmount();
+
+    const { view, connect } = reload("connecting");
+    expect(fake().join).not.toHaveBeenCalled();
+    await act(async () => connect());
+
+    expect(fake().join).toHaveBeenCalledExactlyOnceWith("dm", { private: true });
+    expect(view.result.current.privateCall).toBe(true);
+    expect(view.result.current.state.muted).toBe(true);
+    expect(view.result.current.call?.deafened).toBe(true);
+  });
+
+  it("cancels a pending restore when the user explicitly picks another channel", async () => {
+    const original = mount();
+    act(() => fake().set({ channelId: "old", connection: "connected" }));
+    window.dispatchEvent(new Event("pagehide"));
+    original.unmount();
+
+    const { view, connect } = reload("connecting");
+    act(() => view.result.current.join("new"));
+    await act(async () => connect());
+
+    expect(fake().join).toHaveBeenCalledExactlyOnceWith("new", { private: false });
   });
 });
 

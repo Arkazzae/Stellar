@@ -54,4 +54,5 @@ pub fn routes() -> Endpoints {
         .patch("/api/admin/server", profile::update)
         .json_body()
         .authorized()
+        .merge(crate::discord_import::routes::routes())
 }

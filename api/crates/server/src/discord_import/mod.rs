@@ -2,13 +2,14 @@
 //! exists: its sections and channels, placeholder accounts for its authors,
 //! and its history, page by page as the reader gives it.
 //!
-//! Nothing calls it yet: no route starts an import. A route that does would
-//! read a snapshot with `stellarr_discord`, take an [`ImportWriter`] on the
-//! state's database, and call, in this order, [`ImportWriter::start`],
-//! [`ImportWriter::write_structure`], then for every channel and thread
-//! [`ImportWriter::write_messages`] once for each page the reader gives (newest
-//! first) and [`ImportWriter::complete_channel`] when the history is whole, and
-//! [`ImportWriter::tally`] to say what came of it.
+//! The Discord wizard selects public channels, writes into a private staging
+//! server and gives its owner access after the job finishes. The writer records
+//! the structure, commits message pages newest first, completes channels and
+//! threads, and produces a tally from the recorded outcomes.
+//! The owner can then copy attachments into the published server. This phase
+//! reads fresh Discord CDN URLs for pending messages and uses the regular
+//! upload validators and storage limits. It restores attachment-only messages
+//! when their first file is saved.
 //!
 //! Everything written is recorded under Discord's id in the bookkeeping, and a
 //! message's Stellarr id is derived from the server and Discord's id, so a
@@ -22,7 +23,7 @@
 //! end: it links what is not linked and changes nothing else.
 //!
 //! History is restored, not posted: nothing a send does happens here. No slow
-//! mode, no mention notification or outbox row, no event, no link preview, no
+//! mode, no mention notification or outbox row, no event, no outbound preview request, no
 //! post time and no audit line. The journal, the post times and the read
 //! markers, which triggers and bootstraps keep, are left as if the history had
 //! always been there ([`journal`]). The imported messages are ordinary rows of
@@ -39,19 +40,21 @@
 //! which whoever drives it has to see to. It keeps the time of its last commit,
 //! so one instance should drive one import.
 //!
-//! What it does not do, as the first server's did not: roles, permission
-//! overwrites, emoji, stickers and attachments are not imported. A channel
-//! whose overwrites hid it from everyone is recorded as private
-//! ([`StructureResult::hidden_from_everyone`]) and is open to the whole server
-//! until a later stage closes it.
+//! The writer records when Discord hid a channel from everyone so the wizard
+//! can check its visibility before reading the history.
 
+mod jobs;
 mod journal;
 mod links;
+mod media;
 mod messages;
 mod names;
+mod plan;
+pub(crate) mod routes;
 mod structure;
 mod tally;
 
+pub(crate) use jobs::Jobs;
 pub use names::message_id;
 
 use std::collections::BTreeMap;

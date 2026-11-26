@@ -103,7 +103,6 @@ export function ServerSettingsDialog({ open, initialPane, data, reload }: Server
         onPickIcon: async (file) => {
           await admin.uploadServerIcon(file);
         },
-        onRemoveIcon: () => admin.removeServerIcon(),
         ...(ownerMember === undefined
           ? {}
           : {

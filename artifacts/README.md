@@ -1,26 +1,12 @@
-# Browser runtime artifacts (`artifacts/`)
+# Browser runtime files
 
-Third-party WebAssembly modules, AudioWorklet processors, and translation models that browsers fetch by URL at run time (`AudioWorklet.addModule`, `WebAssembly.instantiate`, `importScripts`, and `fetch`) and therefore cannot pass through Vite's module bundler.
+Stellarr installs `@stellarr/audio-filters` and `@stellarr/translation` at the exact versions in `web/package.json` and the root lockfile. Run `npm ci` at the repository root for development. The web workspace's dev, build and test hooks run `assemble.mjs` to check the installed bytes against `manifest.json` and copy them to the paths the instance serves.
 
-## Layout
+The package source manifests and metadata live in `npm/`. Each published archive contains its own SHA-256 inventory, attribution file and static files under `dist/`. The public URL paths are shared by the development server and the production image. The browser loads assets from its Stellarr instance.
 
-| Path | Purpose |
-| --- | --- |
-| `manifest.json` | Single inventory of every runtime artifact: `id`, served `path` under `web/public/`, `source` (`file` or `recipe`), `sha256`, byte `size`, `upstream` provenance/verification notes, and SPDX `license`. |
-| `assemble.mjs` | Validates every `manifest.json` entry (path containment, byte length, SHA-256 digest) and atomically copies changed files into `web/public/`. Invoked automatically by `predev`, `prebuild`, and `pretest` in `web/`. |
-| `files/` | Verified prebuilt artifacts committed directly in Git: `audio/gtcrn.wasm` and `audio/gtcrn-worklet.js` (GTCRN neural noise suppressor) and `bergamot-models/{plen,enpl}/*` (Mozilla Firefox Remote Settings Polish–English neural translation models). |
-| [`recipes/`](recipes/README.md) | Reproducible Docker BuildKit source recipes (`speex`, `rnnoise`, and `bergamot`) compiled from pinned upstream commits into `artifacts/recipes/<name>/out/`. |
-| `NOTICES` | Third-party copyright notices, licenses, and linked `libc`/`libm` archive attributions for every artifact in `manifest.json`. |
+## Updating a package
 
-## Workflow
-
-Build source recipes once in a fresh checkout or worktree (and whenever a recipe under `recipes/` or its `Dockerfile` stage changes), then assemble `web/public/`:
-
-```bash
-docker buildx bake recipes
-node artifacts/assemble.mjs
-```
-
-`assemble.mjs` never runs Docker itself; if a recipe output is missing or does not match the SHA-256 recorded in `manifest.json`, `npm run dev`, `npm test`, and `npm run build` fail immediately rather than serving stale or unverified files.
-
-See [`recipes/README.md`](recipes/README.md) for cross-platform determinism rules and instructions on converting a prebuilt file into a source recipe.
+1. Change the package's source or pinned inputs and bump its own version under `artifacts/npm/`. See the [recipes](recipes/README.md).
+2. Test the packed tarball, then tag the release commit with `npm-audio-filters-vX.Y.Z` or `npm-translation-vX.Y.Z`. The browser package workflow publishes the selected archive under the npm tag `next`.
+3. Install the exact published version in the web workspace, for example `npm install --save-exact -w stellarr-web @stellarr/translation@X.Y.Z`. Run `node scripts/npm/sync-manifest.mjs` and include the manifest and lockfile in the application change.
+4. Build and test the web client and image. The final image contains the inventory and notices under `/usr/share/doc/stellarr/artifacts/`.

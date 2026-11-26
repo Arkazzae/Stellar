@@ -58,6 +58,8 @@ pub struct Msg<'a> {
     pub attachments: usize,
     pub sticker: bool,
     pub embed: bool,
+    pub mention: Option<(&'a str, &'a str)>,
+    pub embed_link: Option<&'a str>,
     pub forwarded: Option<&'a str>,
 }
 
@@ -162,6 +164,9 @@ impl FakeGuild {
             "channel_id": channel,
             "type": if options.reply_to.is_some() { 19 } else { options.kind },
             "content": content,
+            "mentions": options.mention.map(|(id, name)| vec![json!({
+                "id": id, "username": name, "global_name": "Ula"
+            })]).unwrap_or_default(),
             "timestamp": at(minute),
             "edited_timestamp": options.edited_minute.map(at),
             "pinned": options.pinned,
@@ -179,7 +184,14 @@ impl FakeGuild {
                 "url": format!("https://cdn.discordapp.com/attachments/{channel}/{id}{index}/photo{index}.png"),
                 "content_type": "image/png",
             })).collect::<Vec<_>>(),
-            "embeds": if options.embed {
+            "embeds": if let Some(url) = options.embed_link {
+                json!([{"type": "gifv", "url": url, "title": "A wave",
+                    "video": {"url": "https://static.klipy.com/ii/wave.mp4"},
+                    "thumbnail": {
+                    "url": "https://example.test/wave.gif",
+                    "proxy_url": "https://images-ext-1.discordapp.net/external/wave.gif"
+                }}])
+            } else if options.embed {
                 json!([{"type": "rich", "title": "Status", "description": "All good"}])
             } else {
                 json!([])

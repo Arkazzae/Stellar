@@ -358,6 +358,8 @@ export interface CockpitSettings {
   instanceName: string;
   publicUrl: string;
   timeZone: string;
+  /** Effective per-account upload quota. Zero disables the account quota. */
+  uploadUserLimitBytes?: number;
   mailingEnabled: boolean;
   /** The transport mail goes through: SMTP, or Resend when it is turned on under Integrations. */
   mailProvider: "smtp" | "resend";
@@ -481,7 +483,7 @@ async function readProblem(response: Response): Promise<ProblemDetails> {
   }
 }
 
-async function request<T>(
+export async function cockpitRequest<T>(
   path: string,
   { method = "GET", body }: RequestOptions = {},
   signal?: AbortSignal,
@@ -524,6 +526,7 @@ async function request<T>(
   return (await response.json()) as T;
 }
 
+const request = cockpitRequest;
 const segment = encodeURIComponent;
 
 export const cockpitApi = {
@@ -626,7 +629,7 @@ export const cockpitApi = {
   // save of the other settings leaves them as they are stored.
   updateSettings: (
     settings: CockpitSettings,
-    changes: CockpitIntegrationSwitches & CockpitSecurityChanges = {},
+    changes: CockpitIntegrationSwitches & CockpitSecurityChanges & Pick<CockpitSettings, "uploadUserLimitBytes"> = {},
     signal?: AbortSignal,
   ) =>
     request<CockpitSettings>(

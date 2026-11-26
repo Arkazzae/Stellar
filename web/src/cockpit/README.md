@@ -28,7 +28,6 @@ Cockpit is a standalone single-page application within the `web/` workspace:
 ```bash
 # From the repository root
 npm install
-docker buildx bake recipes   # run once, and whenever artifacts/recipes/ changes
 npm run dev -w stellarr-web
 ```
 

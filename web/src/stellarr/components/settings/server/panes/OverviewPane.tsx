@@ -1,7 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 
 import { Button, Dropdown, cx } from "@stellarr/ui";
-import { Icon } from "@stellarr/icons";
 import { ServerTile } from "@/components/auth/Faces";
 import { Avatar } from "@/components/primitives/Avatar";
 import { ConfirmError } from "@/components/primitives/ConfirmDialog";
@@ -9,18 +8,16 @@ import { ConfirmError } from "@/components/primitives/ConfirmDialog";
 import card from "@/components/primitives/ConfirmDialog.module.css";
 import { Modal } from "@/components/primitives/Modal";
 import { Switch } from "@/components/primitives/Switch";
+import { AvatarUpload } from "@/components/settings/AvatarUpload";
 import { countedNoun, formatShortDate } from "@/components/settings/paneFormat";
 import { SettingsSaveBar } from "@/components/settings/SettingsSaveBar";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { ServerMark } from "@/components/settings/server/panes/ServerMark";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
-import type { Translator } from "@/i18n";
 import type { ServerPatch } from "@/ports";
 import { initials } from "@/lib/format/format";
 import { useLanguage } from "@/state/hooks";
 
-const ICON_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
-const MAX_ICON_BYTES = 4 * 1024 * 1024;
 const SAVED_FLASH_MS = 1500;
 
 /** Someone the server can be handed to. */
@@ -46,7 +43,6 @@ export interface OverviewPaneProps {
   isPublic: boolean;
   onSave: (patch: ServerPatch) => Promise<void>;
   onPickIcon: (file: File) => Promise<void>;
-  onRemoveIcon: () => Promise<void>;
   /** Who owns the server, under Ownership. */
   owner?: { id: string; displayName: string; avatarUrl?: string };
   /** Whether the reader is the owner, which words the row as theirs. */
@@ -64,54 +60,6 @@ interface Profile {
 }
 
 const sameProfile = (a: Profile, b: Profile) => a.name === b.name && a.description === b.description;
-
-/**
- * Picking and removing the server icon.
- *
- * A picked file is checked here, before the backend hears of it, and shown from
- * a blob URL while the upload runs. The URL is revoked once it is replaced and
- * when the pane goes away.
- */
-function useServerIcon(
-  t: Translator,
-  onPick: (file: File) => Promise<void>,
-  onRemove: () => Promise<void>,
-) {
-  const action = useAsyncAction();
-  const [error, setError] = useState<string | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
-
-  useEffect(
-    () => () => {
-      if (preview !== null) URL.revokeObjectURL(preview);
-    },
-    [preview],
-  );
-
-  const pick = async (file: File | undefined) => {
-    if (file === undefined) return;
-    setError(null);
-    if (!ICON_TYPES.includes(file.type)) {
-      setError(t("settings.serverIconFormat"));
-      return;
-    }
-    if (file.size > MAX_ICON_BYTES) {
-      setError(t("settings.serverIconSize"));
-      return;
-    }
-    setPreview(URL.createObjectURL(file));
-    const stored = await action.run(() => onPick(file));
-    setPreview(null);
-    if (!stored) setError(t("settings.serverIconSaveFailed"));
-  };
-
-  const remove = async () => {
-    setError(null);
-    if (!(await action.run(onRemove))) setError(t("settings.serverIconRemoveFailed"));
-  };
-
-  return { busy: action.pending, error, preview, pick, remove };
-}
 
 /**
  * What the server is, laid out as the user's profile is: the card others see
@@ -132,19 +80,16 @@ export function OverviewPane({
   isPublic,
   onSave,
   onPickIcon,
-  onRemoveIcon,
   owner,
   viewerIsOwner = false,
   transfer,
 }: OverviewPaneProps) {
   const { locale, t } = useLanguage();
-  const icon = useServerIcon(t, onPickIcon, onRemoveIcon);
   const saveAction = useAsyncAction();
   const visibility = useAsyncAction();
   const [saved, setSaved] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
   const savedTimer = useRef<number | undefined>(undefined);
-  const iconInput = useRef<HTMLInputElement>(null);
   const nameId = useId();
   const descriptionId = useId();
 
@@ -173,9 +118,6 @@ export function OverviewPane({
   };
 
   const dirty = draft.name.trim() !== name.trim() || draft.description.trim() !== description.trim();
-  const shownIcon = icon.preview ?? iconUrl;
-  const iconLocked = !iconSupported || icon.busy;
-  const openPicker = () => iconInput.current?.click();
   const previewName = draft.name.trim() || name;
   const previewDescription = draft.description.trim();
 
@@ -190,7 +132,7 @@ export function OverviewPane({
         <div className="ss-meet-card" aria-hidden="true">
           <span className="ss-meet-k">{t("srv.invitePreview.label")}</span>
           <div className="ss-meet-id">
-            <ServerTile mark={initials(previewName)} iconUrl={shownIcon ?? null} />
+            <ServerTile mark={initials(previewName)} iconUrl={iconUrl ?? null} />
             <span>
               <b>{previewName}</b>
               <span>{countedNoun(t, locale, "settings.member", memberCount)}</span>
@@ -216,17 +158,6 @@ export function OverviewPane({
           </div>
         </div>
       </section>
-      <input
-        ref={iconInput}
-        type="file"
-        accept="image/png,image/jpeg,image/gif,image/webp"
-        hidden
-        onChange={(event) => {
-          void icon.pick(event.target.files?.[0]);
-          event.target.value = "";
-        }}
-      />
-
       <SettingsSection title={t("srv.profile")}>
         <div className="frm">
           <div className="frm-row">
@@ -253,28 +184,15 @@ export function OverviewPane({
             </span>
             <div className="frm-ctl">
               <div className="ss-icon-ctl">
-                <ServerMark mark={mark} iconUrl={shownIcon} />
-                <Button type="button" variant="secondary" size="sm" disabled={iconLocked} onClick={openPicker}>
-                  <Icon name="image" size={14} />
-                  {icon.busy ? t("common.saving") : t("srv.iconUpload")}
-                </Button>
-                {iconUrl === undefined ? null : (
-                  <Button
-                    type="button"
-                    variant="danger"
-                    size="sm"
-                    disabled={iconLocked}
-                    onClick={() => void icon.remove()}
-                  >
-                    {t("srv.iconRemove")}
-                  </Button>
-                )}
+                <AvatarUpload
+                  label={t(iconUrl === undefined ? "srv.iconAdd" : "srv.iconChange")}
+                  shape="square"
+                  disabled={!iconSupported}
+                  onSave={onPickIcon}
+                >
+                  <ServerMark mark={mark} iconUrl={iconUrl} />
+                </AvatarUpload>
               </div>
-              {icon.error === null ? null : (
-                <p className="set-note sound-error" role="alert">
-                  {icon.error}
-                </p>
-              )}
             </div>
           </div>
           <div className="frm-row">

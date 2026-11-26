@@ -118,6 +118,17 @@ export interface SoundboardChangedEvent {
   serverId: string;
 }
 
+export interface VoiceActivitySummary {
+  install: string;
+  name: string;
+  icon: string | null;
+}
+
+export interface VoiceActivityChangedEvent {
+  channelId: string;
+  activity: VoiceActivitySummary | null;
+}
+
 export interface ServerMemberRemovedEvent {
   serverId: string;
   userId: UserId;
@@ -199,6 +210,7 @@ export interface RealtimeEventMap {
    */
   JoinSoundPlayed: SoundboardPlayedEvent;
   SoundboardChanged: SoundboardChangedEvent;
+  VoiceActivityChanged: VoiceActivityChangedEvent;
   /** Friends, requests, blocks or direct-message summary state changed. */
   SocialChanged: Record<string, never>;
   /** The signed-in member's effective role changed. */

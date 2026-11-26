@@ -48,7 +48,9 @@ struct Inner {
     previews: PreviewQueue,
     voice: Voice,
     backups: crate::backups::Jobs,
+    discord_imports: crate::discord_import::Jobs,
     cockpit: crate::cockpit::Kept,
+    activities: crate::activities::Sessions,
 }
 
 impl AppState {
@@ -78,7 +80,9 @@ impl AppState {
                 realtime: OnceLock::new(),
                 previews: PreviewQueue::default(),
                 backups: crate::backups::Jobs::default(),
+                discord_imports: crate::discord_import::Jobs::default(),
                 cockpit: crate::cockpit::Kept::default(),
+                activities: crate::activities::Sessions::default(),
                 metrics: Metrics::default(),
                 mutation_gate: MutationGate::default(),
             }),
@@ -188,6 +192,24 @@ impl AppState {
     /// The backup being written, if there is one.
     pub fn backups(&self) -> &crate::backups::Jobs {
         &self.inner.backups
+    }
+
+    pub(crate) fn discord_imports(&self) -> &crate::discord_import::Jobs {
+        &self.inner.discord_imports
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_discord_client(mut self, client: stellarr_discord::DiscordClient) -> Self {
+        Arc::get_mut(&mut self.inner)
+            .expect("the state is not shared yet")
+            .discord_imports
+            .discord = client;
+        self
+    }
+
+    /// Active activity rooms and their release pins.
+    pub(crate) fn activities(&self) -> &crate::activities::Sessions {
+        &self.inner.activities
     }
 
     /// What the operator panel keeps for the whole process.
