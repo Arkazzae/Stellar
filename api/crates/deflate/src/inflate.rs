@@ -7,6 +7,7 @@
 //! consumes input or ends.
 
 use std::io::{self, Read};
+use std::sync::LazyLock;
 
 use crate::error::Error;
 use crate::tables::{
@@ -28,9 +29,11 @@ enum Kind {
 
 /// A canonical Huffman decoding table: one lookup for codes up to
 /// `FAST_BITS` long, and a bit-by-bit walk for the rare longer ones.
+#[derive(Clone)]
 struct Huffman {
     /// `symbol << 4 | length`, or 0 when the code is longer or unassigned.
     fast: [u16; 1 << FAST_BITS],
+    mask: usize,
     count: [u16; 16],
     symbols: [u16; 288],
 }
@@ -39,6 +42,7 @@ impl Huffman {
     fn new() -> Box<Self> {
         Box::new(Self {
             fast: [0; 1 << FAST_BITS],
+            mask: 0,
             count: [0; 16],
             symbols: [0; 288],
         })
@@ -56,7 +60,9 @@ impl Huffman {
         }
         let codes = lengths.len() - usize::from(self.count[0]);
         self.count[0] = 0;
-        self.fast.fill(0);
+        let longest = self.count.iter().rposition(|&n| n != 0).unwrap_or(0);
+        self.mask = (1 << longest.min(FAST_BITS as usize)) - 1;
+        self.fast[..=self.mask].fill(0);
         if codes == 0 {
             return if kind == Kind::Distance {
                 Ok(())
@@ -73,11 +79,8 @@ impl Huffman {
                 return Err(Error::OversubscribedCode);
             }
         }
-        if left > 0 {
-            let longest = (1..16).rev().find(|&l| self.count[l] > 0).unwrap_or(0);
-            if kind == Kind::CodeLength || codes != 1 || longest != 1 {
-                return Err(Error::IncompleteCode);
-            }
+        if left > 0 && (kind == Kind::CodeLength || codes != 1 || longest != 1) {
+            return Err(Error::IncompleteCode);
         }
 
         let mut offsets = [0u16; 16];
@@ -103,7 +106,7 @@ impl Huffman {
                 let reversed = (code as u16).reverse_bits() >> (16 - length);
                 let entry = ((symbol as u16) << 4) | length as u16;
                 let mut slot = usize::from(reversed);
-                while slot < self.fast.len() {
+                while slot <= self.mask {
                     self.fast[slot] = entry;
                     slot += 1 << length;
                 }
@@ -113,8 +116,29 @@ impl Huffman {
     }
 }
 
+// RFC 1951 assigns the same trees to every fixed block.
+static FIXED: LazyLock<(Box<Huffman>, Box<Huffman>)> = LazyLock::new(|| {
+    let mut lengths = [8; 288];
+    lengths[144..256].fill(9);
+    lengths[256..280].fill(7);
+    let mut literals = Huffman::new();
+    literals
+        .build(&lengths, Kind::Literal)
+        .expect("fixed literal codes");
+    let mut distances = Huffman::new();
+    distances
+        .build(&[5; 32], Kind::Distance)
+        .expect("fixed distance codes");
+    (literals, distances)
+});
+
 enum State {
     BlockHeader,
+    DynamicLengths {
+        literals: usize,
+        total: usize,
+        at: usize,
+    },
     Stored(u32),
     Codes,
     Done,
@@ -141,7 +165,7 @@ impl From<io::Error> for Fail {
 /// A raw DEFLATE stream decoder over `R`.
 pub struct Inflate<R> {
     src: R,
-    input: Box<[u8]>,
+    input: Vec<u8>,
     in_pos: usize,
     in_len: usize,
     bits: u64,
@@ -154,6 +178,10 @@ pub struct Inflate<R> {
     last_block: bool,
     literals: Box<Huffman>,
     distances: Box<Huffman>,
+    fixed_tables: bool,
+    /// Literal/length and distance code lengths under construction. Only
+    /// the prefix committed in DynamicLengths is read.
+    lengths: [u8; 286 + 30],
     produced: u64,
     limit: u64,
     failed: Option<Error>,
@@ -161,20 +189,67 @@ pub struct Inflate<R> {
     io_failed: Option<io::ErrorKind>,
     /// No block of the current stream has been started.
     fresh: bool,
-    /// Push mode: the input may say "not yet" (`WouldBlock`) and a step that
-    /// ran out of input is undone and retried when more arrives.
-    resumable: bool,
-    /// Where the step in progress started, so that a retry finds its input.
-    snap_pos: usize,
+    supply: Supply,
     /// The last decoding pass stopped for want of input.
     starved: bool,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Supply {
+    Reader,
+    Pushing,
+    Finished,
+}
+
+impl Inflate<io::Empty> {
+    pub(crate) fn pushed() -> Self {
+        Self::with_input(io::empty(), Vec::new(), Supply::Pushing)
+    }
+
+    pub(crate) fn push(&mut self, data: &[u8]) {
+        // Append a lone byte directly to the bit buffer when it is next in order.
+        if let [byte] = data
+            && self.in_pos == self.in_len
+            && self.bit_count < 56
+            && matches!(self.state, State::Codes)
+        {
+            self.bits |= u64::from(*byte) << self.bit_count;
+            self.bit_count += 8;
+            return;
+        }
+        let unread = self.in_len - self.in_pos;
+        // Retain a partial symbol. Only move a suffix when we can reclaim
+        // at least as much space, even if a caller pushes ahead of demand.
+        if self.in_pos != 0 && self.in_pos >= unread {
+            self.input.copy_within(self.in_pos..self.in_len, 0);
+            self.input.truncate(unread);
+            self.in_pos = 0;
+        }
+        self.input.extend_from_slice(data);
+        self.in_len = self.input.len();
+    }
+
+    pub(crate) fn finish_input(&mut self) {
+        self.supply = Supply::Finished;
+    }
+
+    pub(crate) fn pushed_input(&self) -> (&[u8], bool) {
+        (
+            &self.input[self.in_pos..self.in_len],
+            self.supply == Supply::Finished,
+        )
+    }
+}
+
 impl<R: Read> Inflate<R> {
     pub fn new(src: R) -> Self {
+        Self::with_input(src, vec![0; INPUT_BUFFER], Supply::Reader)
+    }
+
+    fn with_input(src: R, input: Vec<u8>, supply: Supply) -> Self {
         Self {
             src,
-            input: vec![0; INPUT_BUFFER].into_boxed_slice(),
+            input,
             in_pos: 0,
             in_len: 0,
             bits: 0,
@@ -186,25 +261,16 @@ impl<R: Read> Inflate<R> {
             last_block: false,
             literals: Huffman::new(),
             distances: Huffman::new(),
+            fixed_tables: false,
+            lengths: [0; 286 + 30],
             produced: 0,
             limit: u64::MAX,
             failed: None,
             io_failed: None,
             fresh: true,
-            resumable: false,
-            snap_pos: 0,
+            supply,
             starved: false,
         }
-    }
-
-    /// Push mode, for an input that can say it has nothing yet by failing
-    /// with `WouldBlock` and nothing more by returning 0. A read that runs
-    /// out of input then fails with `WouldBlock` too, and nothing is lost:
-    /// the step that was cut short is undone and done again when the input
-    /// has grown.
-    pub(crate) fn resumable(mut self) -> Self {
-        self.resumable = true;
-        self
     }
 
     /// Refuses a stream that would decode to more than `limit` bytes, in
@@ -226,10 +292,6 @@ impl<R: Read> Inflate<R> {
         &self.src
     }
 
-    pub(crate) fn src_mut(&mut self) -> &mut R {
-        &mut self.src
-    }
-
     pub fn into_inner(self) -> R {
         self.src
     }
@@ -242,7 +304,6 @@ impl<R: Read> Inflate<R> {
         if !self.is_finished() && !self.fresh {
             return Err(io::Error::other("the compressed stream is in progress"));
         }
-        self.snap_pos = self.in_pos;
         match self.take_raw(out) {
             Ok(n) => Ok(n),
             Err(Fail::Io(error)) => Err(error),
@@ -265,41 +326,16 @@ impl<R: Read> Inflate<R> {
     }
 
     fn fill_input(&mut self) -> io::Result<bool> {
-        if self.resumable {
-            return self.fill_input_kept();
+        match self.supply {
+            Supply::Pushing => return Err(io::ErrorKind::WouldBlock.into()),
+            Supply::Finished => return Ok(false),
+            Supply::Reader => {}
         }
         loop {
             match self.src.read(&mut self.input) {
                 Ok(n) => {
                     self.in_pos = 0;
                     self.in_len = n;
-                    return Ok(n > 0);
-                }
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-                Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => return Ok(false),
-                Err(error) => return Err(error),
-            }
-        }
-    }
-
-    /// Reads more input after what the step in progress has already used,
-    /// which stays where it is: a step that runs dry is undone and needs it
-    /// again. Fails with `WouldBlock` when there is nothing yet.
-    fn fill_input_kept(&mut self) -> io::Result<bool> {
-        let keep = self.snap_pos.min(self.in_pos);
-        if keep > 0 {
-            self.input.copy_within(keep..self.in_len, 0);
-            self.in_len -= keep;
-            self.in_pos -= keep;
-        }
-        self.snap_pos = 0;
-        loop {
-            if self.in_len == self.input.len() {
-                return Err(io::Error::other("one step needs more input than is held"));
-            }
-            match self.src.read(&mut self.input[self.in_len..]) {
-                Ok(n) => {
-                    self.in_len += n;
                     return Ok(n > 0);
                 }
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
@@ -338,6 +374,7 @@ impl<R: Read> Inflate<R> {
         }
     }
 
+    #[inline(always)]
     fn get_bits(&mut self, n: u32) -> Result<u32, Fail> {
         if self.bit_count < n {
             self.refill()?;
@@ -351,6 +388,7 @@ impl<R: Read> Inflate<R> {
         Ok(value)
     }
 
+    #[inline(always)]
     fn decode_symbol(&mut self, kind: Kind) -> Result<usize, Fail> {
         if self.bit_count < 15 {
             self.refill()?;
@@ -359,7 +397,7 @@ impl<R: Read> Inflate<R> {
             Kind::Distance => &*self.distances,
             _ => &*self.literals,
         };
-        let entry = table.fast[(self.bits & ((1 << FAST_BITS) - 1)) as usize];
+        let entry = table.fast[self.bits as usize & table.mask];
         if entry != 0 {
             let length = u32::from(entry & 15);
             if length > self.bit_count {
@@ -450,26 +488,22 @@ impl<R: Read> Inflate<R> {
                 self.state = State::Stored(length);
             }
             1 => {
-                let mut lengths = [0u8; 288];
-                lengths[..144].fill(8);
-                lengths[144..256].fill(9);
-                lengths[256..280].fill(7);
-                lengths[280..].fill(8);
-                self.literals.build(&lengths, Kind::Literal)?;
-                // Thirty-two five-bit codes, two of which no block may use.
-                self.distances.build(&[5u8; 32], Kind::Distance)?;
+                if !self.fixed_tables {
+                    self.literals.clone_from(&FIXED.0);
+                    self.distances.clone_from(&FIXED.1);
+                    self.fixed_tables = true;
+                }
                 self.state = State::Codes;
             }
             2 => {
-                self.read_dynamic_tables()?;
-                self.state = State::Codes;
+                self.start_dynamic_tables()?;
             }
             _ => return Err(Error::InvalidBlockType.into()),
         }
         Ok(())
     }
 
-    fn read_dynamic_tables(&mut self) -> Result<(), Fail> {
+    fn start_dynamic_tables(&mut self) -> Result<(), Fail> {
         let literal_count = self.get_bits(5)? as usize + 257;
         let distance_count = self.get_bits(5)? as usize + 1;
         let code_length_count = self.get_bits(4)? as usize + 4;
@@ -484,36 +518,48 @@ impl<R: Read> Inflate<R> {
         // The code-length code is decoded through the literal table's slot,
         // which is rebuilt right after.
         self.literals.build(&code_lengths, Kind::CodeLength)?;
+        self.fixed_tables = false;
 
-        let total = literal_count + distance_count;
-        let mut lengths = [0u8; 286 + 30];
-        let mut at = 0;
-        while at < total {
-            let symbol = self.decode_symbol(Kind::Literal)?;
-            let (value, repeat) = match symbol {
-                0..=15 => (symbol as u8, 1),
-                16 => {
-                    if at == 0 {
-                        return Err(Error::BadCodeLengths.into());
-                    }
-                    (lengths[at - 1], 3 + self.get_bits(2)? as usize)
-                }
-                17 => (0, 3 + self.get_bits(3)? as usize),
-                _ => (0, 11 + self.get_bits(7)? as usize),
-            };
-            if at + repeat > total {
-                return Err(Error::BadCodeLengths.into());
-            }
-            lengths[at..at + repeat].fill(value);
-            at += repeat;
-        }
-        if lengths[256] == 0 {
+        self.state = State::DynamicLengths {
+            literals: literal_count,
+            total: literal_count + distance_count,
+            at: 0,
+        };
+        Ok(())
+    }
+
+    /// Commit a complete run before asking for another symbol. A short input
+    /// can split the repeat's extra bits, but never replays earlier lengths.
+    fn read_length_run(&mut self, literals: usize, total: usize, at: usize) -> Result<(), Fail> {
+        let symbol = self.decode_symbol(Kind::CodeLength)?;
+        let (value, repeat) = match symbol {
+            0..=15 => (symbol as u8, 1),
+            16 if at == 0 => return Err(Error::BadCodeLengths.into()),
+            16 => (self.lengths[at - 1], 3 + self.get_bits(2)? as usize),
+            17 => (0, 3 + self.get_bits(3)? as usize),
+            _ => (0, 11 + self.get_bits(7)? as usize),
+        };
+        let end = at + repeat;
+        if end > total {
             return Err(Error::BadCodeLengths.into());
         }
-        self.literals
-            .build(&lengths[..literal_count], Kind::Literal)?;
-        self.distances
-            .build(&lengths[literal_count..total], Kind::Distance)?;
+        self.lengths[at..end].fill(value);
+        if end < total {
+            self.state = State::DynamicLengths {
+                literals,
+                total,
+                at: end,
+            };
+        } else {
+            if self.lengths[256] == 0 {
+                return Err(Error::BadCodeLengths.into());
+            }
+            self.literals
+                .build(&self.lengths[..literals], Kind::Literal)?;
+            self.distances
+                .build(&self.lengths[literals..total], Kind::Distance)?;
+            self.state = State::Codes;
+        }
         Ok(())
     }
 
@@ -543,22 +589,19 @@ impl<R: Read> Inflate<R> {
             if self.filled > end {
                 return Ok(());
             }
-            // A step reads all it needs before it changes anything but the
-            // bit buffer, so these three are all that a retry needs back.
+            // Pushed input stays in place throughout the step. An incomplete
+            // symbol or header can be retried from this bit position.
             let (bits, bit_count, in_pos) = (self.bits, self.bit_count, self.in_pos);
-            if self.resumable {
-                self.snap_pos = in_pos;
-            }
             match self.step(start) {
                 Ok(true) => return Ok(()),
                 Ok(false) => {}
                 Err(Fail::Io(error))
-                    if self.resumable && error.kind() == io::ErrorKind::WouldBlock =>
+                    if self.supply == Supply::Pushing
+                        && error.kind() == io::ErrorKind::WouldBlock =>
                 {
                     self.bits = bits;
                     self.bit_count = bit_count;
-                    // The retained input starts at the step's first byte.
-                    self.in_pos = self.snap_pos;
+                    self.in_pos = in_pos;
                     self.starved = true;
                     return Ok(());
                 }
@@ -569,6 +612,7 @@ impl<R: Read> Inflate<R> {
 
     /// One block header, one run of stored bytes or one symbol. True when
     /// decoding should stop for now.
+    #[inline(always)]
     fn step(&mut self, start: usize) -> Result<bool, Fail> {
         match self.state {
             State::Done => return Ok(true),
@@ -578,6 +622,11 @@ impl<R: Read> Inflate<R> {
                 }
                 self.read_block_header()?;
             }
+            State::DynamicLengths {
+                literals,
+                total,
+                at,
+            } => self.read_length_run(literals, total, at)?,
             State::Stored(0) => self.finish_block(),
             State::Stored(remaining) => {
                 if self.filled > start && self.in_pos == self.in_len && self.bit_count < 8 {
@@ -602,11 +651,25 @@ impl<R: Read> Inflate<R> {
                 self.state = State::Stored(remaining - got as u32);
             }
             State::Codes => {
-                if self.filled > start && self.in_pos == self.in_len && self.bit_count < 48 {
-                    return Ok(true);
+                if self.in_pos == self.in_len && self.bit_count < 48 {
+                    if self.filled > start {
+                        return Ok(true);
+                    }
+                    if self.supply == Supply::Pushing && self.bit_count < 32 {
+                        self.starved = true;
+                        return Ok(true);
+                    }
                 }
-                if self.bit_count < 48 {
-                    self.refill()?;
+                // A four-byte load fits without masking. Longer matches can
+                // still request extra bits while decoding the distance.
+                if self.bit_count < 32 {
+                    if let Some(word) = self.input[self.in_pos..self.in_len].first_chunk::<4>() {
+                        self.bits |= u64::from(u32::from_le_bytes(*word)) << self.bit_count;
+                        self.bit_count += 32;
+                        self.in_pos += 4;
+                    } else {
+                        self.refill()?;
+                    }
                 }
                 self.decode_symbol_run()?;
             }
@@ -615,6 +678,7 @@ impl<R: Read> Inflate<R> {
     }
 
     /// One literal, one match, or the end of the block.
+    #[inline(always)]
     fn decode_symbol_run(&mut self) -> Result<(), Fail> {
         let symbol = self.decode_symbol(Kind::Literal)?;
         if symbol < 256 {
@@ -651,10 +715,25 @@ impl<R: Read> Inflate<R> {
         let length = if over { allowed as usize } else { length };
         let from = self.filled - distance;
         if distance >= length {
-            self.window.copy_within(from..from + length, self.filled);
+            if length <= 16 {
+                // The decode loop reserves MAX_MATCH bytes here. Copy a fixed
+                // width and commit only the match length to the output history.
+                self.window.copy_within(from..from + 16, self.filled);
+            } else {
+                self.window.copy_within(from..from + length, self.filled);
+            }
+        } else if distance == 1 {
+            let byte = self.window[from];
+            self.window[self.filled..self.filled + length].fill(byte);
         } else {
-            for i in 0..length {
-                self.window[self.filled + i] = self.window[from + i];
+            // The history is periodic. Each copy doubles the prefix that can
+            // be used by the next, including for matches longer than a period.
+            let mut copied = 0;
+            while copied < length {
+                let n = (distance + copied).min(length - copied);
+                self.window
+                    .copy_within(from..from + n, self.filled + copied);
+                copied += n;
             }
         }
         self.filled += length;
