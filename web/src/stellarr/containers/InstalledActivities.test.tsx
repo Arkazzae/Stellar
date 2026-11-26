@@ -139,9 +139,10 @@ it("discards a late successful launch after a list response invalidates the pend
 it("keeps all ten games inside the voice dialog and distinguishes start, join and unsupported devices", async () => {
   const api = server();
   render(<VoiceLibrary />);
+  const description = "A game for the whole channel.";
   const games = Array.from({ length: 10 }, (_, i) => ({
     ...entry, install: String(i), name: "Game " + i, running: i === 0, supported: i !== 9,
-    artwork: { cover: "/cover.png", icon: "/icon.png" }, devices: ["tablet"],
+    artwork: { cover: "/cover.png", icon: "/icon.png" }, description, devices: ["tablet"],
   }));
   expect(request).not.toHaveBeenCalled();
   expect(screen.getAllByRole("button")).toHaveLength(1);
@@ -151,7 +152,10 @@ it("keeps all ten games inside the voice dialog and distinguishes start, join an
   await api.take("list").reply(games);
   const dialog = within(screen.getByRole("dialog", { name: "friends.tabActivities" }));
   expect(dialog.getAllByRole("listitem")).toHaveLength(10);
-  expect(dialog.getByRole("button", { name: "Game 0 · stage.joinActivity" })).toBeEnabled();
+  const join = dialog.getByRole("button", { name: "Game 0 · stage.joinActivity" });
+  expect(join).toBeEnabled();
+  expect(join).toHaveAccessibleDescription(description);
+  expect(within(join).getAllByRole("presentation")).toHaveLength(2);
   expect(dialog.getByRole("button", { name: "Game 1 · stage.startActivity" })).toBeEnabled();
   expect(dialog.getByRole("button", { name: "Game 9 · tablet" })).toBeDisabled();
   fireEvent.keyDown(document, { key: "Escape" });
