@@ -13,8 +13,9 @@ use std::collections::HashSet;
 
 /// The parameters whose value is a secret: shown as [`MARK`]. `request_id` is
 /// the one of a desktop sign-in waiting in the browser: whoever opens its page
-/// signed in binds the request to themselves.
-pub const SECRETS: &[&str] = &["code", "request_id"];
+/// signed in binds the request to themselves. An activity file path can carry
+/// a one-time launch ticket.
+pub const SECRETS: &[&str] = &["code", "path", "request_id"];
 
 /// What stands in the log for a secret.
 pub const MARK: &str = "***";
@@ -30,6 +31,7 @@ pub const OPEN: &[&str] = &[
     "conversationId",
     "current_version",
     "device_id",
+    "digest",
     "emoji",
     "emoji_id",
     "id",
@@ -106,12 +108,18 @@ pub fn masked(pattern: &str, path: &str) -> String {
     }
     let mut shown: Vec<&str> = path.split('/').collect();
     for (at, segment) in pattern.split('/').enumerate() {
-        let secret = segment
+        let Some(parameter) = segment
             .strip_prefix('{')
             .and_then(|rest| rest.strip_suffix('}'))
-            .is_some_and(|name| SECRETS.contains(&name));
-        if secret && let Some(slot) = shown.get_mut(at) {
-            *slot = MARK;
+        else {
+            continue;
+        };
+        if SECRETS.contains(&parameter.trim_start_matches('*')) && at < shown.len() {
+            shown[at] = MARK;
+            if parameter.starts_with('*') {
+                shown.truncate(at + 1);
+                break;
+            }
         }
     }
     shown.join("/")
