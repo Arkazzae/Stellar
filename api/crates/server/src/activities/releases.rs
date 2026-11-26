@@ -17,6 +17,7 @@ use super::{Manifest, invalid};
 use crate::encoding::{hex_digit, hex_lower, percent_encode};
 use crate::http::{ApiError, ApiResult};
 
+const INDEX_LIMIT: u64 = 256 * 1024;
 const ARCHIVE_LIMIT: u64 = 256 * 1024 * 1024;
 static HTTP: LazyLock<Client> = LazyLock::new(Client::new);
 
@@ -173,7 +174,11 @@ async fn fetch(url: String, limit: u64, asset: bool) -> ApiResult<Vec<u8>> {
         .await
         .map_err(|error| {
             tracing::warn!(url, reason = %error, "activity release download failed");
-            invalid("GitHub could not deliver the release within the download limits.")
+            if error.is_too_large() {
+                ApiError::status(StatusCode::PAYLOAD_TOO_LARGE)
+            } else {
+                invalid("GitHub could not deliver the release within the download limits.")
+            }
         })?;
     if answer.status == axum::http::StatusCode::TOO_MANY_REQUESTS
         || (answer.status == axum::http::StatusCode::FORBIDDEN
@@ -223,7 +228,7 @@ async fn fetch(url: String, limit: u64, asset: bool) -> ApiResult<Vec<u8>> {
         ));
     }
     if answer.body.len() as u64 > limit {
-        return Err(invalid("The downloaded asset exceeds its declared size."));
+        return Err(ApiError::status(StatusCode::PAYLOAD_TOO_LARGE));
     }
     Ok(answer.body.to_vec())
 }
@@ -320,6 +325,49 @@ fn choices(repository: &str, release: &GithubRelease, bytes: &[u8]) -> ApiResult
     Ok(entries)
 }
 
+enum IndexError {
+    InvalidRelease(ApiError),
+    Upstream(ApiError),
+}
+
+async fn read_index<F, Fut>(
+    repository: &str,
+    release: &GithubRelease,
+    get: &F,
+) -> Result<Vec<Choice>, IndexError>
+where
+    F: Fn(String, u64, bool) -> Fut,
+    Fut: std::future::Future<Output = ApiResult<Vec<u8>>>,
+{
+    let invalid_index = |message: &str| {
+        IndexError::InvalidRelease(invalid(format!("Release {}: {message}", release.tag_name)))
+    };
+    let asset = release
+        .assets
+        .iter()
+        .find(|a| a.name == "stellarr-release.json")
+        .ok_or_else(|| invalid_index("Attach the built activity ZIP and stellarr-release.json."))?;
+    if asset.size > INDEX_LIMIT {
+        return Err(invalid_index(
+            "stellarr-release.json exceeds the 256 KiB limit.",
+        ));
+    }
+    let download = Download::new(repository, asset).map_err(IndexError::InvalidRelease)?;
+    let bytes = download
+        .bytes(INDEX_LIMIT, get)
+        .await
+        .map_err(|error| match error {
+            ApiError::Status(StatusCode::NOT_FOUND | StatusCode::GONE) => {
+                invalid_index("The published stellarr-release.json is no longer available.")
+            }
+            ApiError::Status(StatusCode::PAYLOAD_TOO_LARGE) => {
+                invalid_index("stellarr-release.json exceeds the 256 KiB limit.")
+            }
+            other => IndexError::Upstream(other),
+        })?;
+    choices(repository, release, &bytes).map_err(IndexError::InvalidRelease)
+}
+
 pub(super) async fn discover(url: &str, wanted: Option<&str>) -> ApiResult<Selection> {
     discover_with(url, wanted, &fetch).await
 }
@@ -394,25 +442,14 @@ where
                 continue;
             }
         }
-        let Some(index_asset) = release
-            .assets
-            .iter()
-            .find(|a| a.name == "stellarr-release.json")
-        else {
-            return Err(invalid(format!(
-                "Release {} has no stellarr-release.json. Attach the built activity ZIP and its release index.",
-                release.tag_name
-            )));
-        };
-        let bytes = Download::new(&repository, index_asset)?
-            .bytes(256 << 10, get)
-            .await?;
-        let entries = match choices(&repository, &release, &bytes) {
+        let entries = match read_index(&repository, &release, get).await {
             Ok(items) => items,
-            Err(error) if tag.is_some() => return Err(error),
-            Err(error) => {
+            Err(IndexError::InvalidRelease(error)) if tag.is_none() => {
                 diagnostic = Some(error);
                 continue;
+            }
+            Err(IndexError::InvalidRelease(error) | IndexError::Upstream(error)) => {
+                return Err(error);
             }
         };
         for entry in entries {
@@ -725,6 +762,86 @@ mod discovery_tests {
         assert_eq!(music.entries[0].tag, "music/v2.0.0");
         assert!(!asked.borrow().iter().any(|u| u.contains("/download/cards")));
     }
+    #[tokio::test]
+    async fn broken_indexes_only_hide_their_own_releases() {
+        let mut oversized = published(10, "cards/v3.0.0", &[("cards", "3.0.0")]);
+        oversized.meta["assets"][0]["size"] = json!(INDEX_LIMIT + 1);
+        let missing = published(11, "cards/v2.0.0", &[("cards", "2.0.0")]);
+        let older = published(12, "cards/v1.0.0", &[("cards", "1.0.0")]);
+        let other = published(13, "music/v1.0.0", &[("music", "1.0.0")]);
+        let mut first_page = vec![oversized.meta.clone(), missing.meta.clone()];
+        first_page.extend(
+            (100..198).map(|id| json!({"id":id,"draft":false,"tag_name":"unrelated","assets":[]})),
+        );
+
+        let get = |url: String, _limit: u64, _asset: bool| {
+            let value = if url == format!("{API}/releases?per_page=100&page=1") {
+                json!(first_page)
+            } else if url == format!("{API}/releases?per_page=100&page=2") {
+                json!([older.meta, other.meta])
+            } else if url.ends_with("/releases/tags/cards%2Fv3.0.0") {
+                oversized.meta.clone()
+            } else if url.ends_with("/releases/tags/cards%2Fv2.0.0") {
+                missing.meta.clone()
+            } else if url == missing.url || url == format!("{API}/releases/assets/1100") {
+                return std::future::ready(Err(ApiError::not_found()));
+            } else if url == older.url {
+                older.index.clone()
+            } else if url == other.url {
+                other.index.clone()
+            } else {
+                panic!("unexpected fetch {url}");
+            };
+            std::future::ready(Ok(serde_json::to_vec(&value).unwrap()))
+        };
+        let catalog = discover_with(REPO, None, &get).await.unwrap();
+        let tags: Vec<_> = catalog
+            .entries
+            .iter()
+            .map(|entry| entry.tag.as_str())
+            .collect();
+        assert_eq!(tags, ["cards/v1.0.0", "music/v1.0.0"]);
+
+        for (tag, detail) in [
+            ("cards/v3.0.0", "256 KiB"),
+            ("cards/v2.0.0", "no longer available"),
+        ] {
+            let exact = format!("{REPO}/releases/tag/{tag}");
+            let Err(ApiError::Problem(problem)) = discover_with(&exact, None, &get).await else {
+                panic!("the exact release must report its index error");
+            };
+            assert!(serde_json::to_string(&problem).unwrap().contains(detail));
+        }
+    }
+
+    #[tokio::test]
+    async fn download_limits_skip_a_single_version_but_service_errors_stop_discovery() {
+        let fresh = published(10, "cards/v2.0.0", &[("cards", "2.0.0")]);
+        let older = published(11, "cards/v1.0.0", &[("cards", "1.0.0")]);
+        for status in [
+            StatusCode::PAYLOAD_TOO_LARGE,
+            StatusCode::TOO_MANY_REQUESTS,
+            StatusCode::BAD_GATEWAY,
+        ] {
+            let get = |url: String, _limit: u64, asset: bool| {
+                std::future::ready(if !asset {
+                    Ok(serde_json::to_vec(&[&fresh.meta, &older.meta]).unwrap())
+                } else if url == fresh.url {
+                    Err(ApiError::status(status))
+                } else {
+                    assert_eq!(url, older.url);
+                    Ok(serde_json::to_vec(&older.index).unwrap())
+                })
+            };
+            let result = discover_with(REPO, Some("cards"), &get).await;
+            if status == StatusCode::PAYLOAD_TOO_LARGE {
+                assert_eq!(result.unwrap().entries[0].tag, "cards/v1.0.0");
+            } else {
+                assert!(matches!(result, Err(ApiError::Status(code)) if code == status));
+            }
+        }
+    }
+
     #[tokio::test]
     async fn renamed_tag_downloads_its_original_asset_by_numeric_id() {
         let download = Download::new(
