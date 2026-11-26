@@ -7,7 +7,7 @@
 #   ./install.sh --build       in a checkout, building the image from it
 #
 # The installer itself is a program, built from init/installer/ in the repository
-# and attached to every release. This script only fetches the one for this
+# and published in the server registry. This script fetches the one for this
 # machine, checks its SHA-256 sum and runs it with the same arguments; --help
 # lists them. STELLARR_INSTALLER_BIN runs an executable already on the host.
 # To run from source, use cargo run --locked --manifest-path init/installer/Cargo.toml.
@@ -20,6 +20,7 @@
 # it runs nothing.
 
 repo_url=https://github.com/Arkazzae/Stellarr
+server_downloads=https://stellarr.online/server-downloads
 
 fail() {
   printf '[error] %s\n' "$1" >&2
@@ -104,7 +105,7 @@ sha256() {
 }
 
 release_failed() {
-  fail "$1" "Check that this machine reaches github.com. Use curl or GNU wget for HTTPS downloads." '' \
+  fail "$1" "Check that this machine reaches stellarr.online and GitHub’s container registry. Use curl or GNU wget for HTTPS downloads." '' \
     "If no release carries the installer yet, run from a Stellarr checkout with Rust's cargo:" \
     "  cargo run --locked --manifest-path init/installer/Cargo.toml -- --dir . --build"
 }
@@ -119,12 +120,9 @@ fetch_installer() {
   if [ -n "${STELLARR_INSTALLER_VERSION:-}" ]; then
     tag=v${STELLARR_INSTALLER_VERSION#v}
   else
-    release=$(download "$repo_url/releases/latest" /dev/null) ||
+    download "$server_downloads/latest" "$work/version" >/dev/null ||
       release_failed "Could not find the latest Stellarr release"
-    case "$release" in
-      "$repo_url"/releases/tag/*) tag=${release##*/} ;;
-      *) release_failed "Could not find the latest Stellarr release" ;;
-    esac
+    tag=v$(cat "$work/version")
   fi
   case "$tag" in
     v[0-9]*.[0-9]*.[0-9]*) ;;
@@ -133,7 +131,7 @@ fetch_installer() {
   case "$tag" in
     *[!A-Za-z0-9.-]*) fail "Invalid Stellarr installer release tag: $tag" ;;
   esac
-  base="$repo_url/releases/download/$tag"
+  base="$server_downloads/${tag#v}"
   name="stellarr-installer-$target"
   if ! download "$base/$name" "$work/$name" >/dev/null ||
     ! download "$base/stellarr-installer.sha256" "$work/sums" >/dev/null; then
