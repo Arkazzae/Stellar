@@ -132,7 +132,9 @@ fn the_language_uses_the_configured_catalog_or_english() {
         Language::English
     );
     assert_eq!(
-        production(&[("STELLARR_LANGUAGE", "qaa-Test")]).unwrap().language,
+        production(&[("STELLARR_LANGUAGE", "qaa-Test")])
+            .unwrap()
+            .language,
         Language::English
     );
 }
