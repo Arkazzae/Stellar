@@ -594,7 +594,6 @@ async fn a_post_from_another_site_is_refused_before_anything_is_read_and_costs_n
 
     for (name, value) in [
         ("Origin", "https://evil.test"),
-        ("Origin", "null"),
         ("Origin", "http://127.0.0.1:1"),
         ("Referer", "https://evil.test/x"),
         ("Referer", "not an address"),
@@ -608,6 +607,15 @@ async fn a_post_from_another_site_is_refused_before_anything_is_read_and_costs_n
         assert_eq!(refused.header("cache-control"), Some("no-store"));
         assert_eq!(refused.header("pragma"), Some("no-cache"));
     }
+    // An opaque origin, such as a sandboxed activity frame on this host, that
+    // sends the session's cookie is refused by the pipeline, before any route
+    // runs.
+    let opaque = maja
+        .client
+        .send(post(&started.id, &format!("token={token}")).header("Origin", "null"))
+        .await;
+    assert_eq!(opaque.status, 403);
+    assert!(opaque.body.is_empty());
     // Not even a body that is no form is read: the origin is looked at first.
     let unread = maja
         .client
@@ -615,6 +623,8 @@ async fn a_post_from_another_site_is_refused_before_anything_is_read_and_costs_n
         .await;
     assert_eq!(unread.status, 400);
     assert!(row(&server.database(), &started.id).approved_at.is_none());
+    // None of that spent the token.
+    assert_eq!(approve(&maja.client, &started.id, &token).await.status, 200);
     // The browser's own word, in any spelling of it, is accepted.
     for (name, value) in [
         ("Origin", own.clone()),
