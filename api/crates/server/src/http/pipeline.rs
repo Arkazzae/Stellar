@@ -253,6 +253,32 @@ async fn route_checks(
     let mut cookies = Vec::new();
     let mut renewal = None;
     let cookie = auth::cookies::read(request.headers(), auth::session::cookie_name(environment));
+    // An installed activity may share a registrable domain with Stellarr.
+    // Browser cookies can accompany its requests even though its origin differs.
+    if cookie.is_some()
+        && !request.method().is_safe()
+        && pipeline
+            .state
+            .settings()
+            .activity_domain
+            .as_ref()
+            .is_some_and(|name| !name.is_empty())
+        && request.uri().path().starts_with("/api/")
+        && !(request.uri().path().starts_with("/api/auth/oidc/")
+            && request.uri().path().ends_with("/callback"))
+        && (request
+            .headers()
+            .get("sec-fetch-site")
+            .is_some_and(|site| site == "same-site" || site == "cross-site")
+            || request
+                .extensions()
+                .get::<ClientInfo>()
+                .is_some_and(|client| {
+                    !crate::desktop_login::same_origin::is_same_origin(request.headers(), client)
+                }))
+    {
+        return ApiError::forbidden().into_response();
+    }
     let ticket = cookie
         .and_then(|value| session::Ticket::open(pipeline.state.sealer(), &value, Timestamp::now()));
     if let Some(ticket) = ticket {

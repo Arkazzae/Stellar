@@ -50,6 +50,7 @@ struct Inner {
     backups: crate::backups::Jobs,
     discord_imports: crate::discord_import::Jobs,
     cockpit: crate::cockpit::Kept,
+    activities: crate::activities::Sessions,
 }
 
 impl AppState {
@@ -81,6 +82,7 @@ impl AppState {
                 backups: crate::backups::Jobs::default(),
                 discord_imports: crate::discord_import::Jobs::default(),
                 cockpit: crate::cockpit::Kept::default(),
+                activities: crate::activities::Sessions::default(),
                 metrics: Metrics::default(),
                 mutation_gate: MutationGate::default(),
             }),
@@ -203,6 +205,11 @@ impl AppState {
             .discord_imports
             .discord = client;
         self
+    }
+
+    /// Active activity rooms and their release pins.
+    pub(crate) fn activities(&self) -> &crate::activities::Sessions {
+        &self.inner.activities
     }
 
     /// What the operator panel keeps for the whole process.
