@@ -1,6 +1,7 @@
 import { memo, useMemo, useState, type MouseEventHandler } from "react";
 
 import { Icon } from "@stellarr/icons";
+import { ActivityIcon } from "@/components/activities/ActivityIcon";
 import { Avatar } from "@/components/primitives/Avatar";
 import type { PersonVM } from "@/components/view-models";
 import type { DragHandleProps } from "@/lib/drag/useRailDrag";
@@ -26,6 +27,8 @@ export interface VoiceOccupantRowProps {
    * arrival.
    */
   arrives?: (personId: string) => boolean;
+  /** The channel's activity, when this person is inside it: its mark follows the name. */
+  activity?: { install: string; name: string; icon: string | null };
 }
 
 /**
@@ -45,6 +48,7 @@ export const VoiceOccupantRow = memo(function VoiceOccupantRow({
   drag,
   menuFor,
   arrives,
+  activity,
 }: VoiceOccupantRowProps) {
   const { t } = useLanguage();
   // Your own row greets you when you join, not each time you change rooms.
@@ -98,6 +102,16 @@ export const VoiceOccupantRow = memo(function VoiceOccupantRow({
         speaking={speaking}
       />
       <span className="occ-name">{person.displayName}</span>
+      {activity === undefined ? null : (
+        <span
+          className="occ-act"
+          role="img"
+          aria-label={t("activities.inActivity", { name: activity.name })}
+          title={t("activities.inActivity", { name: activity.name })}
+        >
+          <ActivityIcon install={activity.install} name={activity.name} icon={activity.icon} size={14} />
+        </span>
+      )}
       {camera ? (
         <span className="occ-camera" role="img" aria-label={t("shell.cameraOn")} title={t("shell.cameraOn")}>
           <Icon name="camera" size={13} />

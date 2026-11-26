@@ -2,10 +2,12 @@ import { memo, useMemo, useState } from "react";
 
 import type { ChannelMenuActions } from "@/components/shell/rail/ChannelMenu";
 import { Rail } from "@/components/shell/rail/Rail";
-import type { ChannelThreadVM, TextChannelVM } from "@/components/view-models";
+import type { ChannelThreadVM, TextChannelVM, VoiceChannelVM } from "@/components/view-models";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { isFull, type ActivitySummary } from "@/lib/activities/api";
 import {
   useAccount,
+  useActivities,
   useChatRail,
   useDirectory,
   usePorts,
@@ -33,6 +35,52 @@ function unreadCounter() {
 }
 
 /**
+ * Puts what runs on each voice channel on its row, handing back the same
+ * object while neither the activity nor your place in it moved, so one
+ * channel's activity renders that channel alone.
+ */
+function activityAttacher() {
+  const shown = new WeakMap<
+    VoiceChannelVM,
+    { summary: ActivitySummary; inside: boolean; joining: boolean; failure: string | null; value: VoiceChannelVM }
+  >();
+  return (
+    channel: VoiceChannelVM,
+    summary: ActivitySummary | undefined,
+    inside: boolean,
+    joining: boolean,
+    failure: string | null,
+  ) => {
+    if (summary === undefined) return channel;
+    const before = shown.get(channel);
+    if (
+      before?.summary === summary &&
+      before.inside === inside &&
+      before.joining === joining &&
+      before.failure === failure
+    ) {
+      return before.value;
+    }
+    const value: VoiceChannelVM = {
+      ...channel,
+      activity: {
+        install: summary.install,
+        name: summary.name,
+        icon: summary.icon,
+        participants: summary.participants,
+        seats: summary.seats,
+        inside,
+        joining,
+        full: !inside && isFull(summary),
+        failure,
+      },
+    };
+    shown.set(channel, { summary, inside, joining, failure, value });
+    return value;
+  };
+}
+
+/**
  * The server's rail. It takes no props, so the shell rendering around it does
  * not render it; it follows the directory, the chat and the account, and its
  * rows follow their own seats.
@@ -53,6 +101,7 @@ export const RailContainer = memo(function RailContainer() {
   } = useDirectory();
   const { user } = useSession();
   const ui = useUi();
+  const activities = useActivities();
   const { admin } = usePorts();
   const { preferences, setPreferences } = useAccount();
   const memberMenu = useMemberMenu();
@@ -75,6 +124,24 @@ export const RailContainer = memo(function RailContainer() {
   const texts = useMemo<TextChannelVM[]>(
     () => textChannels.map((channel) => withUnread(channel, unreadByChannel[channel.id] ?? 0)),
     [textChannels, unreadByChannel, withUnread],
+  );
+
+  // What runs on each channel, for everyone who sees the channel, sitting in
+  // it or not.
+  const [withActivity] = useState(activityAttacher);
+  const { live, voice: mine, joining, joinFailure, join } = activities;
+  const voices = useMemo<VoiceChannelVM[]>(
+    () =>
+      voiceChannels.map((channel) =>
+        withActivity(
+          channel,
+          live.get(channel.id),
+          mine?.place === channel.id,
+          joining === channel.id,
+          joinFailure?.channelId === channel.id ? joinFailure.text : null,
+        ),
+      ),
+    [voiceChannels, live, mine, joining, joinFailure, withActivity],
   );
 
   const threadRows = useMemo<Record<string, ChannelThreadVM[]>>(
@@ -140,7 +207,7 @@ export const RailContainer = memo(function RailContainer() {
       }}
       // Speech is RTC state, not presence: it only exists for the call this
       // client is in, and each occupant row follows its own seat for it.
-      voiceChannels={voiceChannels}
+      voiceChannels={voices}
       sections={sections}
       activeChannelId={ui.activeChannelId}
       selfId={user?.id ?? ""}
@@ -154,6 +221,8 @@ export const RailContainer = memo(function RailContainer() {
         ui.selectTextChannel(channelId);
       }}
       onJoinVoiceChannel={ui.joinVoiceChannel}
+      onJoinActivity={join}
+      onOpenActivity={ui.returnToChannel}
       onEditServer={() => ui.openModal("settings")}
       onInvite={() => ui.openModal("invite")}
       onMoveChannel={moveChannel}

@@ -1,6 +1,7 @@
 import { memo, useCallback, useMemo, type MouseEventHandler, type RefCallback } from "react";
 
 import { ChannelButton } from "@/components/shell/rail/ChannelButton";
+import { RailActivityRow } from "@/components/shell/rail/RailActivityRow";
 import type { ChannelMenuRaiser, RailSortRefs } from "@/components/shell/rail/railTypes";
 import { carries } from "@/components/shell/rail/useRailMoves";
 import { VoiceOccupantRow } from "@/components/shell/rail/VoiceOccupantRow";
@@ -28,6 +29,10 @@ export interface RailVoiceListProps {
   carry?: (channelId: string, personId: string) => DragHandleProps;
   /** Tells someone sitting down from someone moving here. */
   arrives?: (personId: string) => boolean;
+  /** Joins the activity running on a channel, joining the channel first if need be. */
+  onJoinActivity?: (channelId: string) => void;
+  /** Back to the activity you are inside, on the stage. */
+  onOpenActivity?: (channelId: string) => void;
 }
 
 interface VoiceChannelNodeProps {
@@ -45,6 +50,8 @@ interface VoiceChannelNodeProps {
   canMoveOthers: boolean;
   carry?: (channelId: string, personId: string) => DragHandleProps;
   arrives?: (personId: string) => boolean;
+  onJoinActivity?: (channelId: string) => void;
+  onOpenActivity?: (channelId: string) => void;
 }
 
 /**
@@ -66,9 +73,11 @@ const VoiceChannelNode = memo(function VoiceChannelNode({
   canMoveOthers,
   carry,
   arrives,
+  onJoinActivity,
+  onOpenActivity,
 }: VoiceChannelNodeProps) {
   const { t } = useLanguage();
-  const { id, name, sectionId } = channel;
+  const { id, name, sectionId, activity } = channel;
   const count = channel.occupants.length;
   const select = useCallback(() => onJoin(id), [onJoin, id]);
   const openSettings = useMemo(
@@ -93,6 +102,9 @@ const VoiceChannelNode = memo(function VoiceChannelNode({
         onContextMenu={contextMenu}
         drag={drag}
       />
+      {activity === undefined || onJoinActivity === undefined || onOpenActivity === undefined ? null : (
+        <RailActivityRow channelId={id} activity={activity} onJoin={onJoinActivity} onOpen={onOpenActivity} />
+      )}
       <ul className="voice-occupants">
         {channel.occupants.map((person) => (
           <VoiceOccupantRow
@@ -107,6 +119,7 @@ const VoiceChannelNode = memo(function VoiceChannelNode({
             }
             menuFor={personMenuFor}
             arrives={arrives}
+            activity={activity?.participants.includes(person.id) ? activity : undefined}
           />
         ))}
       </ul>
@@ -135,6 +148,8 @@ export function RailVoiceList({
   canMoveOthers = false,
   carry,
   arrives,
+  onJoinActivity,
+  onOpenActivity,
 }: RailVoiceListProps) {
   return (
     <div className="rail-list" ref={list}>
@@ -156,6 +171,8 @@ export function RailVoiceList({
           canMoveOthers={canMoveOthers}
           carry={carry}
           arrives={arrives}
+          onJoinActivity={onJoinActivity}
+          onOpenActivity={onOpenActivity}
         />
       ))}
     </div>
