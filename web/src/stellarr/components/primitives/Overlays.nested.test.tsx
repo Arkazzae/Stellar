@@ -681,6 +681,7 @@ describe("an inline Escape consumer inside a dialog", () => {
         <MessageEditor original="Hello" onSave={vi.fn()} onCancel={onCancel} t={polish} />
       </Dialog>,
     );
+    await waitFor(() => expect(settings()).toHaveClass("open"));
     const field = screen.getByRole("textbox", { name: polish("message.edit.label") });
     field.focus();
 
@@ -700,6 +701,7 @@ describe("an inline Escape consumer inside a dialog", () => {
         <MessageEditor original="Hello" onSave={vi.fn()} onCancel={onCancel} t={polish} />
       </Dialog>,
     );
+    await waitFor(() => expect(settings()).toHaveClass("open"));
     screen.getByRole("button", { name: "Inside" }).focus();
 
     await user.keyboard("{Escape}");
