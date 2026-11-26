@@ -42,6 +42,7 @@ export const RTC_HUB = Object.freeze({
     soundboardPlayed: "SoundboardPlayed",
     soundboardChanged: "SoundboardChanged",
     joinSoundPlayed: "JoinSoundPlayed",
+    activityChanged: "VoiceActivityChanged",
     mediaSignal: "MediaSignal",
     mediaSessionClosed: "MediaSessionClosed",
   }),

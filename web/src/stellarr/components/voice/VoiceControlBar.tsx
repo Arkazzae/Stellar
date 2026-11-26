@@ -32,6 +32,12 @@ function CaretButton({ label, ...trigger }: PopoverTriggerProps & { label: strin
   );
 }
 
+export interface LiveVoiceActivity {
+  install: string;
+  name: string;
+  icon: string | null;
+}
+
 export interface VoiceControlBarProps {
   muted: boolean;
   /** Everything you would hear is silenced: the call and the soundboard. */
@@ -70,7 +76,12 @@ export interface VoiceControlBarProps {
   onToggleCamera: () => void;
   onSelectMicrophone: () => void;
   onSelectCamera: () => void;
+  liveActivity?: LiveVoiceActivity | null;
+  activityJoined?: boolean;
+  activityBusy?: boolean;
   onOpenActivities?: () => void;
+  onJoinActivity?: () => void;
+  onLeaveActivity?: () => void;
   onToggleShare: () => void;
   /** Absent where the call has no soundboard, which is a private one. */
   onPlaySound?: (soundId: string) => void;
@@ -112,7 +123,12 @@ export function VoiceControlBar({
   onToggleCamera,
   onSelectMicrophone,
   onSelectCamera,
+  liveActivity = null,
+  activityJoined = false,
+  activityBusy = false,
   onOpenActivities,
+  onJoinActivity,
+  onLeaveActivity,
   onToggleShare,
   onPlaySound,
   onInvite,
@@ -249,11 +265,59 @@ export function VoiceControlBar({
               )}
             />
           </div>
-          {onOpenActivities && (
-            <button type="button" className="vc-btn" aria-haspopup="dialog"
-              aria-label={t("friends.tabActivities")} title={t("friends.tabActivities")} onClick={onOpenActivities}>
+          {activityJoined ? (
+            <button
+              type="button"
+              className="vc-btn on"
+              aria-pressed={true}
+              aria-label={t("stage.leaveActivity")}
+              title={
+                liveActivity
+                  ? `${t("stage.leaveActivity")}: ${liveActivity.name}`
+                  : t("stage.leaveActivity")
+              }
+              onClick={onLeaveActivity ?? onOpenActivities}
+            >
               <Icon name="game" size={20} />
             </button>
+          ) : liveActivity !== null && onJoinActivity !== undefined ? (
+            <>
+              <span className="vc-act-sep" aria-hidden="true" />
+              <button
+                type="button"
+                className="vc-btn vc-act-join"
+                aria-label={`${t("stage.joinActivity")}: ${liveActivity.name}`}
+                title={`${t("stage.joinActivity")}: ${liveActivity.name}`}
+                aria-busy={activityBusy || undefined}
+                disabled={activityBusy}
+                onClick={onJoinActivity}
+              >
+                {liveActivity.icon ? (
+                  <img className="vc-act-ico" src={liveActivity.icon} alt="" />
+                ) : (
+                  <span className="vc-act-ico vc-act-fallback" aria-hidden="true">
+                    <Icon name="game" size={16} />
+                  </span>
+                )}
+                <span className="vc-act-txt">
+                  <span className="vc-act-name">{liveActivity.name}</span>
+                  <span className="vc-act-sub">{t("stage.liveJoinSub")}</span>
+                </span>
+              </button>
+            </>
+          ) : (
+            onOpenActivities && (
+              <button
+                type="button"
+                className="vc-btn"
+                aria-haspopup="dialog"
+                aria-label={t("friends.tabActivities")}
+                title={t("friends.tabActivities")}
+                onClick={onOpenActivities}
+              >
+                <Icon name="game" size={20} />
+              </button>
+            )
           )}
         </div>
 

@@ -1,6 +1,7 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 
 import { getRuntime, type Runtime } from "@/adapters";
+import type { RealtimeClient } from "@/lib/realtime/types";
 import type { Ports } from "@/ports";
 
 /**
@@ -37,4 +38,9 @@ export function useRuntime(): Runtime {
 
 export function usePorts(): Ports {
   return useRuntime().ports;
+}
+
+/** Optional realtime handle for components that also render in standalone tests. */
+export function useOptionalRealtime(): RealtimeClient | null {
+  return useContext(RuntimeContext)?.realtime ?? null;
 }
