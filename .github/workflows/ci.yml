@@ -501,6 +501,8 @@ jobs:
       # its retries are the image's own.
       - name: Start the image
         run: |
+          docker run --rm --user stellarr:stellarr --entrypoint bash stellarr:ci -ec \
+            'source /usr/local/lib/stellarr/settings.sh; declare -F read_or_create_secret >/dev/null'
           docker run -d --name stellarr -e STELLARR_DOMAIN=localhost -e STELLARR_LANGUAGE=pl \
             -e STELLARR_HTTPS_PORT=8443 --health-interval 5s -p 127.0.0.1:8443:443 stellarr:ci
           for _ in $(seq 1 60); do
