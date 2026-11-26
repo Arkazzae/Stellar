@@ -175,7 +175,7 @@
      centred on its control. The centring is `transform`; the entrance moves
      `translate`, so the two never fight. */
   .vc-ctl > .dock-pop{
-    left:50%;right:auto;bottom:calc(100% + var(--grp-pad) + 1px + 8px);
+    left:50%;right:auto;bottom:calc(100% + var(--grp-pad, 0px) + 1px + 8px);
     width:256px;transform:translateX(-50%);
   }
   .vc-ctl > .dock-pop.board{width:288px}
@@ -293,10 +293,7 @@
     }
     .vc-side{display:none}
     .vc-center{grid-column:1;width:100%;max-width:100%;justify-content:center;flex-wrap:nowrap;gap:8px}
-    /* Phone calls keep what is used mid-sentence in thumb reach: the
-       microphone and the sound, the camera and activities, then "more" and hanging up. Device
-       menus and session extras stay behind that one disclosure control
-       instead of taking a second row away from the stage. */
+    /* The two call groups stay visible. Device settings and the soundboard move into More. */
     .vc-caret,.vc-wide-only{display:none}
     .vc-center .vc-btn{height:44px}
     .vc-mobile-overflow{display:block}
@@ -347,12 +344,19 @@
     .vc-mobile-menu .sb-grid{--sb-pad:44px;max-height:none}
   }
 
-  @container room-view (max-width:359px){
+  @container room-view (max-width:400px){
     .vc-bar{padding-inline:6px}
     .vc-center{gap:4px}
+    .vc-grp{--grp-pad:3px}
     .vc-hang{width:44px;padding:0}
     .dock-pop.vc-mobile-menu{left:8px;right:8px}
     .vc-mobile-action{padding-inline:6px}
+  }
+
+  @container room-view (max-width:351px){
+    .vc-bar{padding-inline:0}
+    .vc-center{gap:2px;flex-wrap:wrap}
+    .vc-grp{--grp-pad:0px;gap:0}
   }
 
   @media (prefers-reduced-motion:reduce){
