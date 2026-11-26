@@ -39,7 +39,7 @@ flowchart TD
 | Component | Location | Responsibility |
 | --- | --- | --- |
 | **Static browser build** | `web/` | Single Vite build emitting both `index.html` (web client) and `cockpit/index.html` (Cockpit) into `web/dist/` (`gzip -9`). Served directly by Nginx; no Node.js runtime ships in the image. ESLint enforces zero cross-imports between `src/stellarr/` and `src/cockpit/`. |
-| **Web client** | `web/src/stellarr/` | Channels, DMs, voice/video, activities, offline translation, and themes. Pre-paint `<head>` scripts apply saved theme and locale without flash; signed-in UI, WebRTC, custom fonts, BetterDiscord conversion, and inactive locale chunks load lazily behind a `259,000`-byte gzip entry budget (`web/bundleReport.ts`). |
+| **Web client** | `web/src/stellarr/` | Channels, DMs, voice/video, activities, offline translation, and themes. Pre-paint `<head>` scripts apply saved theme and locale without flash; signed-in UI, WebRTC, BetterDiscord conversion, and inactive locale chunks load lazily behind a `259,000`-byte gzip entry budget (`web/bundleReport.ts`). |
 | **Service Worker & cache** | `public/stellarr-worker.js`, `lib/deviceStore/` | Caches the active shell keyed by `/release.json` (auto-reloading tabs after upgrades), receives Web Push and OS file shares (`/pwa/share`), and keeps recent channel windows in IndexedDB reconciled against `MessageChanges` (wiped on sign-out/revocation). |
 | **Stellarr Cockpit** | `web/src/cockpit/` | Owner-only operator SPA at `/cockpit` backed by `/api/cockpit/*` with independent locale state. |
 | **API & Hub** | `api/crates/server`, `api/crates/hub` | Rust control plane for auth, sessions, servers, permissions, messages, uploads, activities, notifications, backups, and the `stellarr.v1` WebSocket hub (`/hubs/app`). Brokers SFU sessions over `127.0.0.1:5200`. |
@@ -197,7 +197,7 @@ Nginx listens on `:443` (TLS) and `:80` (redirecting to HTTPS unless a listed `S
 | --- | --- | --- |
 | `/api/`, `/assets/`, `/health`, `/.well-known/stellarr/` | `http://127.0.0.1:5000` | Upstream headers (`128m` max body) |
 | `/hubs/` | `http://127.0.0.1:5000` (WebSocket) | `Upgrade` / `Connection` forwarded (`75s` read timeout) |
-| `/static/`, `/fonts/`, `/typefaces/` | `/opt/stellarr/web` (`gzip_static on`) | `public, max-age=31536000, immutable` on `200`/`206`/`304`; missing files return plain `404` |
+| `/static/`, `/fonts/` | `/opt/stellarr/web` (`gzip_static on`) | `public, max-age=31536000, immutable` on `200`/`206`/`304`; missing files return plain `404` |
 | `/stellarr-instance.js` | `/run/stellarr/stellarr-instance.js` | `public, max-age=3600, must-revalidate` |
 | `/audio/`, `/bergamot-models/`, `/codecs/`, `/identity/`, `/mascot/`, `/pwa/`, `/sounds/`, or `*.ext` | `/opt/stellarr/web` | `no-cache`; missing files always return plain `404` (never HTML) |
 | `/pwa/share` (when Service Worker is inactive) | `303 /?share=error` | Redirects safely into the web client |

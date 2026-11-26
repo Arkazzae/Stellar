@@ -418,7 +418,7 @@ function initThemeDemo() {
   const room = root.querySelector('.theme-room');
   const label = room.querySelector('.theme-room__label');
   const walls = [...room.querySelectorAll('[data-wall-img]')];
-  const state = { palette: 'midnight', scheme: 'dark', font: 'outfit', wall: 'none' };
+  const state = { palette: 'midnight', scheme: 'dark', wall: 'none' };
   const keys = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 };
 
   const paint = () => {
@@ -426,7 +426,6 @@ function initThemeDemo() {
     const surface = preset[state.scheme];
     room.dataset.palette = state.palette;
     room.dataset.scheme = state.scheme;
-    room.dataset.font = state.font;
     room.dataset.wall = state.wall;
     room.style.setProperty('--t-accent', preset.accent);
     room.style.setProperty('--t-rail', surface.rail);

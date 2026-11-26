@@ -282,7 +282,7 @@ describe("converting a theme", () => {
     expect(evaluator.seen).toHaveLength(1);
     expect(evaluator.seen[0]).not.toMatch(/url\(|https:/);
     expect(conversion.palette?.backgrounds.primary).toBe("#16181d");
-    expect(conversion.font).toEqual({ family: "figtree", id: "figtree" });
+    expect(conversion.skippedFont).toBe("figtree");
     expect(conversion.styleQueries).toBe("native");
     expect(conversion.meta.name).toBe("nocturne");
   });

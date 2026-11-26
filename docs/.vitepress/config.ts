@@ -7,7 +7,7 @@ import { buildNavigation } from './navigation.ts'
 const repository = 'https://github.com/Arkazzae/Stellarr'
 const docs = fileURLToPath(new URL('..', import.meta.url))
 const logos = fileURLToPath(new URL('../../website/src/images/logo', import.meta.url))
-const fonts = fileURLToPath(new URL('../../web/src/cockpit/assets/fonts', import.meta.url))
+const fonts = fileURLToPath(new URL('../../web/public/fonts', import.meta.url))
 
 // Embed the same logo files that ship with the project website.
 function drawing(name: string): string {
@@ -40,15 +40,11 @@ export default defineConfig({
       }
     },
   },
-  // The default theme preloads its own typeface, Inter, which no page uses.
-  // Outfit is preloaded in its place.
   transformHead({ assets }) {
     const outfit = assets.find((file) => /outfit-100-900-latin\.[\w-]+\.woff2$/.test(file))
     if (!outfit) return []
     return [['link', { rel: 'preload', href: outfit, as: 'font', type: 'font/woff2', crossorigin: '' }]]
   },
-  transformHtml: (html) =>
-    html.replace(/<link rel="preload" href="[^"]*inter-roman-latin[^"]*"[^>]*>/, ''),
   vite: {
     // The style sheet loads the fonts from the web client, outside the docs/ root.
     server: { fs: { allow: [docs, fonts] } },

@@ -7,7 +7,6 @@ import { useConfirm } from "@/components/primitives/ConfirmDialog";
 import { Modal } from "@/components/primitives/Modal";
 import { Switch } from "@/components/primitives/Switch";
 import { makeCustomTheme } from "@/design/customTheme";
-import { FONT_LABELS } from "@/design/fontLabels";
 import {
   CUSTOM_NAME_MAX,
   CUSTOM_PALETTE,
@@ -94,14 +93,12 @@ export default function BetterDiscordDialog({ open, onClose, theme, onChange, wa
     });
 
   const apply = async (conversion: Conversion, source: string | undefined) => {
-    const font = conversion.font?.id ?? undefined;
     const name = normaliseText(conversion.meta.name ?? "", CUSTOM_NAME_MAX);
     const patch: Partial<ThemePreference> = {
       // A palette brings its own colour as the accent when the theme set none.
       ...((conversion.accent ?? conversion.palette?.accent) === undefined
         ? {}
         : { accent: conversion.accent ?? conversion.palette?.accent }),
-      ...(font === undefined ? {} : { font }),
     };
     if (conversion.palette !== undefined) {
       const custom = normaliseCustomTheme(
@@ -265,7 +262,7 @@ export default function BetterDiscordDialog({ open, onClose, theme, onChange, wa
           <Button type="button" variant="secondary" disabled={applying} onClick={onClose}>
             {t("common.cancel")}
           </Button>
-          {state.step === "ready" && (state.conversion.palette !== undefined || state.conversion.accent !== undefined || state.conversion.font?.id || (fetchPicture && state.conversion.wallpaper !== undefined)) ? (
+          {state.step === "ready" && (state.conversion.palette !== undefined || state.conversion.accent !== undefined || (fetchPicture && state.conversion.wallpaper !== undefined)) ? (
             <Button
               type="button"
               variant="primary"
@@ -295,7 +292,7 @@ function Result({
   canSetWallpaper: boolean;
 }) {
   const { t } = useLanguage();
-  const { meta, palette, font, wallpaper } = conversion;
+  const { meta, palette, skippedFont, wallpaper } = conversion;
   const pictureLabel = wallpaper?.host === undefined
     ? t("theme.bd.pictureEmbedded")
     : t("theme.bd.picture", { host: wallpaper.host });
@@ -317,12 +314,11 @@ function Result({
     );
   }
   if (conversion.accent !== undefined) taken.push(t("theme.bd.takenAccent"));
-  if (font?.id != null) taken.push(t("theme.bd.takenFont", { font: FONT_LABELS[font.id].label }));
   if (wallpaper !== undefined && canSetWallpaper) taken.push(t("theme.bd.takenWallpaper"));
 
   const left: string[] = [t("theme.bd.leftLayout")];
   if (palette === undefined) left.push(t("theme.bd.leftPalette"));
-  if (font !== undefined && font.id === null) left.push(t("theme.bd.leftFont", { font: font.family }));
+  if (skippedFont) left.push(t("theme.bd.leftFont", { font: skippedFont }));
   if (filled.length > 0) left.push(t("theme.bd.leftFilled"));
   if (conversion.skipped.length > 0) left.push(t("theme.bd.leftImports", { count: conversion.skipped.length }));
 
@@ -333,7 +329,6 @@ function Result({
           className={styles.preview}
           data-theme="custom"
           data-scheme="dark"
-          {...(font?.id == null ? {} : { "data-font": font.id })}
           style={preview}
         >
           <Stage wallpaper={null} />

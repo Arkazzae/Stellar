@@ -46,7 +46,7 @@ export interface ThemeFileRowProps {
 }
 
 /**
- * The theme as a file: the palette, accent and face in use saved to disk,
+ * The theme as a file: the palette and accent in use saved to disk,
  * with the wallpaper unless the person leaves it out, and a file picked from
  * disk applied as the person's own palette. Applying one replaces their own
  * palette, so it asks first when there is one; a wallpaper in it is asked

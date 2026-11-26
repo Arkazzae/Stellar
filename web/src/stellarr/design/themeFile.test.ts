@@ -25,6 +25,7 @@ describe("theme file", () => {
     const saved = { ...DEFAULT_THEME, palette: "custom" as const, custom: OWN, accent: "#ff3366", size: "lg" as const, contrast: "high" as const, font: "figtree" as const };
     const text = themeFileText(themeFileOf(saved));
     expect(JSON.parse(text)).not.toHaveProperty("size");
+    expect(JSON.parse(text)).not.toHaveProperty("font");
     expect(JSON.parse(text)).not.toHaveProperty("contrast");
 
     const read = readThemeFile(text);
@@ -34,7 +35,7 @@ describe("theme file", () => {
     // theme, and the one accent a file carries is the palette's own colour too.
     const { basedOn: _basedOn, ...rest } = OWN;
     const shared = { ...rest, colors: { ...rest.colors, accent: "#ff3366" } };
-    expect(read.patch).toEqual({ palette: "custom", custom: shared, accent: "#ff3366", scheme: "dark", font: "figtree" });
+    expect(read.patch).toEqual({ palette: "custom", custom: shared, accent: "#ff3366", scheme: "dark" });
     expect(normaliseTheme({ ...DEFAULT_THEME, ...read.patch }).custom).toEqual(shared);
   });
 
@@ -64,10 +65,11 @@ describe("theme file", () => {
     expect(read).not.toHaveProperty("wallpaper");
   });
 
-  it("leaves out a face this build does not have", () => {
-    const file = { ...themeFileOf(DEFAULT_THEME), font: "comic-sans" };
+  it("reads older files while ignoring their font choice", () => {
+    const file = { ...themeFileOf(DEFAULT_THEME), font: "figtree" };
     const read = readThemeFile(JSON.stringify(file));
-    expect(read.ok && read.patch).not.toHaveProperty("font");
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.patch).not.toHaveProperty("font");
   });
 
   it("writes a preset under its own name", () => {

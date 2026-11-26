@@ -50,7 +50,7 @@ System architecture, wire protocols, media server internals, theming, and locali
 | Document | Scope |
 | --- | --- |
 | [Architecture](architecture.md) | Process supervision, Nginx routing, `/data/stellarr` layout, `master.key` sealing, E2EE cryptography, and authorization invariants |
-| [Themes and appearance](themes.md) | Seven-axis theme model, built-in presets, CSS palette editor, self-hosted fonts, wallpapers, and BetterDiscord conversion |
+| [Themes and appearance](themes.md) | Six-axis theme model, built-in presets, CSS palette editor, wallpapers, and BetterDiscord conversion |
 | [RTC and ports](rtc-and-ports.md) | Host and loopback ports, optional TURN relay sizing, NAT/firewall rules, and WebRTC call diagnostics |
 | [Voice and RTC protocol](rtc-protocol.md) | `stellarr.v1` signaling, `voice::enforce` seat eviction, soundboard sync, Opus profiles, and Web Audio DSP chains |
 | [Stellarr Media](stellarr-media.md) | Rust `str0m` SFU, glare-free SDP negotiation, receive subscriptions, GoogCC downlink adaptation, SFrame E2EE, and control API |

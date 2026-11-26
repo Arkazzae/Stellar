@@ -26,7 +26,7 @@ function installScript() {
 }
 
 export default defineConfig({
-  // The stylesheet shares the Cockpit fonts outside the website root.
+  // The stylesheet shares the web client’s Outfit files outside the website root.
   server: { fs: { allow: ['..'] } },
   plugins: [installScript()],
 });

@@ -26,7 +26,7 @@ function conversion(overrides: Partial<Conversion> = {}): Conversion {
     accent: "#46aec5",
     roles: [{ group: "backgrounds", role: "primary", from: "--background-base-low" }, { group: "text", role: "muted" }],
     missingCore: [],
-    font: { family: "figtree", id: "figtree" },
+    skippedFont: "Figtree",
     styleQueries: "native",
     undecided: 0,
     skipped: [],
@@ -60,13 +60,13 @@ describe("BetterDiscord dialog", () => {
   it("shows what came across and applies it as the person's own palette, in the dark scheme", async () => {
     const { user, onChange, onClose } = await open(conversion());
 
-    const taken = screen.getByRole("region", { name: "Przeniesione" });
-    expect(within(taken).getByText("Krój pisma Figtree")).toBeInTheDocument();
+    const skipped = screen.getByRole("region", { name: "Pominięte" });
+    expect(within(skipped).getByText(/Krój Figtree/)).toBeInTheDocument();
     expect(within(screen.getByRole("region", { name: "Pominięte" })).getByText(/Układ, odstępy/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Zastosuj" }));
 
     expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ palette: "custom", scheme: "dark", accent: "#46aec5", font: "figtree", custom: expect.objectContaining({ name: "nocturne", author: "ada" }) }),
+      expect.objectContaining({ palette: "custom", scheme: "dark", accent: "#46aec5", custom: expect.objectContaining({ name: "nocturne", author: "ada" }) }),
     );
     expect(onClose).toHaveBeenCalled();
   });
@@ -96,13 +96,13 @@ describe("BetterDiscord dialog", () => {
       conversion({
         palette: undefined,
         missingCore: ["backgrounds.primary"],
-        font: { family: "gg sans", id: null },
+        skippedFont: "gg sans",
         wallpaper: { url: "https://clearvision.github.io/images/sapphire.jpg", host: "clearvision.github.io", shade: 40 },
       }),
     );
 
     expect(screen.getByText(/Motyw nie zawiera tła/)).toBeInTheDocument();
-    expect(screen.getByText("Krój gg sans, którego nie ma w pakiecie")).toBeInTheDocument();
+    expect(screen.getByText("Krój gg sans (Stellarr używa Outfit)")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Zastosuj to, co przeniesione" }));
 
     expect(onChange).toHaveBeenCalledWith({ accent: "#46aec5" });

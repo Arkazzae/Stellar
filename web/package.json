@@ -17,7 +17,6 @@
     "bench:voice-suppressor": "node scripts/benchmark-voice-suppressor.mjs",
     "bench:rail-drag": "node scripts/benchmark-rail-drag.mjs",
     "voice:record": "node bench/voice/record.mjs",
-    "fonts:sync": "node scripts/sync-theme-fonts.mjs",
     "predev": "node ../artifacts/assemble.mjs",
     "prebuild": "node ../artifacts/assemble.mjs",
     "pretest": "node ../artifacts/assemble.mjs"

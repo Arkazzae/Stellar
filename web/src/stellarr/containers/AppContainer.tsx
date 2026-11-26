@@ -106,8 +106,6 @@ function Shell({ entry, onEntryHandled }: LaunchProps) {
 
   return (
     <>
-      {/* The face and the wallpaper: what of the theme only the signed-in app
-          shows. The wallpaper sits on a fixed layer behind the shell. */}
       <AppAppearance />
       <AppBadge />
       {entry && onEntryHandled && (entry.startsWith("?share=")

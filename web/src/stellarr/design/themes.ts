@@ -1,14 +1,12 @@
 /**
  * The theme registry.
  *
- * A theme is seven independent choices, stored together and applied to `<html>`:
+ * A theme is six independent choices, stored together and applied to `<html>`:
  *
  *   palette   the complete colour vocabulary    -> `data-theme` and CSS variables
  *   accent    an optional personal accent        -> `--palette-accent`
  *   scheme    dark, light, or follow the OS      -> `data-scheme`
  *   contrast  normal or high                     -> `data-contrast`
- *   font      the face the app is set in         -> `data-font`, by the signed-in
- *                                                    app only (AppAppearance)
  *   size      how large message text is          -> `data-size`
  *   density   how much air a message gets        -> `data-density`
  *
@@ -330,22 +328,6 @@ export interface CustomTheme extends ResolvedPalette {
 /** The largest `--c-neutral` a custom palette may ask for; the presets stay under 4. */
 export const LIGHT_TINT_MAX = 20;
 
-/**
- * The faces the app may be set in, Outfit, the brand's, first and by default.
- * Every face is self-hosted (`scripts/sync-theme-fonts.mjs`, which keeps the
- * same list); declaring a face costs nothing until it is used, so the browser
- * fetches only the one chosen. Names and kinds are the picker's
- * (`fontLabels.ts`), which loads with the signed-in app.
- */
-export const FONTS = [
-  "outfit", "inter", "geist-sans", "dm-sans", "plus-jakarta-sans", "manrope", "figtree",
-  "ibm-plex-sans", "source-sans-3", "noto-sans", "open-sans", "lato", "poppins", "montserrat",
-  "raleway", "nunito", "rubik", "quicksand", "baloo-2", "varela-round", "comfortaa", "fira-code",
-  "jetbrains-mono", "source-code-pro", "ibm-plex-mono", "space-grotesk", "sora", "lexend", "opendyslexic",
-] as const;
-
-export type FontId = (typeof FONTS)[number];
-
 export const SIZES = [{ id: "sm" }, { id: "md" }, { id: "lg" }] as const;
 
 export type SizePreference = (typeof SIZES)[number]["id"];
@@ -369,7 +351,6 @@ export interface ThemePreference {
   custom: CustomTheme | null;
   scheme: SchemePreference;
   contrast: ContrastPreference;
-  font: FontId;
   size: SizePreference;
   density: DensityPreference;
   /**
@@ -404,7 +385,6 @@ export const DEFAULT_THEME: ThemePreference = {
   custom: null,
   scheme: "dark",
   contrast: "normal",
-  font: "outfit",
   size: "md",
   density: "cozy",
   wallpaper: null,
@@ -610,7 +590,6 @@ export function normaliseTheme(input: unknown): ThemePreference {
     custom,
     scheme: oneOf(SCHEMES, raw.scheme, DEFAULT_THEME.scheme),
     contrast: oneOf(CONTRASTS, raw.contrast, DEFAULT_THEME.contrast),
-    font: oneOf(FONTS, raw.font, DEFAULT_THEME.font),
     size: oneOf(SIZE_IDS, raw.size, DEFAULT_THEME.size),
     density: oneOf(DENSITY_IDS, raw.density, DEFAULT_THEME.density),
     wallpaper: normaliseWallpaper(raw.wallpaper),

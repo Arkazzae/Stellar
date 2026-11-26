@@ -10,11 +10,6 @@
  *   [data-density]  air around a message    → --msg-leading, --msg-pad-y,
  *                                             --msg-line-gap
  *
- * The face is `data-font`. Outfit, the default, is declared by `theme.css`;
- * the rules for every other face are generated with their faces into
- * `font-pack.css`, which loads with the signed-in app, and the attribute is
- * written only while the signed-in app is mounted (`AppAppearance`), so the
- * sign-in pages are always set in Outfit.
  * ============================================================================
  */
 
