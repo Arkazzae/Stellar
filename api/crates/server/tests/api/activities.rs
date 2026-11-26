@@ -178,3 +178,171 @@ async fn independent_authenticated_personal_sessions_enforce_launch_modes_tokens
         json!([])
     );
 }
+
+#[tokio::test]
+async fn root_relative_assets_follow_the_origin_of_each_pinned_build() {
+    let server = Server::start_with(&[
+        ("STELLARR_ACTIVITY_DOMAIN", "games.test"),
+        ("STELLARR_ACTIVITY_ORIGIN", ORIGIN),
+    ])
+    .await;
+    let owner = server.found("owner").await;
+    let visitor = server.register("visitor").await;
+    seed(&server, INSTALL, true);
+
+    let old_digest = "b".repeat(64);
+    let new_digest = "c".repeat(64);
+    let web_files = |installation: &str, digest: &str, version: &str| {
+        let db = server.database();
+        for (path, body) in [
+            ("index.html", "<link rel='stylesheet' href='/assets/game.css'><script type='module' src='/assets/main.js'></script>".to_owned()),
+            ("assets/game.css", format!("/* {version} */")),
+            ("assets/main.js", "import('/assets/lazy.js')".to_owned()),
+            ("assets/lazy.js", format!("export default '{version}'")),
+        ] {
+            db.execute("INSERT INTO ActivityFiles(Install,Digest,Path,Content) VALUES(?1,?2,?3,?4)",
+                params![installation.to_uppercase(),digest,path,body.as_bytes()]).unwrap();
+        }
+    };
+    web_files(INSTALL, &old_digest, "first");
+    let frame = |response: Response| {
+        assert_eq!(response.status, 200, "{}", response.text());
+        let json = response.json::<Value>();
+        let (host, ticket) = json["src"]
+            .as_str()
+            .unwrap()
+            .strip_prefix("https://")
+            .unwrap()
+            .split_once('/')
+            .unwrap();
+        let label = host.strip_suffix(".games.test").unwrap();
+        assert!(label.len() <= 63 && !label.contains('.'));
+        (host.to_owned(), format!("/{ticket}"))
+    };
+    // The wildcard vhost forwards every path into this private API namespace,
+    // retaining the public Host. Each request supplies explicit browser cookies.
+    let get = |host: &str, path: &str, cookie: &str| {
+        let addr = server.address();
+        let request = format!(
+            "GET /_activity-files{path} HTTP/1.1\r\nHost: {host}\r\nCookie: {cookie}\r\nConnection: close\r\n\r\n"
+        );
+        async move { crate::support::raw_request(addr, request.as_bytes()).await }
+    };
+
+    let (first_host, first_ticket) = frame(launch(&owner, INSTALL).await);
+    let start = get(&first_host, &first_ticket, "").await;
+    assert_eq!(start.status, 302, "{}", start.text());
+    assert_eq!(start.header("location"), Some("/index.html"));
+    let set_cookie = start.header("set-cookie").unwrap();
+    assert!(set_cookie.contains("Path=/; Secure; HttpOnly; SameSite=None; Partitioned"));
+    assert!(!set_cookie.to_lowercase().contains("domain="));
+    let first_cookie = set_cookie.split(';').next().unwrap();
+    assert_eq!(get(&first_host, &first_ticket, "").await.status, 403);
+
+    {
+        let db = server.database();
+        let manifest = json!({"id":"personal-demo","name":"Demo","version":"2.0.0","description":"Game","protocol":1,"launchModes":["personal"]});
+        db.execute("INSERT INTO ActivityVersions(Install,Digest,Revision,Release,Manifest,Bytes) VALUES(?1,?2,'commit2','release2',?3,201)",
+            params![INSTALL.to_uppercase(),new_digest,manifest.to_string()]).unwrap();
+        db.execute(
+            "UPDATE ActivityInstalls SET Digest=?2 WHERE Id=?1",
+            params![INSTALL.to_uppercase(), new_digest],
+        )
+        .unwrap();
+        // A second source distributes exactly the same ZIP and declares the
+        // same activity ID. It receives an independent installation origin.
+        db.execute("INSERT INTO ActivityInstalls(Id,Source,Activity,Digest,Enabled) VALUES(?1,'https://github.com/other/demo','personal-demo',?2,1)",
+            params![VOICE_ONLY.to_uppercase(),new_digest]).unwrap();
+        db.execute("INSERT INTO ActivityVersions(Install,Digest,Revision,Release,Manifest,Bytes) VALUES(?1,?2,'commit2','release2',?3,201)",
+            params![VOICE_ONLY.to_uppercase(),new_digest,manifest.to_string()]).unwrap();
+    }
+    web_files(INSTALL, &new_digest, "second");
+    web_files(VOICE_ONLY, &new_digest, "second");
+    let (second_host, second_ticket) = frame(launch(&visitor, INSTALL).await);
+    let (other_host, other_ticket) = frame(launch(&visitor, VOICE_ONLY).await);
+    assert_ne!(first_host, second_host);
+    assert_ne!(second_host, other_host);
+    assert_eq!(get(&first_host, &second_ticket, "").await.status, 403);
+    let start = get(&second_host, &second_ticket, "").await;
+    assert_eq!(start.status, 302);
+    let second_cookie = start
+        .header("set-cookie")
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap();
+    let other = get(&other_host, &other_ticket, "").await;
+    assert_eq!(other.status, 302);
+
+    for (host, cookie, version) in [
+        (&first_host, first_cookie, "first"),
+        (&second_host, second_cookie, "second"),
+    ] {
+        for page in ["/", "/index.html"] {
+            let index = get(host, page, cookie).await;
+            assert_eq!(index.status, 200, "{}", index.text());
+            assert!(index.text().contains("src='/assets/main.js'"));
+        }
+        let css = get(host, "/assets/game.css", cookie).await;
+        assert_eq!(css.header("content-type"), Some("text/css"));
+        assert_eq!(css.text(), format!("/* {version} */"));
+        let main = get(host, "/assets/main.js", cookie).await;
+        assert_eq!(main.header("content-type"), Some("text/javascript"));
+        assert_eq!(main.text(), "import('/assets/lazy.js')");
+        assert_eq!(
+            get(host, "/assets/lazy.js", cookie).await.text(),
+            format!("export default '{version}'")
+        );
+        assert_eq!(get(host, "/_stellarr/sdk/v1.js", cookie).await.status, 200);
+        assert_eq!(get(host, "/assets/missing.js", cookie).await.status, 404);
+        for path in [
+            "/",
+            "/index.html",
+            "/assets/lazy.js",
+            "/_stellarr/sdk/v1.js",
+        ] {
+            assert_eq!(get(host, path, "").await.status, 403);
+        }
+    }
+    for (host, cookie) in [
+        (&first_host, second_cookie),
+        (&second_host, first_cookie),
+        (&other_host, second_cookie),
+    ] {
+        assert_eq!(get(host, "/assets/lazy.js", cookie).await.status, 403);
+    }
+    assert_eq!(
+        post(
+            &owner,
+            &format!("/api/cockpit/activities/{INSTALL}/manage"),
+            json!({"action":"disable"})
+        )
+        .await
+        .status,
+        200
+    );
+    assert_eq!(
+        get(&first_host, "/assets/lazy.js", first_cookie)
+            .await
+            .status,
+        403
+    );
+    assert_eq!(
+        get(&second_host, "/assets/lazy.js", second_cookie)
+            .await
+            .status,
+        403
+    );
+    let other_cookie = other
+        .header("set-cookie")
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap();
+    assert_eq!(
+        get(&other_host, "/assets/lazy.js", other_cookie)
+            .await
+            .status,
+        200
+    );
+}

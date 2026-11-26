@@ -1,11 +1,13 @@
 use super::{Installed, LaunchMode, authority::Authority, hostname, invalid, library};
 use crate::{
     auth::{Caller, session},
+    encoding::hex_lower,
     http::{ApiError, ApiResult, Json, Path},
     instance::users::User,
     state::AppState,
     values::{Id, Timestamp},
 };
+use aws_lc_rs::digest::{SHA256, digest};
 use axum::{
     body::Body,
     extract::State,
@@ -70,7 +72,16 @@ struct Lease {
     cookie: Id,
     touched: Instant,
 }
+/// A single wildcard-TLS label identifies the ZIP and its installation. Keeping
+/// the version in the origin lets absolute and relative URLs share the ZIP root.
+fn asset_label(installed: &Installed) -> String {
+    let identity = format!("{}/{}", installed.install, installed.digest);
+    let hash = digest(&SHA256, identity.as_bytes());
+    hex_lower(&hash.as_ref()[..24])
+}
+
 struct Live {
+    asset_label: String,
     installed: Installed,
     authority: Authority,
     leases: HashMap<Id, Lease>,
@@ -233,6 +244,7 @@ pub(super) async fn launch(
             key,
             Live {
                 authority: Authority::new(&current.manifest)?,
+                asset_label: asset_label(&current),
                 installed: current,
                 leases: HashMap::new(),
                 pictures: HashMap::new(),
@@ -273,7 +285,7 @@ pub(super) async fn launch(
     );
     live.used = Instant::now();
     Ok(Json(
-        json!({"src":format!("https://{}.{domain}{suffix}/_stellarr/start/{ticket}",input.install),"access":token,"title":live.installed.manifest.name,"permissions":live.installed.manifest.permissions}),
+        json!({"src":format!("https://{}.{domain}{suffix}/_stellarr/start/{ticket}",live.asset_label),"access":token,"title":live.installed.manifest.name,"permissions":live.installed.manifest.permissions}),
     ))
 }
 #[derive(Deserialize)]
@@ -522,6 +534,10 @@ fn asset_content(
         .body(Body::from(body))
         .expect("valid activity response")
 }
+pub(super) async fn asset_root(state: State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
+    asset(state, Path("index.html".to_owned()), headers).await
+}
+
 pub(super) async fn asset(
     State(state): State<AppState>,
     Path(path): Path<String>,
@@ -533,11 +549,10 @@ pub(super) async fn asset(
         .get(header::HOST)
         .and_then(|v| v.to_str().ok())
         .ok_or_else(ApiError::forbidden)?;
-    let install = host
+    let label = host
         .strip_suffix(&format!(".{domain}"))
-        .and_then(Id::parse)
         .ok_or_else(ApiError::not_found)?;
-    let (cookie, digest, manifest, credential) = {
+    let (cookie, install, digest, manifest, credential) = {
         let mut rooms = state.activities().rooms.lock().unwrap();
         let received: HashSet<_> = headers
             .get(header::COOKIE)
@@ -551,7 +566,7 @@ pub(super) async fn asset(
         let ticket = path.strip_prefix("_stellarr/start/").and_then(Id::parse);
         let mut found = None;
         for ((installation, channel), live) in rooms.iter_mut() {
-            if *installation != install {
+            if live.asset_label != label {
                 continue;
             }
             for lease in live.leases.values_mut() {
@@ -560,29 +575,22 @@ pub(super) async fn asset(
                 {
                     continue;
                 }
-                if ticket.is_some() && lease.ticket == ticket {
-                    lease.ticket = None;
-                    found = Some((
-                        Some((lease.cookie, *channel)),
-                        live.installed.digest.clone(),
-                        live.installed.manifest.clone(),
-                        (lease.user, lease.account_version, lease.account_session),
-                    ));
-                    break;
-                }
-                if ticket.is_none()
-                    && received.contains(&lease.cookie)
-                    && (path.starts_with(&format!("{}/", live.installed.digest))
-                        || path.starts_with("_stellarr/sdk/"))
-                {
-                    found = Some((
-                        None,
-                        live.installed.digest.clone(),
-                        live.installed.manifest.clone(),
-                        (lease.user, lease.account_version, lease.account_session),
-                    ));
-                    break;
-                }
+                let cookie = match ticket {
+                    Some(value) if lease.ticket == Some(value) => {
+                        lease.ticket = None;
+                        Some((lease.cookie, *channel))
+                    }
+                    None if received.contains(&lease.cookie) => None,
+                    _ => continue,
+                };
+                found = Some((
+                    cookie,
+                    *installation,
+                    live.installed.digest.clone(),
+                    live.installed.manifest.clone(),
+                    (lease.user, lease.account_version, lease.account_session),
+                ));
+                break;
             }
             if found.is_some() {
                 break;
@@ -618,7 +626,7 @@ pub(super) async fn asset(
             Scope::Voice(id) => format!("voice-{id}"),
         };
 
-        return Ok(Response::builder().status(StatusCode::FOUND).header(header::LOCATION,format!("/{digest}/index.html"))
+        return Ok(Response::builder().status(StatusCode::FOUND).header(header::LOCATION,"/index.html")
             .header(header::SET_COOKIE,format!("__Host-stellarr-act-{key}={cookie}; Path=/; Secure; HttpOnly; SameSite=None; Partitioned"))
             .header(header::CACHE_CONTROL,"no-store").header(header::REFERRER_POLICY,"no-referrer").body(Body::empty()).unwrap());
     }
@@ -626,10 +634,7 @@ pub(super) async fn asset(
         "_stellarr/sdk/v1.js" => ("text/javascript", Bytes::from_static(SDK.as_bytes())),
         "_stellarr/sdk/media.js" => ("text/javascript", Bytes::from_static(MEDIA.as_bytes())),
         _ => {
-            let file = path
-                .strip_prefix(&format!("{digest}/"))
-                .ok_or_else(ApiError::not_found)?
-                .to_owned();
+            let file = path;
             let mime = media_type(&file);
             let bytes=state.database().read(move|db|->ApiResult<Vec<u8>>{
                 use rusqlite::OptionalExtension;
