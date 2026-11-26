@@ -51,3 +51,33 @@ it.each(["https://game.test/play", "/_activity/lease/index.html"])("passes live 
   expect(await request("read")).toMatchObject({ device: "desktop" });
   expect(screen.getByTitle("Poll")).toBe(frame);
 });
+
+it("takes a mounted camera image away and stops asking for pictures once the frame goes", async () => {
+  vi.useFakeTimers();
+  try {
+    const tile = vi.fn(async (_action: Record<string, unknown>, _signal: AbortSignal) => ({ a: "data:image/gif;base64,R0lGODlhAQABAAAAACw=" }));
+    const view = render(
+      <ActivityFrame src="https://game.test/play" title="Charades" permissions={["media.cameraTile"]}
+        room={async () => ({})} tile={tile} onLost={vi.fn()} />,
+    );
+    const frame = screen.getByTitle<HTMLIFrameElement>("Charades");
+    const port = { postMessage: vi.fn(), close: vi.fn(), onmessage: null as null | ((event: unknown) => void) };
+    window.dispatchEvent(Object.assign(new Event("message"), {
+      source: frame.contentWindow, origin: "https://game.test", data: "stellarr:media:v1", ports: [port],
+    }));
+    port.onmessage?.({ data: { op: "mount", id: 1, bounds: [0, 0, 10, 10, 100, 100], participant: "a" } });
+    const image = view.container.querySelector(".activity-viewport img");
+    expect(image).not.toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(250); });
+    expect(tile).toHaveBeenCalledOnce();
+
+    view.unmount();
+
+    expect(image?.parentNode).toBeNull();
+    expect(tile.mock.calls[0]?.[1].aborted).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(tile).toHaveBeenCalledOnce();
+  } finally {
+    vi.useRealTimers();
+  }
+});

@@ -3,7 +3,7 @@ import { capture } from "./devices.js";
 import { createYouTubeHost } from "./youtube.js";
 
 const kinds = ["microphoneLevel", "cameraTile"];
-export function bindMediaHost({ frame, origin, nonce, youtube, title, permissions = [], controls, tile, volume, muted = () => false, fixtures = false, language = "en", overlay }) {
+export function bindMediaHost({ frame, origin, nonce, youtube, title, permissions = [], controls, tile, volume, muted = () => false, fixtures = false, language = "en", overlay, ask, labels = {} }) {
   const words = (en, polish) => (typeof language === "function" ? language() : language).startsWith("pl") ? polish : en;
   const deviceName = kind => kind === "microphoneLevel" ? words("Microphone", "Mikrofon") : words("Camera", "Kamera");
   const deviceFiles = new Map(), active = new Map(), mounts = new Map();
@@ -46,27 +46,29 @@ export function bindMediaHost({ frame, origin, nonce, youtube, title, permission
       toolbar.append(toggle);
     }
   }
+  // The page that hosts the frame may ask in its own words (`ask`); without
+  // that, the host asks in a dialog of its own.
   function open(kind, id) {
     const requester = port;
     const reply = (id, error) => requester.postMessage({ op: "reply", id, error });
     if (!permissions.includes("media." + kind) || !kinds.includes(kind)) return reply(id, "Permission unavailable.");
     if (active.has(kind)) return reply(id, active.get(kind).ready ? undefined : "Device request is pending.");
     if (prompt) return reply(id, "Another device request is pending.");
-    const dialog = document.createElement("dialog");
-    dialog.style.cssText = "max-width:26rem;padding:1.4rem;border-radius:12px;font:16px system-ui";
-    const explanation = document.createElement("p");
-    explanation.textContent = title + (kind === "microphoneLevel"
-      ? words(" wants to read your microphone level for this game.", " prosi o poziom głośności mikrofonu na potrzeby gry.")
-      : words(" wants to show your camera to everyone in this activity.", " chce pokazać Twoją kamerę uczestnikom tej aktywności."));
-    const deny = () => { dismiss(); reply(id, "Permission denied."); };
-    const dismiss = () => { dialog.remove(); prompt = undefined; };
-    prompt = { id, kind, cancel: deny };
-    dialog.oncancel = event => { event.preventDefault(); deny(); };
-    dialog.append(explanation, button(words("Deny", "Odmów"), deny), button(words("Allow", "Zezwól"), async () => {
+    let settled = false;
+    let dismiss = () => {};
+    const settle = () => {
+      if (settled) return false;
+      settled = true;
       dismiss();
+      prompt = undefined;
+      return true;
+    };
+    const deny = () => { if (settle()) reply(id, "Permission denied."); };
+    const allow = async () => {
+      if (!settle()) return;
       const controller = new AbortController();
       const end = () => { if (active.get(kind)?.controller === controller) stop(kind, "unavailable"); };
-      const control = button(words("Stop ", "Zatrzymaj ") + deviceName(kind), () => stop(kind, "stopped"));
+      const control = button(labels.stop?.[kind] ?? words("Stop ", "Zatrzymaj ") + deviceName(kind), () => stop(kind, "stopped"));
       toolbar.append(control);
       const device = { button: control, controller, id, ready: false };
       active.set(kind, device);
@@ -76,7 +78,27 @@ export function bindMediaHost({ frame, origin, nonce, youtube, title, permission
         device.ready = true;
         reply(id);
       } catch (error) { if (active.get(kind)?.controller === controller) end(); reply(id, error.message || "Device unavailable."); }
-    }));
+    };
+    prompt = { id, kind, cancel: deny };
+    if (ask) {
+      // A cancelled question is withdrawn from the page, and a late answer to
+      // it changes nothing.
+      const question = new AbortController();
+      dismiss = () => question.abort();
+      Promise.resolve()
+        .then(() => ask(kind, question.signal))
+        .then(yes => (yes && !disposed ? allow() : deny()), deny);
+      return;
+    }
+    const dialog = document.createElement("dialog");
+    dialog.style.cssText = "max-width:26rem;padding:1.4rem;border-radius:12px;font:16px system-ui";
+    const explanation = document.createElement("p");
+    explanation.textContent = title + (kind === "microphoneLevel"
+      ? words(" wants to read your microphone level for this game.", " prosi o poziom głośności mikrofonu na potrzeby gry.")
+      : words(" wants to show your camera to everyone in this activity.", " chce pokazać Twoją kamerę uczestnikom tej aktywności."));
+    dismiss = () => dialog.remove();
+    dialog.oncancel = event => { event.preventDefault(); deny(); };
+    dialog.append(explanation, button(words("Deny", "Odmów"), deny), button(words("Allow", "Zezwól"), allow));
     document.body.append(dialog);
     dialog.showModal();
   }
@@ -101,7 +123,7 @@ export function bindMediaHost({ frame, origin, nonce, youtube, title, permission
     if (!item) {
       if (mounts.size >= 16) return;
       const image = document.createElement("img");
-      image.alt = words("Activity camera", "Kamera w aktywności");
+      image.alt = labels.camera ?? words("Activity camera", "Kamera w aktywności");
       image.style.cssText = (overlay ? "position:absolute" : "position:fixed") + ";pointer-events:none;object-fit:cover;z-index:5;border-radius:8px";
       image.hidden = true;
       (overlay ?? document.body).append(image);
@@ -164,14 +186,20 @@ export function bindMediaHost({ frame, origin, nonce, youtube, title, permission
       stop("cameraTile", "camera-off");
     },
     dispose() {
+      // Nothing that goes wrong while letting go of the devices may leave the
+      // image poll or the listeners behind.
       disposed = true;
-      reset();
-      player?.dispose();
       clearInterval(refresh);
-      toolbar.remove();
       volume.removeEventListener("input", volumeChanged);
       window.removeEventListener("message", bind);
       window.removeEventListener("pagehide", reset);
+      try {
+        reset();
+      } finally {
+        for (const id of [...mounts.keys()]) removeMount(id);
+        player?.dispose();
+        toolbar.remove();
+      }
     },
   };
 }

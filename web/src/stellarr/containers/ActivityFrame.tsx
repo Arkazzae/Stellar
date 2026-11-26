@@ -20,6 +20,9 @@ export interface FramePlayer {
   connected: boolean;
 }
 
+/** A device an activity may ask for. */
+export type DeviceKind = "cameraTile" | "microphoneLevel";
+
 /** The frame's own controls, for a bar that places them. */
 export interface FrameParts {
   /** The activity's own volume. */
@@ -44,9 +47,14 @@ interface ActivityFrameProps {
    * sit in a plain row above the frame, as the development preview has them.
    */
   bar?: (parts: FrameParts) => ReactNode;
+  /**
+   * Asks before the activity gets a device, with the app's own question;
+   * resolves true to allow. Without it the SDK host asks in its own dialog.
+   */
+  ask?: (kind: DeviceKind, signal: AbortSignal) => Promise<boolean>;
 }
 
-export function ActivityFrame({ src, title, permissions, youtube, muted = false, cameraOn, room, tile, onLost, bar }: ActivityFrameProps) {
+export function ActivityFrame({ src, title, permissions, youtube, muted = false, cameraOn, room, tile, onLost, bar, ask }: ActivityFrameProps) {
   const { t, locale } = useLanguage();
   const target = useMemo(() => {
     const url = new URL(src, window.location.href);
@@ -57,6 +65,10 @@ export function ActivityFrame({ src, title, permissions, youtube, muted = false,
   }, [src]);
   const language = useRef(locale);
   useEffect(() => { language.current = locale; }, [locale]);
+  const words = useRef(t);
+  useEffect(() => { words.current = t; }, [t]);
+  const asking = useRef(ask);
+  useEffect(() => { asking.current = ask; }, [ask]);
   const [players, setPlayers] = useState<Participant[]>([]);
   const frame = useRef<HTMLIFrameElement>(null);
   const volume = useRef<HTMLInputElement>(null);
@@ -75,7 +87,12 @@ export function ActivityFrame({ src, title, permissions, youtube, muted = false,
     const portraitBase = nonce ? target.src : origin + "/";
     media.current = bindMediaHost({ frame: frame.current, origin, nonce, youtube, title, permissions, controls: controls.current,
       volume: volume.current, language: () => language.current ?? document.documentElement.lang, muted: () => callMuted.current,
-      tile: action => tile(action, controller.signal), overlay: viewport.current ?? undefined });
+      tile: action => tile(action, controller.signal), overlay: viewport.current ?? undefined,
+      ask: asking.current ? (kind, signal) => asking.current?.(kind, signal) ?? Promise.resolve(false) : undefined,
+      labels: {
+        stop: { cameraTile: words.current("activities.stopCamera"), microphoneLevel: words.current("activities.stopMicrophoneLevel") },
+        camera: words.current("activities.cameraImage"),
+      } });
     let frameId: string | undefined;
     let connected: MessagePort | undefined;
     function bind(event: MessageEvent) {
@@ -123,12 +140,19 @@ export function ActivityFrame({ src, title, permissions, youtube, muted = false,
     }
     window.addEventListener("message", bind);
     return () => {
-      media.current?.dispose();
-      media.current = null;
-      if (frameId) void room({ op: "disconnect", frame: frameId }, new AbortController().signal).catch(() => {});
+      // The frame's own requests stop first, and the SDK host's teardown
+      // comes last, so a failure in it cannot keep a lease polling.
       controller.abort();
-      connected?.close();
       window.removeEventListener("message", bind);
+      connected?.close();
+      if (frameId) void room({ op: "disconnect", frame: frameId }, new AbortController().signal).catch(() => {});
+      const host = media.current;
+      media.current = null;
+      try {
+        host?.dispose();
+      } catch {
+        // Already torn down as far as it can be.
+      }
     };
   }, [target, title, permissions, youtube, room, tile, onLost]);
 

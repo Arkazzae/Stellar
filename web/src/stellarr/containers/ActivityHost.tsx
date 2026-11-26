@@ -1,14 +1,10 @@
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { Icon } from "@stellarr/icons";
 import { ActivityIcon } from "@/components/activities/ActivityIcon";
 import { Avatar } from "@/components/primitives/Avatar";
+import { ConfirmDialog } from "@/components/primitives/ConfirmDialog";
 import { Popover } from "@/components/primitives/Popover";
 import { useChromeIdle } from "@/components/voice/useChromeIdle";
 import { activitiesApi } from "@/lib/activities/api";
@@ -23,7 +19,7 @@ import {
 } from "@/state/hooks";
 import type { SessionSlot } from "@/state/ActivitiesProvider";
 
-import { ActivityFrame, type FrameParts, type FramePlayer } from "./ActivityFrame";
+import { ActivityFrame, type DeviceKind, type FrameParts, type FramePlayer } from "./ActivityFrame";
 
 /** The activity's bar fades after this long without the pointer moving, in full screen. */
 const BAR_REST_MS = 2000;
@@ -31,6 +27,30 @@ const BAR_REST_MS = 2000;
 const HINT_MS = 3000;
 /** Faces shown in the bar before the rest are left to the count. */
 const FACES = 4;
+
+/** The app's question for each device an activity may ask for. */
+const CONSENT = {
+  cameraTile: {
+    title: "activities.consent.cameraTitle",
+    description: "activities.consent.cameraDetail",
+    subject: "activities.consent.cameraSubject",
+    allow: "activities.consent.cameraAllow",
+    deny: "activities.consent.cameraDeny",
+  },
+  microphoneLevel: {
+    title: "activities.consent.levelTitle",
+    description: "activities.consent.levelDetail",
+    subject: "activities.consent.levelSubject",
+    allow: "activities.consent.levelAllow",
+    deny: "activities.consent.levelDeny",
+  },
+} as const;
+
+interface Consent {
+  id: number;
+  kind: DeviceKind;
+  answer: (allowed: boolean) => void;
+}
 
 /**
  * Keeps `node` over `target`, wherever the layout moves it, and parks it out
@@ -122,26 +142,45 @@ export function ActivityPanel({ slot, session, target }: PanelProps) {
   const call = useVoiceCall();
   const { user } = useSession();
   const { members } = useDirectory();
-  const panel = useRef<HTMLElement>(null);
+  const [panel, setPanel] = useState<HTMLElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [consent, setConsent] = useState<Consent | null>(null);
+  const asked = useRef(0);
   const [fullscreen, setFullscreen] = useState(false);
   const [hint, setHint] = useState(false);
   const chrome = useChromeIdle(BAR_REST_MS);
   const { wake } = chrome;
-  useLayoutEffect(() => cover(panel.current, target), [target]);
+  useLayoutEffect(() => cover(panel, target), [panel, target]);
 
   // Full screen is the browser's to end (Esc, the system's own controls), so
   // the panel follows its event rather than its own last click.
   useEffect(() => {
     const follow = () => {
-      const entered = panel.current !== null && document.fullscreenElement === panel.current;
+      const entered = panel !== null && document.fullscreenElement === panel;
       setFullscreen(entered);
       setHint(entered);
       if (entered) wake();
     };
     document.addEventListener("fullscreenchange", follow);
     return () => document.removeEventListener("fullscreenchange", follow);
-  }, [wake]);
+  }, [panel, wake]);
+
+  // A device the activity asks for is asked about with the app's own card,
+  // drawn inside the panel while it has the screen, so full screen shows it.
+  const ask = useCallback(
+    (kind: DeviceKind, signal: AbortSignal) =>
+      new Promise<boolean>((resolve) => {
+        asked.current += 1;
+        const id = asked.current;
+        const answer = (allowed: boolean) => {
+          setConsent((current) => (current?.id === id ? null : current));
+          resolve(allowed);
+        };
+        signal.addEventListener("abort", () => answer(false), { once: true });
+        setConsent({ id, kind, answer });
+      }),
+    [],
+  );
   useEffect(() => {
     if (!hint) return;
     const timer = setTimeout(() => setHint(false), HINT_MS);
@@ -171,7 +210,7 @@ export function ActivityPanel({ slot, session, target }: PanelProps) {
       void document.exitFullscreen?.().catch(() => undefined);
       return;
     }
-    void panel.current?.requestFullscreen?.().catch(() => undefined);
+    void panel?.requestFullscreen?.().catch(() => undefined);
   };
 
   const nameOf = (id: string) =>
@@ -363,7 +402,7 @@ export function ActivityPanel({ slot, session, target }: PanelProps) {
 
   return (
     <section
-      ref={panel}
+      ref={setPanel}
       className="act-panel"
       data-slot={slot}
       data-chrome={fullscreen && chrome.idle ? "idle" : "awake"}
@@ -381,6 +420,7 @@ export function ActivityPanel({ slot, session, target }: PanelProps) {
         tile={tile}
         onLost={lost}
         bar={bar}
+        ask={ask}
       />
       {/* The frame keeps the pointer to itself, so in full screen the edge
           above it is what brings the bar back. */}
@@ -390,6 +430,27 @@ export function ActivityPanel({ slot, session, target }: PanelProps) {
           {t("activities.escHint")}
         </p>
       ) : null}
+      {consent === null
+        ? null
+        : createPortal(
+            <ConfirmDialog
+              open
+              questionKey={consent.id}
+              title={t(CONSENT[consent.kind].title, { name: session.title })}
+              description={t(CONSENT[consent.kind].description)}
+              subject={{
+                kind: "item",
+                name: session.title,
+                detail: t(CONSENT[consent.kind].subject),
+                mark: session.icon === null ? { icon: "game" } : { image: session.icon },
+              }}
+              confirmLabel={t(CONSENT[consent.kind].allow)}
+              cancelLabel={t(CONSENT[consent.kind].deny)}
+              onConfirm={() => consent.answer(true)}
+              onCancel={() => consent.answer(false)}
+            />,
+            fullscreen && panel !== null ? panel : document.body,
+          )}
     </section>
   );
 }
