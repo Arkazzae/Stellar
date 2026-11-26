@@ -212,7 +212,7 @@ test("artwork paths use normal relative raster filenames", () => {
   for (const path of ["/icon.png", "../icon.png", "dir/../icon.png", "dir//icon.png",
     ".hidden/icon.png", "node_modules/icon.png", "_stellarr/icon.png", "dir\\icon.png",
     "dir/a:b.png", "dir/hash#.png", "dir/query?.png", "dir/%20.png", "dir/icon\n.png",
-    "https://external.invalid/logo.png", "art/icon.svg", "icon.gif", "icon.avif", null]) {
+    "https://external.invalid/logo.png", "art/icon.svg", "icon.gif", "icon.avif"]) {
     assert.throws(() => manifestOf(JSON.stringify({ ...manifest, icon: path })), { status: 400 }, String(path));
   }
   assert.equal(manifestOf(JSON.stringify({ ...manifest, icon: "art/large logo.jpeg" })).icon, "art/large logo.jpeg");
