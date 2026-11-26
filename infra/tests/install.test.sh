@@ -402,9 +402,9 @@ release() {
   mkdir -p "$http/stellarr.online/server-downloads"
   echo "$1" >"$http/stellarr.online/server-downloads/latest"
   echo "$1" >"$state/release-version"
-  mkdir -p "$raw/v$1"
-  cp "$fixtures/compose-$1" "$raw/v$1/docker-compose.yml"
-  cp "$fixtures/env.example" "$raw/v$1/.env.example"
+  mkdir -p "$raw/server-v$1"
+  cp "$fixtures/compose-$1" "$raw/server-v$1/docker-compose.yml"
+  cp "$fixtures/env.example" "$raw/server-v$1/.env.example"
 }
 
 checkout_files() {
@@ -690,8 +690,8 @@ case_fresh_install() {
   run --yes --domain chat.example.com --public-ip auto --language pl
   expect_success
   expect_called "https GET https://stellarr.online/server-downloads/latest"
-  expect_called "https GET https://raw.githubusercontent.com/Arkazzae/Stellarr/v1.4.0/docker-compose.yml"
-  expect_called "https GET https://raw.githubusercontent.com/Arkazzae/Stellarr/v1.4.0/.env.example"
+  expect_called "https GET https://raw.githubusercontent.com/Arkazzae/Stellarr/server-v1.4.0/docker-compose.yml"
+  expect_called "https GET https://raw.githubusercontent.com/Arkazzae/Stellarr/server-v1.4.0/.env.example"
   cmp -s "$fixtures/compose-1.4.0" "$home/stellarr/docker-compose.yml" || fail "docker-compose.yml is not 1.4.0's."
   cmp -s "$fixtures/env.example" "$home/stellarr/.env.example" || fail ".env.example is not 1.4.0's."
   local env_file="$home/stellarr/.env"
@@ -721,7 +721,7 @@ case_fresh_install() {
   new_case exact-version
   run --yes --version 1.4.0
   expect_success
-  expect_called "https GET https://raw.githubusercontent.com/Arkazzae/Stellarr/v1.4.0/docker-compose.yml"
+  expect_called "https GET https://raw.githubusercontent.com/Arkazzae/Stellarr/server-v1.4.0/docker-compose.yml"
   expect_not_called "server-downloads/latest"
   expect_line "$home/stellarr/.env" "STELLARR_VERSION=1.4.0"
 }
@@ -1531,8 +1531,8 @@ case_unexpected_failure() {
 modern_release() {
   cp "$repo_root/docker-compose.yml" "$fixtures/compose-1.6.0"
   release 1.6.0
-  mkdir -p "$raw/v1.6.0/infra/compose"
-  cp "$repo_root/infra/compose/turn.yml" "$raw/v1.6.0/infra/compose/turn.yml"
+  mkdir -p "$raw/server-v1.6.0/infra/compose"
+  cp "$repo_root/infra/compose/turn.yml" "$raw/server-v1.6.0/infra/compose/turn.yml"
 }
 
 case_direct_and_turn() {
@@ -1576,16 +1576,16 @@ case_direct_and_turn() {
     fail "the TURN overlay was not downloaded."
   expect_called "compose up -d --no-build --pull never @$home/stellarr"
 
-  expect_called "https GET https://raw.githubusercontent.com/Arkazzae/Stellarr/v1.6.0/infra/compose/turn.yml"
-  expect_not_called "https GET https://raw.githubusercontent.com/Arkazzae/Stellarr/v1.6.0/docker-compose.turn.yml"
+  expect_called "https GET https://raw.githubusercontent.com/Arkazzae/Stellarr/server-v1.6.0/infra/compose/turn.yml"
+  expect_not_called "https GET https://raw.githubusercontent.com/Arkazzae/Stellarr/server-v1.6.0/docker-compose.turn.yml"
 
   new_case turn-overlay-old-release-location
   modern_release
-  mv "$raw/v1.6.0/infra/compose/turn.yml" "$raw/v1.6.0/docker-compose.turn.yml"
+  mv "$raw/server-v1.6.0/infra/compose/turn.yml" "$raw/server-v1.6.0/docker-compose.turn.yml"
   run --yes --no-start --enable-turn
   expect_success
-  expect_called "https GET https://raw.githubusercontent.com/Arkazzae/Stellarr/v1.6.0/infra/compose/turn.yml"
-  expect_called "https GET https://raw.githubusercontent.com/Arkazzae/Stellarr/v1.6.0/docker-compose.turn.yml"
+  expect_called "https GET https://raw.githubusercontent.com/Arkazzae/Stellarr/server-v1.6.0/infra/compose/turn.yml"
+  expect_called "https GET https://raw.githubusercontent.com/Arkazzae/Stellarr/server-v1.6.0/docker-compose.turn.yml"
   expect_line "$home/stellarr/.env" "COMPOSE_FILE=docker-compose.yml:docker-compose.turn.yml"
   cmp -s "$repo_root/infra/compose/turn.yml" "$home/stellarr/docker-compose.turn.yml" ||
     fail "the legacy TURN overlay was not downloaded."

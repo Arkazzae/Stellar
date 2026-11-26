@@ -1208,7 +1208,7 @@ impl Run {
         self.target_version = self.target_tag.clone();
         self.target_image = format!("{IMAGE}:{}", self.target_tag);
         self.files_ref = if self.o.reference.is_empty() {
-            format!("v{}", self.target_tag)
+            format!("server-v{}", self.target_tag)
         } else {
             self.ui.ok(
                 &format!(
