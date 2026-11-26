@@ -25,9 +25,13 @@ const pngMagic = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const jpegMagic = Buffer.from([0xff, 0xd8, 0xff]);
 const riffMagic = Buffer.from("RIFF");
 const webpMagic = Buffer.from("WEBP");
+const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+const maximumVersionNumber = "18446744073709551615";
+const versionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+const optionalFields = ["icon", "cover", "devices", "seats", "authority"];
 
 function portablePath(path) {
-  return typeof path === "string" && path && Buffer.byteLength(path) <= 512 &&
+  return typeof path === "string" && path && path.isWellFormed() && Buffer.byteLength(path) <= 512 &&
     !/[\\:\p{Cc}]/u.test(path) && path.split("/").every(part => part && !part.startsWith(".") &&
       !["node_modules", "_stellarr", "package.json", "package-lock.json"].includes(part));
 }
@@ -67,22 +71,50 @@ function checkArtwork(manifest, assets, published = false) {
   }
 }
 
+function nonblankText(text, maximum) {
+  return typeof text === "string" && text.isWellFormed() && Buffer.byteLength(text) <= maximum && /\P{White_Space}/u.test(text);
+}
+
+function hostname(host) {
+  return typeof host === "string" && host.length <= 253 && host.includes(".") &&
+    host.split(".").every(label => label.length >= 1 && label.length <= 63 &&
+      !label.startsWith("-") && !label.endsWith("-") && !/[^a-z0-9-]/.test(label));
+}
+
+function semver(version) {
+  const match = typeof version === "string" && versionPattern.exec(version);
+  return match && match[0] === version && !match[4]?.split(".").some(part => /^0\d+$/.test(part)) &&
+    match.slice(1, 4).every(part => part.length < 20 || (part.length === 20 && part <= maximumVersionNumber));
+}
+
 export function manifestOf(bytes) {
   let value;
-  try { value = JSON.parse(bytes); } catch { fail(400, "Invalid stellarr.json."); }
-  if (!record(value) || value.protocol !== 1) fail(400, "Unsupported protocol. This SDK supports protocol 1.");
-  if (typeof value.id !== "string" || !/^[a-z0-9-]{1,100}$/.test(value.id) ||
-      typeof value.name !== "string" || !value.name.trim() || typeof value.description !== "string" || !value.description.trim())
-    fail(400, "Expected an activity id, name and description.");
-  const version = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
-  const match = typeof value.version === "string" && version.exec(value.version);
-  if (!match || match[4]?.split(".").some(id => /^0\d+$/.test(id))) fail(400, "Expected a SemVer release version.");
+  const nonInteger = { protocol: new WeakSet(), seats: new WeakSet() };
+  try {
+    value = JSON.parse(typeof bytes === "string" ? bytes : utf8.decode(bytes), function (key, field, context) {
+      // Rust's unsigned manifest fields accept integer JSON tokens only.
+      if ((key === "protocol" || key === "seats") && typeof field === "number" && !/^\d+$/.test(context.source))
+        nonInteger[key].add(this);
+      return field;
+    });
+  } catch { fail(400, "Invalid stellarr.json."); }
+  if (!record(value) || value.protocol !== 1 || nonInteger.protocol.has(value))
+    fail(400, "Unsupported protocol. This SDK supports protocol 1.");
+  if (typeof value.id !== "string" || !value.id || value.id.length > 100 || /[^a-z0-9-]/.test(value.id) ||
+      !nonblankText(value.name, 240) || !nonblankText(value.description, 4000))
+    fail(400, "Expected an activity ID, a name of up to 240 bytes and a description of up to 4000 bytes.");
+  if (!semver(value.version)) fail(400, "Expected a SemVer release version.");
+  // Match Rust's Option fields. Explicit null is equivalent to omission for these fields.
+  for (const key of optionalFields) if (value[key] === null) delete value[key];
   if (value.authority !== undefined && !["host", "shared"].includes(value.authority)) fail(400, "Invalid authority.");
-  if (value.seats !== undefined && !(Number.isInteger(value.seats) && value.seats >= 1 && value.seats <= 128))
+  if (value.seats !== undefined && (!Number.isInteger(value.seats) || nonInteger.seats.has(value) || value.seats < 1 || value.seats > 128))
     fail(400, "Expected 1 to 128 seats.");
-  if (!Array.isArray(value.permissions ?? [])) fail(400, "Expected a permission list.");
-  for (const permission of value.permissions ?? [])
+  const permissions = value.permissions === undefined ? [] : value.permissions;
+  if (!Array.isArray(permissions) || permissions.some(permission => typeof permission !== "string"))
+    fail(400, "Expected a list of permission names.");
+  for (const permission of permissions)
     if (!["media.microphoneLevel", "media.cameraTile"].includes(permission)) fail(400, "Unsupported permission: " + permission);
+  if (new Set(permissions).size !== permissions.length) fail(400, "Permission names must be unique.");
   if (value.devices !== undefined && (!Array.isArray(value.devices) || !value.devices.length ||
       value.devices.some(device => !["desktop", "tablet", "phone"].includes(device)))) fail(400, "Invalid supported devices.");
   if (value.launchModes !== undefined && (!Array.isArray(value.launchModes) || !value.launchModes.length ||
@@ -90,9 +122,10 @@ export function manifestOf(bytes) {
       value.launchModes.some(mode => !["voice", "personal"].includes(mode))))
     fail(400, "Expected launchModes to list voice, personal, or both without duplicates.");
   for (const kind of Object.keys(artworkLimits)) if (value[kind] !== undefined) artworkType(value[kind], kind);
-  if (!Array.isArray(value.connects ?? []) || (value.connects ?? []).some(entry =>
-    !record(entry) || typeof entry.host !== "string" || !/^(?:[a-z0-9-]+\.)+[a-z0-9-]+$/i.test(entry.host) ||
-    typeof entry.why !== "string" || !entry.why.trim())) fail(400, "Invalid external host in connects.");
+  const connects = value.connects === undefined ? [] : value.connects;
+  if (!Array.isArray(connects) || connects.length > 64 || connects.some(entry =>
+    !record(entry) || !hostname(entry.host) || !nonblankText(entry.why, 1024)))
+    fail(400, "Expected up to 64 external hosts with lowercase DNS names and reasons of up to 1024 bytes.");
   return value;
 }
 

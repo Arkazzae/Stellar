@@ -393,3 +393,37 @@ pub fn routes() -> Endpoints {
         .get("/_activity-files", live::asset_root)
         .get("/_activity-files/{*path}", live::asset)
 }
+
+#[cfg(test)]
+mod manifest_tests {
+    use super::*;
+
+    const FIXTURE: &str = include_str!("../../../../../sdk/test/fixtures/manifest-parity.json");
+
+    #[test]
+    fn production_manifest_matches_sdk_cases() {
+        let fixture: Value = serde_json::from_str(FIXTURE).unwrap();
+        let base = fixture["base"].as_object().unwrap();
+        for case in fixture["cases"].as_array().unwrap() {
+            let mut fields = base.clone();
+            fields.extend(case["fields"].as_object().unwrap().clone());
+            let accepted = serde_json::from_value::<Manifest>(Value::Object(fields))
+                .is_ok_and(|manifest| manifest.check().is_ok());
+            assert_eq!(accepted, case["valid"].as_bool().unwrap(), "{}", case["label"]);
+        }
+    }
+
+    #[test]
+    fn unsigned_manifest_fields_reject_decimal_and_exponential_tokens() {
+        let fixture: Value = serde_json::from_str(FIXTURE).unwrap();
+        let base = fixture["base"].to_string();
+        for protocol in ["1.0", "1e0", "1.00000000000000001"] {
+            let manifest = base.replacen("\"protocol\":1", &format!("\"protocol\":{protocol}"), 1);
+            assert!(serde_json::from_str::<Manifest>(&manifest).is_err(), "{protocol}");
+        }
+        for seats in ["2.0", "2e0", "2.00000000000000001"] {
+            let manifest = base.replacen("\"protocol\":1", &format!("\"protocol\":1,\"seats\":{seats}"), 1);
+            assert!(serde_json::from_str::<Manifest>(&manifest).is_err(), "{seats}");
+        }
+    }
+}
