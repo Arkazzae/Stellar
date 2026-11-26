@@ -1,51 +1,83 @@
 # Requirements
 
-Stellarr runs as a single Docker container. To test it locally on one machine, follow the [Quick start](quick-start.md).
+Stellarr ships as a single Docker container with zero external database, cache, or media-server dependencies. For a local walkthrough, start with the [Quick start](quick-start.md).
 
-## Host
+## Host sizing
 
-| Resource | Requirement |
-| --- | --- |
-| Software | Docker Engine with the Compose plugin (`docker compose`), `2.24.0` or newer |
-| Architecture | `linux/amd64` or `linux/arm64` |
-| Memory | At least 2 GiB host RAM recommended; 4 GiB default container cap (`STELLARR_CONTAINER_MEMORY_LIMIT`), ~120–150 MiB at idle (and smoke-tested end-to-end in CI inside `512 MiB` RAM and `1` CPU core) |
-| CPU | 4 CPUs default container cap (`STELLARR_CONTAINER_CPUS`) |
-| Process limit | 512 processes (`STELLARR_CONTAINER_PIDS_LIMIT`) |
-| Disk | At least 2 GiB free; ~390 MB unpacked image (~152 MB compressed) plus `/data/stellarr` (`stellarr_stellarr_data` volume) |
+| Resource | Requirement | Notes |
+| --- | --- | --- |
+| **Runtime** | Docker Engine + Compose `2.24.0+` | Verify with `docker compose version` |
+| **Architecture** | `linux/amd64` or `linux/arm64` | Multi-arch image on GHCR |
+| **Memory** | `2 GiB+` host RAM recommended | ~35 MiB container RSS at idle; `4 GiB` default cap (`STELLARR_CONTAINER_MEMORY_LIMIT`); CI smoke-tested inside `512 MiB` RAM and `1` CPU |
+| **CPU** | `1+` cores (`4` CPU default cap) | Controlled via `STELLARR_CONTAINER_CPUS` |
+| **Process limit** | `512` PIDs | Controlled via `STELLARR_CONTAINER_PIDS_LIMIT` |
+| **Disk** | `2 GiB+` free minimum | ~390 MB unpacked image (~152 MB compressed) plus `/data/stellarr` |
 
-Uploads enforce per-user and instance storage quotas plus a free-space floor on `/data/stellarr`: 2 GiB per account (`STELLARR_UPLOAD_USER_BYTES`), 20 GiB total (`STELLARR_UPLOAD_TOTAL_BYTES`), and at least 1 GiB free disk space (`STELLARR_MIN_FREE_BYTES`). See [Configuration](configuration.md#uploads-and-quotas).
+### Storage quotas
+
+Uploads reserve space before writing to disk and enforce three independent limits (see [Uploads and quotas](configuration.md#uploads-and-quotas)):
+
+- **Per-account quota:** `2 GiB` (`STELLARR_UPLOAD_USER_BYTES`, editable live in **Cockpit → Settings → File storage**)
+- **Instance quota:** `20 GiB` (`STELLARR_UPLOAD_TOTAL_BYTES`)
+- **Free-disk floor:** `1 GiB` (`STELLARR_MIN_FREE_BYTES` must remain free on `/data/stellarr` after every upload)
 
 ## Ports
 
-By default, `docker-compose.yml` publishes `443/tcp` for HTTPS and WebSocket traffic, and `49000/udp` and `49000/tcp` for the Stellarr Media SFU. The HTTP upstream for a local reverse proxy binds to `127.0.0.1:8888`. TURN ports are published only when you use the optional TURN Compose override.
+| Default binding | Transport | Service | Variable |
+| --- | --- | --- | --- |
+| `443` | TCP | HTTPS web client, Cockpit, REST API, and `stellarr.v1` WebSocket hub | `STELLARR_HTTPS_PORT` |
+| `49000` | UDP + TCP | `stellarr-media` WebRTC SFU (direct UDP and passive ICE-TCP) | `STELLARR_MEDIA_PORT` |
+| `127.0.0.1:8888` | TCP | Local HTTP upstream for an external reverse proxy | `STELLARR_HTTP_PORT` |
 
-See [RTC and ports](../rtc-and-ports.md#published-host-ports) for the full port table, corresponding `STELLARR_*` variables, internal loopback ports, and relay port sizing.
+Optional STUN/TURN ports (`3478`, `5349`, `49160–49200/udp`) are published only when you include `infra/compose/turn.yml`. See [RTC and ports](../rtc-and-ports.md#published-host-ports) for internal loopback ports and relay sizing.
 
 ## Behind NAT
 
-With the default `localhost` configuration, Stellarr advertises the published media port on loopback for browsers on the Docker host. For other devices, the SFU must advertise an IPv4 address those browsers can reach. Set `STELLARR_PUBLIC_IP` to that address, use `auto` to resolve the IPv4 address of `STELLARR_DOMAIN` at startup, or set `STELLARR_MEDIA_ADVERTISE` explicitly. If `STELLARR_PUBLIC_IP` is unset, a numeric IPv4 `STELLARR_DOMAIN` is enough for direct media.
+WebRTC media packets flow directly between each browser and `stellarr-media`—never through an HTTP reverse proxy. Browsers outside the Docker host need a reachable IPv4 candidate advertised in SDP.
 
-- **LAN:** Use the Docker host’s LAN IPv4 address and allow HTTPS and both media transports (`49000/udp` and `49000/tcp` by default) through the host firewall. LAN clients using the host’s LAN address need no router port forwarding.
-- **Internet behind NAT:** Advertise the reachable public IPv4 address and forward the configured media port on both UDP and TCP to the Docker host on the same external port. Forward HTTPS to Stellarr or to your reverse proxy. If you enable TURN, forward its enabled transports and UDP relay range too. See [Reverse proxy and TLS](reverse-proxy-and-tls.md#run-behind-a-reverse-proxy).
+```mermaid
+flowchart LR
+    Internet["Remote Browser"]
+    LAN["LAN Browser"]
+    Router["Router / Firewall"]
 
-See [RTC and ports: NAT and firewall configuration](../rtc-and-ports.md#nat-and-firewall-configuration) for candidate advertisement rules and call diagnostics.
+    subgraph Host["Docker Host"]
+        Proxy["Reverse Proxy or Container Nginx (:443/tcp)"]
+        SFU["stellarr-media (:49000 UDP + TCP)"]
+    end
+
+    Internet -->|"HTTPS + WebSocket (:443/tcp)"| Router --> Proxy
+    Internet <-->|"WebRTC SRTP (:49000 UDP/TCP)"| Router <--> SFU
+    LAN <-->|"STELLARR_MEDIA_LAN_IP:49000"| SFU
+```
+
+| Deployment scenario | Required `.env` settings | Firewall & router rules |
+| --- | --- | --- |
+| **Local machine only** | Defaults (`localhost`) | None; advertises `127.0.0.1:49000` |
+| **LAN only** | `STELLARR_DOMAIN=<LAN-IP>` (or hostname + `STELLARR_PUBLIC_IP=<LAN-IP>`) | Allow `443/tcp`, `49000/udp`, and `49000/tcp` on the host firewall; no router forwarding needed |
+| **Internet behind NAT** | `STELLARR_DOMAIN=chat.example.com` and `STELLARR_PUBLIC_IP=auto` (or static WAN IPv4) | Forward `443/tcp` (to Stellarr or your [reverse proxy](reverse-proxy-and-tls.md#run-behind-a-reverse-proxy)) and `49000/udp` + `49000/tcp` (1:1 external-to-host port) |
+| **Split LAN + WAN (no NAT hairpin)** | Add `STELLARR_MEDIA_LAN_IP=<LAN-IP>` alongside `STELLARR_PUBLIC_IP` | Advertises both WAN and LAN IPv4 candidates on `STELLARR_MEDIA_PORT` |
+
+See [RTC and ports: NAT and firewall configuration](../rtc-and-ports.md#nat-and-firewall-configuration) for explicit `STELLARR_MEDIA_ADVERTISE` overrides, TURN relay setup, and call diagnostics.
 
 ## Domain and TLS
 
-When `STELLARR_DOMAIN` is unset, TLS certificate generation and, when TURN is enabled, the TURN realm default to `localhost`, which works only on the Docker host. Remote connections require a domain name or IPv4 address pointing to the host. On first start, the container generates a 365-day self-signed certificate for `STELLARR_DOMAIN`. To use a browser-trusted certificate, see [Reverse proxy and TLS](reverse-proxy-and-tls.md).
+When `STELLARR_DOMAIN` is unset, TLS certificate generation and the optional TURN realm default to `localhost`. On first start, the container generates a 365-day RSA-3072 self-signed certificate for `STELLARR_DOMAIN` and renews it automatically. For remote access, mount a CA-signed certificate or place Caddy/Nginx in front of the container as covered in [Reverse proxy and TLS](reverse-proxy-and-tls.md).
 
 ## Browser requirements
 
-> [!NOTE]
-> Browsers restrict WebRTC microphone, camera, and screen capture (`getUserMedia` and `getDisplayMedia`), Service Workers, Web Push, and WebCrypto to secure contexts (`https://` or `http://localhost`). Remote deployments must serve the web client over HTTPS.
+> [!IMPORTANT]
+> Browsers restrict microphone, camera, and screen capture (`getUserMedia`, `getDisplayMedia`), Service Workers, Web Push, and WebCrypto to **secure contexts** (`https://` or `http://localhost`). Remote instances must be served over HTTPS.
 
-End-to-end encrypted direct calls additionally require a browser supporting WebRTC Encoded Transform (`RTCRtpScriptTransform` or `createEncodedStreams`) and WebCrypto `X25519`.
+Optional 1:1 end-to-end encrypted voice and video calls additionally require WebRTC Encoded Transform (`RTCRtpScriptTransform` or `createEncodedStreams`) and WebCrypto `X25519`.
 
 ## Outbound network
 
-Stellarr makes no outbound requests to external servers unless optional features are enabled:
+Stellarr makes zero telemetry, license, or asset requests to external servers. Outbound traffic occurs only for features you enable:
 
-- **Voice, noise suppression, and translation run offline**: The web client, audio worklets, WASM noise suppressors (`rnnoise`, `gtcrn`, `speex`), Bergamot translator WASM, and Polish/English translation models are bundled inside the container image and served from the instance's own origin.
-- **Link previews (`Stellarr__Embeds__Enabled`)**: Enabled by default for public HTTP(S) URLs posted in text channels (up to 2 links per message, 6 s timeout, private IP ranges blocked via `AllowPrivateNetworks=false`). Preview thumbnails are downloaded once by the server and stored as local attachments so reader browsers never contact the linked host. Setting `Stellarr__Embeds__Enabled=false` in `.env` stops all outbound HTTP fetching (YouTube and Vimeo links still render an embedded player stub locally because recognizing their URLs requires no network request).
-- **Optional server-side integrations**: Outbound traffic occurs when you configure SMTP or Resend email delivery, OIDC identity providers, Web Push delivery, or Cloudflare R2 offsite backups.
-- **GIPHY (browser-side)**: When `STELLARR_GIPHY_API_KEY` is configured and GIF search is enabled, the server contacts `api.giphy.com` only when validating the key in Cockpit. Signed-in browsers query GIPHY directly when opening the GIF picker unless the user disables GIPHY in their account privacy settings.
+| Feature | Default | Outbound behavior |
+| --- | --- | --- |
+| **Voice DSP & chat translation** | Offline | Web client, fonts, audio worklets, WASM suppressors (`rnnoise`, `gtcrn`, `speex`), and Bergamot `en`↔`pl` models ship inside the image and load from the instance origin. |
+| **Link previews** (`Stellarr__Embeds__Enabled`) | `true` | Server unfurls up to 2 public HTTP(S) URLs per channel message (`6 s` timeout, private/loopback IPs blocked) and stores thumbnails locally so reader browsers never ping external hosts. Set `Stellarr__Embeds__Enabled=false` in `.env` for zero outbound fetches (YouTube/Vimeo player stubs still render locally). |
+| **Mail, OIDC, Web Push, R2** | `false` / unset | Server connects to your configured SMTP/Resend relay, OIDC authority, browser push endpoints, or Cloudflare R2 endpoint when enabled. |
+| **GIPHY picker** (`STELLARR_GIPHY_API_KEY`) | unset | Server calls `api.giphy.com` only when testing a key in Cockpit. Signed-in browsers query GIPHY when opening the GIF picker unless disabled in the user's privacy settings. |

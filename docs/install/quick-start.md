@@ -1,42 +1,42 @@
 # Quick start
 
-Start a local Stellarr instance on a single machine, create the owner account and initial server, invite a second user, and verify a two-user voice call.
+Deploy a local Stellarr instance, create the owner account and initial server, invite a second user, and verify two-way voice audio.
 
 ## Prerequisites
 
-- Docker Engine with the Compose plugin `2.24.0` or newer (`docker compose version`). See [Requirements](requirements.md).
-- Free host ports `443/tcp`, `49000/udp` and `49000/tcp`, and loopback `8888/tcp`. Override occupied ports in `.env`. [Requirements](requirements.md#ports)
-- A second browser profile or private window to test a two-user call.
+- **Docker Engine** with the Compose plugin `2.24.0` or newer (`docker compose version`). See [Requirements](requirements.md).
+- **Available ports:** `443/tcp` (HTTPS), `49000/udp` and `49000/tcp` (WebRTC media), and `127.0.0.1:8888/tcp` (local HTTP upstream). Occupied ports can be remapped in `.env`; see [Requirements: Ports](requirements.md#ports).
+- **Second browser session:** an incognito window or separate browser profile to test a two-user call.
 
-## One-line installer
+## Automated installer (`install.sh`)
 
-After the first stable release with installer assets, run the installer script to verify host prerequisites, write `docker-compose.yml` and `.env`, start the container, and print the instance URL and setup code:
+The installer checks host prerequisites, writes `docker-compose.yml` and `.env`, starts the container, waits for health checks, and prints your instance URL and one-time setup code:
 
 ```bash
 curl -fsSL https://stellarr.online/install.sh | bash
 ```
 
-- **Interactive mode**: Prompts for up to three settings: the domain or IPv4 address users will open (`--domain` / `STELLARR_DOMAIN`, default `localhost`), the external IPv4 address for voice calls when a domain is entered (`--public-ip` / `STELLARR_PUBLIC_IP`, an IPv4 address or `auto`), and the interface language (`--language` / `STELLARR_LANGUAGE`, `en` or `pl`, defaulting to the shell locale). On Linux, if Docker is missing, the installer offers to install Docker Engine via `https://get.docker.com` (or pass `--install-docker`). If a required port is occupied, it offers the next free port.
-- **Non-interactive mode**: Pass `-y` / `--yes` (or run without a TTY) to skip prompts and apply CLI flags (`--domain`, `--public-ip`, `--language`, `--https-port`, `--public-port`, `--http-port`, `--media-port`, `--enable-turn`, `--disable-turn`, `--turn-port`, `--turns-port`, `--version`, `--ref`, `--no-start`, `--skip-port-check`, `--force`) or their `STELLARR_*` environment variables (`STELLARR_START_TIMEOUT` defaults to `300` s):
-
-  ```bash
-  curl -fsSL https://stellarr.online/install.sh | bash -s -- --yes --domain chat.example.com --public-ip auto
-  ```
-
-- **Install directory (`--dir PATH` or `STELLARR_INSTALL_DIR`)**: When omitted, resolves in order to: (1) the git checkout containing `./install.sh`, (2) the working directory of an existing Stellarr Compose container, (3) the current directory if it already holds Stellarr's `docker-compose.yml`, or (4) `~/stellarr`.
-- **Updating**: Re-running the installer updates an existing installation to the latest pinned release tag (or `--version TAG`), backs up the previous `docker-compose.yml`, updates `STELLARR_VERSION` in `.env`, and preserves all other `.env` settings. Local Compose customizations belong in `docker-compose.override.yml`.
-- **From a git checkout**: Run `./install.sh --build` to build the checkout as `stellarr-local:dev`. For a published release, use a separate directory with `--dir` or check out the matching Git tag in the directory that already runs your installation.
-- **Installer binary**: The script accepts curl or GNU wget. It reads the stable server version from `stellarr.online/server-downloads/latest`, downloads the platform binary and its SHA-256 manifest from the versioned server endpoint, and runs the verified binary (Linux or macOS, amd64 or arm64). Set `STELLARR_INSTALLER_VERSION` to pin the installer binary. Set `STELLARR_INSTALLER_BIN` to use an existing executable and skip the download. The `--version` option selects the Stellarr container release.
-
-Before the first release with installer assets, or to run the installer from the checkout's Rust sources, install [Rust and Cargo](https://rustup.rs/) and run this command from the repository root:
+For unattended deployments, pass `--yes` (`-y`) alongside your target domain and public IP policy:
 
 ```bash
-cargo run --locked --manifest-path init/installer/Cargo.toml -- --dir . --build
+curl -fsSL https://stellarr.online/install.sh | bash -s -- \
+  --yes --domain chat.example.com --public-ip auto
 ```
 
-Pass `--help` after the Cargo argument separator to see all installer options.
+| Mode / Option | Behavior |
+| --- | --- |
+| **Interactive** (default) | Prompts for `--domain` (`localhost` default), `--public-ip` (IPv4 or `auto` when a domain is set), and `--language` (`en` or `pl`). Offers to install Docker on Linux (`--install-docker`) and picks free fallback ports on conflict. |
+| **Non-interactive** (`--yes`) | Skips prompts and applies flags (`--domain`, `--public-ip`, `--language`, `--https-port`, `--public-port`, `--http-port`, `--media-port`, `--enable-turn`, `--disable-turn`, `--turn-port`, `--turns-port`, `--version`, `--ref`, `--no-start`, `--skip-port-check`, `--force`) or matching `STELLARR_*` env vars (`STELLARR_START_TIMEOUT=300` s default). |
+| **Target directory** (`--dir`) | Defaults in order to: (1) git checkout containing `./install.sh`, (2) working directory of an existing Stellarr Compose container, (3) `$PWD` if `docker-compose.yml` exists there, or (4) `~/stellarr` (`STELLARR_INSTALL_DIR`). |
+| **Updating** | Re-running `install.sh` updates `docker-compose.yml` and `STELLARR_VERSION` while keeping all other `.env` values intact. Put custom Compose overrides in `docker-compose.override.yml`. |
+| **Git checkout build** | Run `./install.sh --build` (or `cargo run --locked --manifest-path init/installer/Cargo.toml -- --dir . --build` before binary releases) to build `stellarr-local:dev` locally. |
+| **Binary pinning** | `install.sh` verifies the platform binary (`linux`/`darwin`, `amd64`/`arm64`) against SHA-256 manifests from `stellarr.online/server-downloads/`. Override with `STELLARR_INSTALLER_VERSION` or `STELLARR_INSTALLER_BIN`. |
 
-The steps below walk through performing the same setup manually with Docker Compose.
+If you used `install.sh`, skip directly to [Step 3: Open the web client](#3-open-the-web-client). The steps below cover manual setup with Docker Compose.
+
+---
+
+## Manual setup with Docker Compose
 
 ## 1. Download Compose and environment files
 
@@ -46,21 +46,18 @@ curl -fsSLO https://raw.githubusercontent.com/Arkazzae/Stellarr/main/docker-comp
 curl -fsSL https://raw.githubusercontent.com/Arkazzae/Stellarr/main/.env.example -o .env
 ```
 
-All entries in `.env.example` are commented out so the container's built-in defaults apply out of the box for local testing on `localhost`.
+Every line in `.env.example` is commented out so built-in defaults apply out of the box on `localhost`.
 
 ## 2. Start the container
 
 ```bash
 docker compose up -d
-```
-
-Docker pulls `ghcr.io/arkazzae/stellarr`, creates the `stellarr_stellarr_data` volume, and starts the `stellarr` container. Check that the container reaches `healthy`:
-
-```bash
 docker compose ps
 ```
 
-The container reports `healthy` once `stellarr-media`, the API and its SQLite database, and Nginx pass their readiness checks. Installations with TURN enabled also check `coturn`. If startup fails, inspect service state and logs:
+Docker pulls `ghcr.io/arkazzae/stellarr`, creates the `stellarr_stellarr_data` volume, and marks the container `healthy` once `stellarr-media`, `stellarr-api` (with SQLite), and `nginx` pass readiness probes (`coturn` is checked as well when TURN is enabled).
+
+If the container stays `starting` or `unhealthy`, inspect the supervisor and logs:
 
 ```bash
 docker compose exec stellarr stellarr-init status
@@ -69,82 +66,70 @@ docker compose logs
 
 ## 3. Open the web client
 
-Open the HTTPS address printed by the installer. The default local address is `https://localhost`.
+Open the HTTPS URL printed by the installer (default `https://localhost`).
 
 > [!NOTE]
-> On first start, the container generates a 365-day self-signed TLS certificate for `localhost`. Accept the browser's certificate warning to proceed. For remote deployments, configure a trusted certificate as described in [Reverse proxy and TLS](reverse-proxy-and-tls.md).
+> On first boot, Stellarr generates a 365-day self-signed TLS certificate for `localhost`. Accept the browser's certificate prompt for local testing. Before exposing the server remotely, configure a trusted certificate via [Reverse proxy and TLS](reverse-proxy-and-tls.md).
 
 ## 4. Create the owner account and first server
 
-While the instance has no accounts, every web client route redirects to `https://localhost/setup`. Completing setup requires a one-time setup code printed to the container logs so that an unauthenticated visitor cannot claim a fresh instance before the operator:
+Until an owner account exists, every client route redirects to `/setup`. Claiming the instance requires a one-time setup code written to container stdout:
 
 ```bash
 docker compose logs stellarr | grep "Setup code"
 ```
 
-The log entry looks like:
-
 ```text
 Setup code: K7QM-2XWP-9HDA. Open /setup at the address of this instance to create the owner account.
 ```
 
-*(When `STELLARR_DOMAIN` or `STELLARR_PUBLIC_URL` is configured, the log prints the full URL such as `https://chat.example.com/setup`. A fresh code is generated on each container restart until the owner account is created; case, spaces, and hyphens are ignored.)*
+*(A new setup code is generated on each restart until setup finishes; case, spaces, and hyphens are ignored.)*
 
 Complete the three-step `/setup` wizard:
 
-1. **Step 1 (Owner account)**: Enter the setup code, display name, username (`3–32` characters: letters, digits, `.`, `-`, `_`), email address, and password (at least `8` characters). Click **Next: first server**.
-2. **Step 2 (First server)**: Enter a server name (`1–80` characters), an optional description, and the first text channel name (default `general`). Leave the voice channel toggle enabled (default `lounge`) to test voice calls, then click **Create account and server**.
-3. **Step 3 (Invite friends)**: The wizard creates the owner account and initial server atomically in one transaction (invalidating the setup code), generates an invite link, and displays a **Copy link** button. Copy the invite link, then click **Open server**.
+1. **Owner account:** Enter the setup code, display name, username (`3–32` characters: letters, digits, `.`, `-`, `_`), email address, and password (`8+` characters).
+2. **First server:** Set the server name (`1–80` characters), optional description, first text channel (default `general`), and voice channel toggle (default `lounge`). Click **Create account and server**.
+3. **Invite link:** The wizard commits the owner account and primary server in a single SQLite transaction, invalidates the setup code, and displays an invite URL. Copy the link and click **Open server**.
 
 ## 5. Invite a second user
 
-If you need to generate another invite link later from inside the app:
+To create additional invite links inside the app:
 
-1. In the channel rail header, click **Invite to server** next to the server name.
-2. Click **New invite link** to create an invite URL:
-
-   ```text
-   https://localhost/invite/22b115a390a20370
-   ```
-
-3. If you changed the HTTPS port, use that port in the invite URL.
+1. Click **Invite to server** next to the server name in the channel rail header.
+2. Click **New invite link** to generate an invite URL (for example, `https://localhost/invite/22b115a390a20370`).
+3. If you mapped HTTPS to a custom host port on `localhost`, include that port in the URL.
 
 > [!WARNING]
-> When `STELLARR_DOMAIN` and `STELLARR_PUBLIC_URL` are both unset, invite links fall back to the request `Host` header without non-443 ports. Configuring `STELLARR_DOMAIN` (with `STELLARR_PUBLIC_PORT`) or `STELLARR_PUBLIC_URL` ensures generated invite links always include the full public origin.
+> When both `STELLARR_DOMAIN` and `STELLARR_PUBLIC_URL` are unset, generated invite URLs fall back to the request `Host` header without custom port numbers. Set `STELLARR_DOMAIN` (with `STELLARR_PUBLIC_PORT`) or `STELLARR_PUBLIC_URL` so links always carry the exact public origin.
 
 ## 6. Join and test voice
 
-1. Open the invite link in a second browser profile or private window, accept the certificate warning, click **Create an account and join**, and register a second user.
-2. In both browser windows, click the voice channel in the channel rail and allow microphone access.
-3. Confirm two-way audio and verify that the connection status in the bottom-left call dock shows `Connected`.
+1. Open the invite URL in a private window or second browser profile, accept the local certificate prompt, and register a second user.
+2. Join the `lounge` voice channel in both browser windows and grant microphone access.
+3. Verify two-way audio and confirm the call dock status in the bottom-left corner reads **Connected**.
 
 > [!IMPORTANT]
-> With the default `localhost` configuration, Stellarr advertises the published media port on `127.0.0.1` for browsers on the Docker host. For calls from other devices, advertise an IPv4 address those devices can reach. For calls across the internet, forward the configured media port on UDP and TCP (default `49000`). See [Requirements](requirements.md#behind-nat).
+> Default `localhost` settings advertise media on `127.0.0.1` for browsers on the same machine. Before calling from LAN devices or across the internet, set `STELLARR_PUBLIC_IP` and forward `49000/udp` and `49000/tcp` on your router; see [Requirements: Behind NAT](requirements.md#behind-nat) and [RTC diagnostics](../rtc-and-ports.md#diagnostics).
 
-If voice stays on `Connecting` or fails across networks, run through the checklist in [RTC and ports](../rtc-and-ports.md#diagnostics).
+---
 
-## Stop or remove
+## Stop, remove, or build from source
+
+### Stopping the stack
 
 ```bash
-docker compose stop      # stop the container
-docker compose down      # remove container and network, preserve data volume
+docker compose stop      # stop services in reverse dependency order (75 s grace period)
+docker compose down      # remove container and network; keep stellarr_stellarr_data volume
 ```
 
-Both commands stop internal services in reverse dependency order (`stop_grace_period: 75s`, typically finishing in a few seconds). See [Running without Docker Compose](configuration.md#running-without-docker-compose) if using `docker run`.
+See [Running without Docker Compose](configuration.md#running-without-docker-compose) if you manage containers with `docker run`.
 
 > [!CAUTION]
-> `docker compose down -v` permanently deletes the `stellarr_stellarr_data` volume, destroying all accounts, messages, uploads, encryption keys, and secrets.
+> Running `docker compose down -v` permanently deletes the `stellarr_stellarr_data` volume, destroying all accounts, messages, files, encryption keys, and secrets.
 
-## Next steps
+### Building from source
 
-- **Operator panel**: Sign in with the owner account and visit `https://localhost/cockpit`.
-- [Requirements](requirements.md): Media addresses and firewall rules for LAN and internet access.
-- [Reverse proxy and TLS](reverse-proxy-and-tls.md): browser-trusted TLS certificates and reverse proxy configuration.
-- [Configuration](configuration.md): full environment variable reference.
-
-## Build from source
-
-To build the production container image directly from a local git checkout:
+To compile the entire production image locally (WASM recipes, web client, Cockpit, Rust API, CLI, `stellarr-media`, and `stellarr-init`) using Docker BuildKit alone:
 
 ```bash
 git clone https://github.com/Arkazzae/Stellarr.git
@@ -152,4 +137,9 @@ cd Stellarr
 docker compose -f docker-compose.yml -f infra/compose/build.yml up -d --build
 ```
 
-The multi-stage `Dockerfile` compiles the WebAssembly artifact recipes (`speex`, `rnnoise`, `bergamot`), web client, Cockpit, Rust API (`stellarr-api`), operator CLI (`stellarr`), `stellarr-media`, and `stellarr-init` inside Docker. No host toolchains beyond Docker and BuildKit are required.
+## Next steps
+
+- Open `https://localhost/cockpit` with your owner account to explore [Stellarr Cockpit](../admin/cockpit.md).
+- Configure LAN/WAN media addresses and firewall rules in [Requirements](requirements.md).
+- Add a browser-trusted certificate in [Reverse proxy and TLS](reverse-proxy-and-tls.md).
+- Browse all environment variables in [Configuration](configuration.md).

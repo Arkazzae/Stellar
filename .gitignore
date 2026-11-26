@@ -120,3 +120,11 @@ Desktop.ini
 *.tmp
 *.temp
 .playwright-mcp/
+
+# ---------------------------------------------------------------------------
+# Local AI agent instructions and workspaces (keep out of public repository)
+# ---------------------------------------------------------------------------
+AGENTS.md
+CLAUDE.md
+.agents/
+.claude/
