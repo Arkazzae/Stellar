@@ -390,3 +390,113 @@ async fn a_static_activity_checks_its_own_launch_even_after_the_installation_is_
         200
     );
 }
+
+#[tokio::test]
+async fn voice_channel_runs_at_most_one_activity_joins_directly_and_clears_when_last_person_leaves() {
+    let rig = crate::voice::Rig::start_with(&[
+        ("STELLARR_ACTIVITY_DOMAIN", "games.test"),
+        ("STELLARR_ACTIVITY_ORIGIN", ORIGIN),
+    ])
+    .await;
+    let bob = rig.person("bob").await;
+    let carol = rig.person("carol").await;
+    seed(&rig.server, INSTALL, true);
+    seed(&rig.server, VOICE_ONLY, false);
+
+    let mut alice_ws = rig.connect(&rig.owner).await;
+    let mut bob_ws = rig.connect(&bob).await;
+    let mut carol_ws = rig.connect(&carol).await;
+    alice_ws.join(rig.salon).await;
+    bob_ws.join(rig.salon).await;
+
+    let salon = rig.salon.to_string();
+    let launch_path = format!("/api/activities/{salon}/launch");
+    let leave_path = format!("/api/activities/{salon}/leave");
+
+    // Idle voice channel has nothing to join without an install id.
+    assert_eq!(
+        post(&rig.owner, &launch_path, json!({"device": "desktop"}))
+            .await
+            .status,
+        404
+    );
+
+    // Starting the first activity announces it over realtime to everyone in the room.
+    let alice_launch = post(
+        &rig.owner,
+        &launch_path,
+        json!({"install": INSTALL, "device": "desktop"}),
+    )
+    .await;
+    assert_eq!(alice_launch.status, 200, "{}", alice_launch.text());
+    let alice_session = alice_launch.json::<Value>();
+    assert_eq!(alice_session["install"], INSTALL);
+
+    let started = bob_ws
+        .next_where("VoiceActivityChanged", |d| d["channelId"] == salon.as_str() && !d["activity"].is_null())
+        .await;
+    assert_eq!(started["activity"]["install"], INSTALL);
+    assert_eq!(started["activity"]["name"], "Demo");
+
+    // A second, different activity on the same voice channel is rejected with 409 Conflict.
+    assert_eq!(
+        post(
+            &bob,
+            &launch_path,
+            json!({"install": VOICE_ONLY, "device": "desktop"})
+        )
+        .await
+        .status,
+        409
+    );
+
+    // Joining from the voice bar without specifying `install` joins the running channel activity.
+    let bob_launch = post(&bob, &launch_path, json!({"device": "desktop"})).await;
+    assert_eq!(bob_launch.status, 200, "{}", bob_launch.text());
+    let bob_session = bob_launch.json::<Value>();
+    assert_eq!(bob_session["install"], INSTALL);
+
+    // Someone joining the voice channel later is immediately told about the live activity.
+    carol_ws.join(rig.salon).await;
+    let announced = carol_ws
+        .next_where("VoiceActivityChanged", |d| d["channelId"] == salon.as_str() && !d["activity"].is_null())
+        .await;
+    assert_eq!(announced["activity"]["install"], INSTALL);
+
+    // When Alice leaves the activity, Bob still holds a lease so the session stays running.
+    let alice_left = post(
+        &rig.owner,
+        &leave_path,
+        json!({"install": INSTALL, "access": alice_session["access"]}),
+    )
+    .await;
+    assert_eq!(alice_left.status, 200);
+    assert_eq!(alice_left.json::<Value>()["running"], true);
+
+    // When Bob (the last participant) leaves, the room closes at once and announces `activity: null`.
+    let bob_left = post(
+        &bob,
+        &leave_path,
+        json!({"install": INSTALL, "access": bob_session["access"]}),
+    )
+    .await;
+    assert_eq!(bob_left.status, 200);
+    assert_eq!(bob_left.json::<Value>()["running"], false);
+
+    let cleared = alice_ws
+        .next_where("VoiceActivityChanged", |d| d["channelId"] == salon.as_str() && d["activity"].is_null())
+        .await;
+    assert!(cleared["activity"].is_null());
+
+    // With the channel idle again, the other activity can now be launched.
+    assert_eq!(
+        post(
+            &bob,
+            &launch_path,
+            json!({"install": VOICE_ONLY, "device": "desktop"})
+        )
+        .await
+        .status,
+        200
+    );
+}
