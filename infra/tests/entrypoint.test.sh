@@ -219,6 +219,9 @@ expect_export STELLARR_MEDIA_LOG info
 expect_export STELLARR_API_LISTEN 127.0.0.1:5000
 expect_export STELLARR_ENVIRONMENT Production
 expect_absent STELLARR_MEDIA_ADVERTISE Operations__PublicUrl Desktop__CanonicalOrigin
+expect_absent STELLARR_ACTIVITY_DOMAIN STELLARR_ACTIVITY_ORIGIN
+[[ -f /etc/nginx/stellarr-activity-server.conf && ! -s /etc/nginx/stellarr-activity-server.conf ]] ||
+  fail "ordinary installations should have an empty activity server include"
 # Besides what the shell itself sets, everything it exports is a STELLARR_*
 # name, or one of the values that have no STELLARR_* name.
 others=$(sed 's/=.*//' "$out/env" | grep -vxE 'STELLARR_[A-Z0-9_]+|PATH|HOME|PWD|OLDPWD|SHLVL|_' |
@@ -231,6 +234,19 @@ expect_line /run/stellarr/stellarr-instance.js 'window.stellarrInstanceLanguage=
 expect_call 'stellarr-tls-maintenance prepare domain= data=/data/stellarr'
 grep -qF 'STELLARR_DOMAIN is not set' "$out/stderr" || fail "no word about the missing domain"
 ! grep -q '^stellarr ' "$out/calls" || fail "the CLI ran without a staged backup"
+
+run activity-port "${image_env[@]}" STELLARR_DOMAIN=chat.example.com \
+  STELLARR_ACTIVITY_DOMAIN=Activities.Example.COM STELLARR_HTTPS_PORT=9443 STELLARR_PUBLIC_PORT=8443
+expect_started
+expect_export STELLARR_ACTIVITY_DOMAIN activities.example.com
+expect_export STELLARR_ACTIVITY_ORIGIN https://chat.example.com:8443
+grep -qF -- 'https://*.activities.example.com:8443' /etc/nginx/nginx.conf || fail "frame policy lacks the public port"
+expect_line /etc/nginx/stellarr-activity-server.conf '  server_name .activities.example.com;'
+expect_line /etc/nginx/stellarr-activity-server.conf '    proxy_pass http://127.0.0.1:5000/_activity-files/;'
+expect_line /etc/nginx/stellarr-activity-server.conf '  if ($redirect_to_https) { return 308 https://$host:8443$request_uri; }'
+
+run activity-overlap "${image_env[@]}" STELLARR_DOMAIN=chat.activities.example.com STELLARR_ACTIVITY_DOMAIN=activities.example.com
+expect_failure 'Set STELLARR_DOMAIN to an instance name outside STELLARR_ACTIVITY_DOMAIN.'
 
 # Without the image's ENV the data root is the same.
 run data-root-default

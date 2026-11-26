@@ -86,6 +86,32 @@ write_instance_language() {
 # The settings, each with the image's default. A value that cannot be used
 # stops the container here, before anything is written.
 read_settings || exit 1
+activity_domain="$(or_default "${STELLARR_ACTIVITY_DOMAIN:-}")"
+activity_domain="${activity_domain,,}"
+activity_https_suffix=""
+if [[ -n "$activity_domain" ]]; then
+  (( ${#activity_domain} <= 253 )) &&
+    [[ "$activity_domain" =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] ||
+    fail "STELLARR_ACTIVITY_DOMAIN must be a DNS suffix."
+  activity_instance="${domain,,}"
+  activity_instance="${activity_instance%.}"
+  [[ -n "$activity_instance" && "$activity_instance" != "$activity_domain" && "$activity_instance" != *."$activity_domain" ]] ||
+    fail "Set STELLARR_DOMAIN to an instance name outside STELLARR_ACTIVITY_DOMAIN."
+  activity_origin="$(or_default "${STELLARR_ACTIVITY_ORIGIN:-}" "$public_url")"
+  [[ "$activity_origin" =~ ^https://([A-Za-z0-9.-]+)(:([0-9]{1,5}))?/?$ ]] ||
+    fail "Installed activities require an HTTPS instance origin."
+  activity_parent="${BASH_REMATCH[1],,}"
+  activity_port="${BASH_REMATCH[3]:-443}"
+  require_public_host "$activity_parent" || exit 1
+  require_port STELLARR_ACTIVITY_ORIGIN "$activity_port" || exit 1
+  [[ "${activity_parent%.}" != "$activity_domain" && "${activity_parent%.}" != *."$activity_domain" ]] ||
+    fail "The activity's parent origin must be outside STELLARR_ACTIVITY_DOMAIN."
+  if (( 10#$activity_port != 443 )); then
+    activity_https_suffix=":$((10#$activity_port))"
+  fi
+  export STELLARR_ACTIVITY_DOMAIN="$activity_domain"
+  export STELLARR_ACTIVITY_ORIGIN="https://$activity_parent$activity_https_suffix"
+fi
 trusted_proxy_rules="$(write_trusted_proxies)"
 public_ip="$(resolve_public_ip)"
 # A numeric domain can be used as the host candidate without DNS. Local
@@ -263,6 +289,32 @@ redirect_host="${domain:-\$host}"
 nginx_config="$(</etc/nginx/nginx.conf.template)"
 nginx_config="${nginx_config//__REDIRECT_HOST__/$redirect_host}"
 nginx_config="${nginx_config//__PUBLIC_HTTPS_SUFFIX__/$public_https_suffix}"
+activity_frames=""
+: > /etc/nginx/stellarr-activity-server.conf
+if [[ -n "$activity_domain" ]]; then
+  activity_frames="https://*.$activity_domain$activity_https_suffix"
+  cat > /etc/nginx/stellarr-activity-server.conf <<EOF
+server {
+  listen 80;
+  listen [::]:80;
+  listen 443 ssl http2;
+  listen [::]:443 ssl http2;
+  server_name .$activity_domain;
+  ssl_certificate /run/stellarr-tls/fullchain.pem;
+  ssl_certificate_key /run/stellarr-tls/privkey.pem;
+  ssl_protocols TLSv1.2 TLSv1.3;
+  if (\$redirect_to_https) { return 308 https://\$host$activity_https_suffix\$request_uri; }
+  location / {
+    proxy_pass http://127.0.0.1:5000/_activity-files/;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Forwarded-Host \$http_host;
+    proxy_set_header X-Forwarded-Proto \$effective_forwarded_proto;
+    proxy_set_header X-Forwarded-For \$stellarr_forwarded_for;
+  }
+}
+EOF
+fi
+nginx_config="${nginx_config//__ACTIVITY_FRAME_ORIGIN__/$activity_frames}"
 script_hashes="$(</etc/nginx/stellarr-csp-script-hashes)"
 [[ "$script_hashes" =~ ^(\'sha256-[A-Za-z0-9+/]{43}=\'\ ?)*$ ]] ||
   fail "The web client's CSP script hashes are invalid."
