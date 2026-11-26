@@ -17,7 +17,7 @@ Revoking a session under **Active sessions** immediately drops its `/hubs/app` W
 
 ### Fresh 5-minute proof (`auth/fresh.rs`)
 
-Sensitive account mutations—changing passwords or emails, adding/removing 2FA methods, regenerating recovery codes, linking/unlinking OIDC, or resetting E2EE PIN backups—require fresh authentication proof (`SecurityWrite`: max `30` requests / `15 min` per IP):
+Sensitive account mutations—changing passwords or emails, adding/removing 2FA methods, regenerating recovery codes, linking/unlinking OIDC, or replacing E2EE key backups—require fresh authentication proof (`SecurityWrite`: max `30` requests / `15 min` per IP):
 
 | Account configuration | Required proof |
 | --- | --- |

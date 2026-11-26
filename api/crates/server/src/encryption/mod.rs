@@ -3,7 +3,7 @@
 //! decides who may fetch which, and counts the attempts at a PIN. It never
 //! sees a key it could use.
 //!
-//! `/api/me/encryption` is the account's side: its key, the PIN-protected
+//! `/api/me/encryption` is the account's side: its key, the client-encrypted
 //! backup of that key, and the browsers that hold keys. `/api/social/
 //! conversations/{id}/encryption` is one conversation's: the switch both people
 //! agree on, the keys of both, and the epochs that new messages are encrypted
@@ -15,6 +15,7 @@
 mod account;
 mod announce;
 mod direct;
+pub(crate) mod key_backups;
 pub mod problems;
 pub mod store;
 mod wire;

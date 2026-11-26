@@ -40,9 +40,11 @@ export interface EncryptionApiClient {
   getEncryptionAccount(signal?: AbortSignal): Promise<EncryptionAccount>;
   setUpAccountKey(input: { publicKey: string; backup: KeyBackupInput }): Promise<EncryptionAccount>;
   getBackupParameters(): Promise<BackupParameters>;
-  unlockBackup(authKey: string): Promise<UnlockedBackup>;
+  unlockBackup(authKey: string, version: 1 | 2): Promise<UnlockedBackup>;
   replaceBackup(input: { currentPassword: string; accountKeyId: string; backup: KeyBackupInput }): Promise<KeyBackupStatus>;
   resetAccountKey(input: {
+    migrateFromKeyId?: string;
+    expectedAccountKeyId?: string;
     currentPassword: string;
     publicKey: string;
     backup: KeyBackupInput;
@@ -58,7 +60,7 @@ export interface EncryptionApiClient {
   listConversationEpochs(conversationId: string, after: number): Promise<EpochPage>;
   createConversationEpoch(
     conversationId: string,
-    input: { epochId: string; previousEpochId: string | null; envelopes: EpochEnvelope[] },
+    input: { version: 2; epochId: string; previousEpochId: string | null; deviceKeyIds: string[]; envelopes: EpochEnvelope[] },
   ): Promise<EncryptionEpoch>;
   sendEncryptedDirectMessage(
     conversationId: string,
@@ -133,15 +135,15 @@ export function encryptionCalls(): EncryptionApiClient {
 
     getBackupParameters: () => call("GET", "/api/me/encryption/backup", undefined, parseBackupParameters),
 
-    unlockBackup: (authKey) => call("POST", "/api/me/encryption/backup/unlock", { authKey }, parseUnlockedBackup),
+    unlockBackup: (authKey, version) => call("POST", "/api/me/encryption/backup/unlock", { version, authKey }, parseUnlockedBackup),
 
     replaceBackup: (input) => call("PUT", "/api/me/encryption/backup", input, parseBackupStatus),
 
-    resetAccountKey: ({ currentPassword, publicKey, backup }) =>
+    resetAccountKey: ({ currentPassword, publicKey, backup, migrateFromKeyId, expectedAccountKeyId }) =>
       call(
         "POST",
         "/api/me/encryption/account-key/reset",
-        { currentPassword, algorithm: ALGORITHM, publicKey, backup },
+        { currentPassword, algorithm: ALGORITHM, publicKey, backup, migrateFromKeyId, expectedAccountKeyId },
         parseReset,
       ),
 

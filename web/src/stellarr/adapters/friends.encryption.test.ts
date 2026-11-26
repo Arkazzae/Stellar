@@ -81,6 +81,7 @@ function codec() {
     send: vi.fn(async (_id: string, input: { text: string }) =>
       message("encrypted-sent", { author: { id: SELF, displayName: "Me" }, content: input.text }),
     ),
+    plaintextAllowed: vi.fn(async () => true),
     uploadFile: vi.fn(async (file: File) => ({
       attachmentIds: [`sealed-${file.name}`],
       payload: { id: `sealed-${file.name}`, key: "k", iv: "i", name: file.name, type: file.type, size: file.size },
@@ -152,6 +153,18 @@ describe("friends adapter with encryption", () => {
     fake.emit({ type: "keys" });
 
     await vi.waitFor(() => expect(friends.listDmMessages(CONVERSATION_ID)[0]?.content).toBe("sekret"));
+  });
+
+  it("keeps plaintext messages and attachments off the wire when a verified conversation is reported off", async () => {
+    const fake = codec();
+    fake.plaintextAllowed.mockResolvedValue(false);
+    const client = api(state(undefined));
+    const friends = createFriendsAdapter(client, new FakeRealtimeClient(), fake);
+    await friends.load();
+    await expect(friends.sendDm(CONVERSATION_ID, { content: "private", attachmentIds: [], clientMessageId: "one" })).rejects.toThrow();
+    await expect(friends.uploadAttachment(CONVERSATION_ID, new File(["private"], "file.txt"))).rejects.toThrow();
+    expect(client.sendDirectMessage).not.toHaveBeenCalled();
+    expect(client.uploadAttachment).not.toHaveBeenCalled();
   });
 
   it("encrypts uploads and sends through the codec while on, and plainly while off", async () => {

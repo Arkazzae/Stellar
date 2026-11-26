@@ -1,4 +1,4 @@
-import { bytesOf, randomBytes, utf8, type Bytes } from "./bytes";
+import { bytesOf, randomBytes, toBase64, utf8, type Bytes } from "./bytes";
 import { agree, exportPublicKey, generateKeyPair, importPublicKey } from "./keys";
 
 /**
@@ -95,12 +95,12 @@ export async function wrapEpochKey(
   };
 }
 
-/** Throws when the envelope is not for this private key, or was changed. */
-export async function unwrapEpochKey(
+/** Opens the envelope. Its caller validates the payload for the epoch version. */
+export async function unwrapEpochMaterial(
   envelope: SealedEnvelope,
   privateKey: CryptoKey,
   context: Omit<WrapContext, "recipientKeyId">,
-): Promise<OpenedEpoch> {
+): Promise<Bytes> {
   const full: WrapContext = { ...context, recipientKeyId: envelope.recipientKeyId };
   const shared = await agree(privateKey, await importPublicKey(envelope.ephemeralPublicKey));
   const key = await keyEncryptionKey(shared, full, "decrypt");
@@ -111,6 +111,36 @@ export async function unwrapEpochKey(
       envelope.ciphertext,
     ),
   );
+  return raw;
+}
+
+/** Legacy epochs carry their traffic key directly. Only used to read history. */
+export async function unwrapEpochKey(
+  envelope: SealedEnvelope,
+  privateKey: CryptoKey,
+  context: Omit<WrapContext, "recipientKeyId">,
+): Promise<OpenedEpoch> {
+  const raw = await unwrapEpochMaterial(envelope, privateKey, context);
   if (raw.length !== EPOCH_KEY_LENGTH) throw new Error("An epoch key is 32 bytes.");
   return openEpochKey(raw);
+}
+
+/** V2 envelopes carry a salt and the other participant's public key. Even a
+ * server supplying its own salt cannot know the traffic key of a verified pair. */
+export async function deriveAccountEpoch(
+  seed: Bytes,
+  self: { userId: string; privateKey: CryptoKey; publicKey: Bytes },
+  peer: { userId: string; publicKey: Bytes },
+  conversationId: string,
+  epochId: string,
+): Promise<OpenedEpoch> {
+  if (seed.length !== EPOCH_KEY_LENGTH) throw new Error("Invalid epoch salt");
+  const parties = [self, peer]
+    .sort((a, b) => a.userId < b.userId ? -1 : 1)
+    .map(({ userId, publicKey }) => [userId, toBase64(publicKey)]);
+  const shared = await agree(self.privateKey, await importPublicKey(peer.publicKey));
+  const base = await crypto.subtle.importKey("raw", shared, "HKDF", false, ["deriveBits"]);
+  const info = utf8(JSON.stringify(["stellarr/e2ee/account-epoch/v2", conversationId, epochId, parties]));
+  const raw = await crypto.subtle.deriveBits({ name: "HKDF", hash: "SHA-256", salt: seed, info }, base, 256);
+  return openEpochKey(bytesOf(raw));
 }

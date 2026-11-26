@@ -1,7 +1,7 @@
 import type { SocialApiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/errors";
 import type { Attachment, VoiceOccupant } from "@/lib/api/types";
-import { LAZY_ATTACHMENT_PREFIX, type E2eeEvent, type EncryptedUpload } from "@/lib/e2ee/client";
+import { E2eeError, LAZY_ATTACHMENT_PREFIX, type E2eeEvent, type EncryptedUpload } from "@/lib/e2ee/client";
 import { measureUpload } from "@/lib/media/measureUpload";
 import type { UploadMediaMetadata } from "@/lib/media/probe";
 import type { RealtimeClient } from "@/lib/realtime/types";
@@ -24,10 +24,11 @@ const PAGE_SIZE = 50;
  * every message is taken as it came, which is what a plain conversation is.
  */
 export interface DmCodec {
+  plaintextAllowed(conversationId: string, peerId: string): Promise<boolean>;
   decode(message: Message): Promise<Message>;
   send(
     conversationId: string,
-    input: { text: string; uploads: readonly EncryptedUpload[]; clientMessageId: string },
+    input: { peerId: string; text: string; uploads: readonly EncryptedUpload[]; clientMessageId: string },
   ): Promise<Message>;
   uploadFile(file: File, metadata: UploadMediaMetadata): Promise<EncryptedUpload>;
   openAttachment(uploadId: string): Promise<{ url: string; type: string } | null>;
@@ -35,6 +36,7 @@ export interface DmCodec {
 }
 
 const PLAIN: DmCodec = {
+  plaintextAllowed: async () => true,
   decode: async (message) => message,
   send: () => Promise.reject(new Error("This client cannot encrypt.")),
   uploadFile: () => Promise.reject(new Error("This client cannot encrypt.")),
@@ -433,19 +435,23 @@ export function createFriendsAdapter(
     },
 
     async sendDm(id, input) {
-      const encrypted = conversations.find((item) => item.id === id)?.encryption?.state === "on";
+      const conversation = conversations.find((item) => item.id === id);
+      if (!conversation) throw new Error("Conversation unavailable");
+      const encrypted = conversation.encryption?.state === "on";
       let message: Message;
       try {
         if (encrypted) {
           const uploads = input.attachmentIds.map((uploadId) => encryptedUploads.get(uploadId));
           if (uploads.some((upload) => upload === undefined)) throw kindMismatch();
           message = await codec.send(id, {
+            peerId: conversation.peer.id,
             text: input.content,
             uploads: uploads.filter((upload) => upload !== undefined),
             clientMessageId: input.clientMessageId,
           });
         } else {
           if (input.attachmentIds.some((uploadId) => encryptedUploads.has(uploadId))) throw kindMismatch();
+          if (!await codec.plaintextAllowed(id, conversation.peer.id)) throw new E2eeError("encryption-off");
           message = await api.sendDirectMessage(
             id,
             input.content,
@@ -473,6 +479,7 @@ export function createFriendsAdapter(
       const conversation = conversations.find((item) => item.id === id);
       if (!conversation) throw new Error("Conversation unavailable");
       if (conversation.encryption?.state !== "on") {
+        if (!await codec.plaintextAllowed(id, conversation.peer.id)) throw new E2eeError("encryption-off");
         return api.uploadAttachment(file, metadata);
       }
       const upload = await codec.uploadFile(file, metadata);

@@ -8,10 +8,10 @@ import { DialogHeader } from "@/components/settings/DialogHeader";
 import type { PersonVM } from "@/components/view-models";
 import { useLanguage } from "@/state/LanguageProvider";
 
+import { generateRecoveryCode, normalizeRecoveryCode } from "@/lib/e2ee/recovery";
 import { PinInput, useSettledFocus } from "./PinInput";
 import { MESSAGES_STICKERS } from "./stickers";
 
-const PIN_LENGTH = 6;
 
 /** The current password, focused once the dialog has settled. */
 function PasswordField({
@@ -107,138 +107,83 @@ function EncryptionFrame({
   );
 }
 
-/** Clears a dialog's fields each time it opens, in the render that opens it. */
-function useOpening(open: boolean, reset: () => void) {
-  const [wasOpen, setWasOpen] = useState(open);
-  if (wasOpen !== open) {
-    setWasOpen(open);
-    if (open) reset();
-  }
-}
-
-export interface PinSetupDialogProps {
-  open: boolean;
+/** Mounted for one issuance only. A failed request keeps the same code on screen. */
+export function RecoveryCodeDialog({ mode, migration, pending, error, passwordError, withPassword, onSubmit, onClose }: {
+  mode: "setup" | "change" | "reset";
+  migration: boolean;
   pending: boolean;
   error: string | null;
-  onSubmit(pin: string): void;
+  passwordError: string | null;
+  withPassword: boolean;
+  onSubmit(code: string, password: string): void;
   onClose(): void;
-}
-
-/** The first PIN: typed, then typed again. */
-export function PinSetupDialog({ open, pending, error, onSubmit, onClose }: PinSetupDialogProps) {
+}) {
   const { t } = useLanguage();
-  const errorId = useId();
-  const [step, setStep] = useState<1 | 2>(1);
-  const [first, setFirst] = useState("");
-  const [second, setSecond] = useState("");
-  const [mismatch, setMismatch] = useState(false);
-  useOpening(open, () => {
-    setStep(1);
-    setFirst("");
-    setSecond("");
-    setMismatch(false);
-  });
-
-  const value = step === 1 ? first : second;
-  const complete = value.length === PIN_LENGTH;
-  const shown = mismatch ? t("e2ee.setup.mismatch") : error;
-
-  const submit = () => {
-    if (!complete || pending) return;
-    if (step === 1) {
-      setStep(2);
-      setSecond("");
-      return;
-    }
-    if (second !== first) {
-      setMismatch(true);
-      setStep(1);
-      setFirst("");
-      setSecond("");
-      return;
-    }
-    onSubmit(first);
-  };
-
+  const [code] = useState(generateRecoveryCode);
+  const [saved, setSaved] = useState(false);
+  const [password, setPassword] = useState("");
+  const ready = saved && !pending && (!withPassword || password.length > 0);
+  const id = useId();
   return (
-    <EncryptionFrame
-      open={open}
-      title={t("e2ee.setup.title")}
-      detail={t("e2ee.setup.detail")}
-      sticker={MESSAGES_STICKERS.pinSetup}
-      onClose={onClose}
-      closeDisabled={pending}
-      onSubmit={submit}
-      foot={
-        <>
-          <Button type="button" variant="secondary" disabled={pending} onClick={onClose}>
-            {t("common.cancel")}
-          </Button>
-          <Button type="submit" variant="primary" disabled={!complete || pending}>
-            {pending ? t("e2ee.setup.working") : step === 1 ? t("e2ee.setup.next") : t("e2ee.setup.done")}
-          </Button>
-        </>
-      }
-    >
-      <span className="enc-step">{t("e2ee.setup.step", { step })}</span>
-      {step === 2 ? <p className="enc-lead">{t("e2ee.setup.repeat")}</p> : null}
-      <PinInput
-        key={step}
-        value={value}
-        onChange={(next) => {
-          setMismatch(false);
-          if (step === 1) setFirst(next);
-          else setSecond(next);
-        }}
-        label={t("e2ee.pin.label")}
-        invalid={shown !== null}
-        disabled={pending}
-        {...(shown === null ? {} : { describedBy: errorId })}
-      />
-      {shown === null ? null : (
-        <p className="enc-err" id={errorId} role="alert">
-          {shown}
-        </p>
-      )}
-      <p className="enc-note">{t("e2ee.setup.note")}</p>
+    <EncryptionFrame open title={t(mode === "reset" ? "e2ee.reset.title" : "e2ee.setup.title")}
+      detail={t(migration ? "e2ee.migrate.detail" : mode === "reset" ? "e2ee.forgot.note" : "e2ee.setup.detail")}
+      onClose={onClose} closeDisabled={pending} onSubmit={() => { if (ready) onSubmit(code, password); }}
+      foot={<>
+        <Button type="button" variant="secondary" disabled={pending} onClick={onClose}>{t("common.cancel")}</Button>
+        <Button type="submit" variant={mode === "reset" ? "danger-solid" : "primary"} disabled={!ready}>
+          {t(pending ? "e2ee.setup.working" : "e2ee.setup.done")}
+        </Button>
+      </>}>
+      <label className="enc-field">
+        <span className="fld-lab">{t("e2ee.recovery.label")}</span>
+        <textarea className="set-input" rows={3} readOnly spellCheck={false} value={code}
+          onFocus={(event) => event.currentTarget.select()} />
+      </label>
+      <label><input type="checkbox" disabled={pending} checked={saved} onChange={(e) => setSaved(e.target.checked)} /> {t("e2ee.recovery.saved")}</label>
+      {withPassword && <div className="enc-field">
+        <label className="fld-lab" htmlFor={id}>{t("e2ee.password.label")}</label>
+        <PasswordField id={id} value={password} invalid={passwordError !== null} disabled={pending} onChange={setPassword} />
+      </div>}
+      {(passwordError || error) && <p className="enc-err" role="alert">{passwordError ?? error}</p>}
     </EncryptionFrame>
   );
 }
 
 export interface UnlockDialogProps {
+  legacy: boolean;
   open: boolean;
   pending: boolean;
   error: string | null;
   /** The backup cannot be opened any more (gone, or not this account's key): only a reset helps. */
   dead: boolean;
-  onSubmit(pin: string): void;
+  onSubmit(input: string): void;
   onForgot(): void;
   onClose(): void;
 }
 
-/** The PIN, on a browser that does not hold the account key yet. */
-export function UnlockDialog({ open, pending, error, dead, onSubmit, onForgot, onClose }: UnlockDialogProps) {
+/** A new browser opens either the current backup or a legacy backup for migration. */
+export function UnlockDialog({ open, legacy, pending, error, dead, onSubmit, onForgot, onClose }: UnlockDialogProps) {
   const { t } = useLanguage();
   const errorId = useId();
-  const [pin, setPin] = useState("");
-  useOpening(open, () => setPin(""));
+  const [input, setInput] = useState("");
   // A refusal clears what was typed, so the next attempt starts empty.
   const [lastError, setLastError] = useState(error);
   if (lastError !== error) {
     setLastError(error);
-    if (error !== null) setPin("");
+    if (error !== null) setInput("");
   }
 
+  const valid = legacy ? /^\d{6}$/.test(input) : normalizeRecoveryCode(input) !== null;
   return (
     <EncryptionFrame
       open={open}
       title={t("e2ee.unlock.title")}
-      detail={t("e2ee.unlock.detail")}
+      detail={t(legacy ? "e2ee.migrate.unlock" : "e2ee.unlock.detail")}
       onClose={onClose}
       closeDisabled={pending}
       onSubmit={() => {
         if (dead) onForgot();
-        else if (pin.length === PIN_LENGTH && !pending) onSubmit(pin);
+        else if (valid && !pending) onSubmit(input);
       }}
       foot={
         <>
@@ -250,22 +195,28 @@ export function UnlockDialog({ open, pending, error, dead, onSubmit, onForgot, o
               {t("e2ee.forgot.submit")}
             </Button>
           ) : (
-            <Button type="submit" variant="primary" disabled={pin.length !== PIN_LENGTH || pending}>
+            <Button type="submit" variant="primary" disabled={!valid || pending}>
               {pending ? t("e2ee.unlock.working") : t("e2ee.unlock.submit")}
             </Button>
           )}
         </>
       }
     >
-      {dead ? null : (
+      {dead ? null : legacy ? (
         <PinInput
-          value={pin}
-          onChange={setPin}
+          value={input}
+          onChange={setInput}
           label={t("e2ee.pin.label")}
           invalid={error !== null}
           disabled={pending}
           {...(error === null ? {} : { describedBy: errorId })}
         />
+      ) : (
+        <label className="enc-field">
+          <span className="fld-lab">{t("e2ee.recovery.label")}</span>
+          <input className="set-input" type="password" autoComplete="off" spellCheck={false}
+            value={input} onChange={(e) => setInput(e.target.value)} disabled={pending} />
+        </label>
       )}
       {error === null ? null : (
         <p className="enc-err" id={errorId} role="alert">
@@ -281,14 +232,14 @@ export function UnlockDialog({ open, pending, error, dead, onSubmit, onForgot, o
   );
 }
 
-export interface ForgotPinDialogProps {
+export interface LostRecoveryCodeDialogProps {
   open: boolean;
   onContinue(): void;
   onClose(): void;
 }
 
 /** What a reset costs, said before it starts. */
-export function ForgotPinDialog({ open, onContinue, onClose }: ForgotPinDialogProps) {
+export function LostRecoveryCodeDialog({ open, onContinue, onClose }: LostRecoveryCodeDialogProps) {
   const { t } = useLanguage();
   return (
     <EncryptionFrame
@@ -309,157 +260,6 @@ export function ForgotPinDialog({ open, onContinue, onClose }: ForgotPinDialogPr
       }
     >
       <p className="enc-note">{t("e2ee.forgot.note")}</p>
-    </EncryptionFrame>
-  );
-}
-
-export interface NewPinDialogProps {
-  open: boolean;
-  /** A new PIN for the key this browser holds, or new keys altogether. */
-  mode: "change" | "reset";
-  pending: boolean;
-  /** The current password was refused: the dialog goes back to it. */
-  passwordError: string | null;
-  error: string | null;
-  /**
-   * False for an account made through a provider, which has no password to
-   * give and proves itself as the server asks once the PIN is sent.
-   */
-  withPassword?: boolean;
-  onSubmit(input: { password: string; pin: string }): void;
-  onClose(): void;
-}
-
-type NewPinStep = "password" | "pin" | "repeat";
-
-/**
- * The current password first, as for a password change, then the new PIN
- * twice. The second step of signing in, when the server asks for it, is the
- * security dialog's, raised by whoever sends this.
- */
-export function NewPinDialog({
-  open,
-  mode,
-  pending,
-  passwordError,
-  error,
-  withPassword = true,
-  onSubmit,
-  onClose,
-}: NewPinDialogProps) {
-  const { t } = useLanguage();
-  const errorId = useId();
-  const passwordId = useId();
-  const [step, setStep] = useState<NewPinStep>("password");
-  const [password, setPassword] = useState("");
-  const [pin, setPin] = useState("");
-  const [again, setAgain] = useState("");
-  const [mismatch, setMismatch] = useState(false);
-  useOpening(open, () => {
-    setStep("password");
-    setPassword("");
-    setPin("");
-    setAgain("");
-    setMismatch(false);
-  });
-  // Known once the account is read, which may be after the dialog opened.
-  if (!withPassword && step === "password") setStep("pin");
-  const [lastPasswordError, setLastPasswordError] = useState(passwordError);
-  if (lastPasswordError !== passwordError) {
-    setLastPasswordError(passwordError);
-    if (passwordError !== null) {
-      setStep("password");
-      setPassword("");
-    }
-  }
-
-  const shown = step === "password" ? passwordError : mismatch ? t("e2ee.setup.mismatch") : error;
-  const ready =
-    step === "password" ? password.length > 0 : (step === "pin" ? pin : again).length === PIN_LENGTH;
-
-  const submit = () => {
-    if (!ready || pending) return;
-    if (step === "password") {
-      setStep("pin");
-      return;
-    }
-    if (step === "pin") {
-      setStep("repeat");
-      setAgain("");
-      return;
-    }
-    if (again !== pin) {
-      setMismatch(true);
-      setStep("pin");
-      setPin("");
-      setAgain("");
-      return;
-    }
-    onSubmit({ password, pin });
-  };
-
-  return (
-    <EncryptionFrame
-      open={open}
-      title={t(mode === "reset" ? "e2ee.reset.title" : "e2ee.newPin.title")}
-      detail={t(step === "password" ? "e2ee.password.detail" : mode === "reset" ? "e2ee.reset.detail" : "e2ee.newPin.detail")}
-      onClose={onClose}
-      closeDisabled={pending}
-      onSubmit={submit}
-      foot={
-        <>
-          <Button type="button" variant="secondary" disabled={pending} onClick={onClose}>
-            {t("common.cancel")}
-          </Button>
-          <Button type="submit" variant={mode === "reset" && step === "repeat" ? "danger-solid" : "primary"} disabled={!ready || pending}>
-            {pending
-              ? t("e2ee.setup.working")
-              : step === "repeat"
-                ? t(mode === "reset" ? "e2ee.forgot.submit" : "e2ee.setup.done")
-                : t("e2ee.setup.next")}
-          </Button>
-        </>
-      }
-    >
-      {step === "password" ? (
-        <div className="enc-field">
-          <label className="fld-lab" htmlFor={passwordId}>
-            {t("e2ee.password.label")}
-          </label>
-          <PasswordField
-            id={passwordId}
-            value={password}
-            disabled={pending}
-            invalid={passwordError !== null}
-            {...(passwordError === null ? {} : { describedBy: errorId })}
-            onChange={setPassword}
-          />
-        </div>
-      ) : (
-        <>
-          <span className="enc-step">{t("e2ee.setup.step", { step: step === "pin" ? 1 : 2 })}</span>
-          {step === "repeat" ? <p className="enc-lead">{t("e2ee.setup.repeat")}</p> : null}
-          <PinInput
-            key={step}
-            value={step === "pin" ? pin : again}
-            onChange={(next) => {
-              setMismatch(false);
-              if (step === "pin") setPin(next);
-              else setAgain(next);
-            }}
-            label={t("e2ee.pin.label")}
-            invalid={shown !== null}
-            disabled={pending}
-            {...(shown === null ? {} : { describedBy: errorId })}
-          />
-        </>
-      )}
-      {shown === null ? null : (
-        <p className="enc-err" id={errorId} role="alert">
-          {shown}
-        </p>
-      )}
-      {step !== "password" ? <p className="enc-note">{t(mode === "reset" ? "e2ee.forgot.note" : "e2ee.setup.note")}</p> : null}
     </EncryptionFrame>
   );
 }

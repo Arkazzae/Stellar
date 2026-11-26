@@ -12,6 +12,16 @@ Production containers create an automatic full `.zip` backup every 24 hours by d
 > [!IMPORTANT]
 > Scheduled backups always produce **full `.zip` archives** and fail (scheduling a retry) if any referenced attachment is missing on disk. `.env` is never packaged inside backup archives—keep a separate copy of `.env` in your offline recovery store.
 
+### Save the instance recovery key separately
+
+On first start after installation or upgrade, Stellarr creates `/data/stellarr/pin-recovery/master.key` (32 random bytes, mode `0600`). Save a copy in a password manager that supports files or on a separately secured offline drive. Keep it apart from the ZIP and its storage credentials. The regular `keys/master.key` serves a different purpose.
+
+The API uses the instance key to seal each client-encrypted key backup, including its verifier, before storing it in SQLite. For disaster recovery on another host, the operator needs the ZIP and the separately saved instance key. To read encrypted history, a user signs in and enters their own recovery code on the new device.
+
+Existing users complete PIN migration in an updated client. An unlocked browser can migrate directly. On a new browser the owner first opens the old backup with the original PIN, then saves a freshly generated recovery code and confirms the change. This rotates the active account key and keeps the old private key inside the new encrypted backup for reading history. The server retires the PIN record in the same transaction. Until the owner completes this step, their live backup still has PIN protection.
+
+SQLite rebuilds the database once during upgrade to clear superseded backup records from unused pages. Allow space for the rebuild. A snapshot or volume copy made before migration can still expose historical keys if someone can open its PIN backup. After users migrate, take a new backup and retire pre-migration copies according to your retention policy.
+
 ## Schedule and runtime behavior
 
 Seed defaults in `.env` (changes saved in Cockpit take effect within 1 minute without restarting and override `.env`):
@@ -45,6 +55,8 @@ flowchart LR
 
 ### Step-by-step restore
 
+On the original volume the instance recovery key stays in place through a restore. On a replacement volume, install the saved key at `/data/stellarr/pin-recovery/master.key` with mode `0600` and ownership readable by the API before applying a backup that contains protected account key records. Restore checks the key before replacing live data. On an existing instance the CLI also refuses to reactivate a retired PIN identity. A fresh host with only an old archive has no record of later migrations.
+
 1. **Copy the archive** into `/data/stellarr/backups/` if downloaded from offsite storage (verify its SHA-256 first):
 
    ```bash
@@ -73,7 +85,7 @@ Before swapping the restored database into place, `auth::restore::end_what_a_cop
 | --- | --- |
 | All browser/desktop sessions and trusted-device cookies (everyone signs in fresh) | Password hashes, confirmed passkeys, and OIDC identity links |
 | Unused email 2FA codes, password-reset links, email-change links, and CLI recovery credentials | Sealed TOTP seeds (advanced to the restore timestamp to block code replay) and unused recovery codes |
-| Open sign-in challenges, passkey ceremonies, desktop handoffs, and pending OIDC cookies | Client-encrypted E2EE key backups (`AccountKeyBackups`), sealed Cockpit secrets (`keys/master.key` included in `keys/`), and host `instance-id` |
+| Open sign-in challenges, passkey ceremonies, desktop handoffs, and pending OIDC cookies | Client-encrypted E2EE key backups (`ProtectedAccountKeyBackups`, separate recovery key required), sealed Cockpit secrets (`keys/master.key` included in `keys/`), and host `instance-id` |
 
 *(Restoring a database without its matching `keys/master.key` leaves sealed secrets and TOTP seeds unreadable until cleared via `stellarr secrets clear` and re-enrolled.)*
 
@@ -93,4 +105,5 @@ Before swapping the restored database into place, `auth::restore::end_what_a_cop
 1. Run `docker compose stop` and archive the current `/data/stellarr` directory.
 2. Copy `stellarr.db` to `/data/stellarr/db/stellarr.db` and delete `stellarr.db-wal` and `stellarr.db-shm`.
 3. Copy `keys/` alongside `db/`, `objects/` into `/data/stellarr/files/`, and `instance/` into `/data/stellarr/` (keeping `0600` permissions on `keys/master.key`, `secrets/*`, and `tls/privkey.pem`).
-4. Run `docker compose start` and check `stellarr doctor`.
+4. For protected account key backups, install the matching `pin-recovery/master.key` from your separate copy.
+5. Run `docker compose start` and check `stellarr doctor`.

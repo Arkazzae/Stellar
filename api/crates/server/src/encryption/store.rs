@@ -84,80 +84,6 @@ pub fn account_key(connection: &Connection, user: Id) -> rusqlite::Result<Option
         .optional()
 }
 
-pub struct Backup {
-    pub salt: Vec<u8>,
-    pub iterations: i32,
-    pub verifier: Vec<u8>,
-    pub iv: Vec<u8>,
-    pub ciphertext: Vec<u8>,
-    pub failed_attempts: i32,
-    pub updated_at: Timestamp,
-}
-
-impl Backup {
-    pub fn remaining_attempts(&self) -> i32 {
-        (MAX_FAILED_ATTEMPTS - self.failed_attempts).max(0)
-    }
-
-    pub fn status(&self) -> super::wire::BackupStatusDto {
-        super::wire::BackupStatusDto {
-            iterations: self.iterations,
-            failed_attempts: self.failed_attempts,
-            remaining_attempts: self.remaining_attempts(),
-            updated_at: self.updated_at,
-        }
-    }
-}
-
-pub fn backup(connection: &Connection, user: Id) -> rusqlite::Result<Option<Backup>> {
-    connection
-        .query_row(
-            "SELECT \"Salt\", \"Iterations\", \"Verifier\", \"Iv\", \"Ciphertext\", \"FailedAttempts\", \"UpdatedAt\"
-             FROM \"AccountKeyBackups\" WHERE \"UserId\" = ?1",
-            [user],
-            |row| {
-                Ok(Backup {
-                    salt: row.get(0)?,
-                    iterations: row.get(1)?,
-                    verifier: row.get(2)?,
-                    iv: row.get(3)?,
-                    ciphertext: row.get(4)?,
-                    failed_attempts: row.get(5)?,
-                    updated_at: row.get(6)?,
-                })
-            },
-        )
-        .optional()
-}
-
-/// Replaces the account's backup with a fresh one: no wrong PINs yet.
-pub fn put_backup(
-    connection: &Connection,
-    user: Id,
-    backup: &super::wire::NewBackup,
-    now: Timestamp,
-) -> rusqlite::Result<()> {
-    connection.execute(
-        "DELETE FROM \"AccountKeyBackups\" WHERE \"UserId\" = ?1",
-        [user],
-    )?;
-    connection.execute(
-        "INSERT INTO \"AccountKeyBackups\" (\"UserId\", \"Salt\", \"Iterations\", \"Verifier\", \"Iv\", \"Ciphertext\",
-                                          \"FailedAttempts\", \"UpdatedAt\")
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7)",
-        params![
-            user,
-            backup.salt,
-            backup.iterations,
-            backup.verifier,
-            backup.iv,
-            backup.ciphertext,
-            now
-        ],
-    )?;
-    Ok(())
-}
-
 // ---- devices ----
 
 #[derive(Clone)]
@@ -525,6 +451,7 @@ impl Envelope {
 
 #[derive(Debug, Clone)]
 pub struct Epoch {
+    pub version: u8,
     pub id: Id,
     pub conversation: Id,
     pub sequence: i32,
@@ -555,6 +482,7 @@ impl Epoch {
             ))
         });
         EpochDto {
+            version: self.version,
             id: self.id,
             sequence: self.sequence,
             previous_epoch_id: self.previous,
@@ -564,7 +492,7 @@ impl Epoch {
             envelopes: self
                 .envelopes
                 .iter()
-                .filter(|envelope| keep(envelope))
+                .filter(|envelope| !envelope.ciphertext.is_empty() && keep(envelope))
                 .map(Envelope::dto)
                 .collect(),
         }
@@ -573,6 +501,7 @@ impl Epoch {
 
 fn read_epoch(row: &Row<'_>) -> rusqlite::Result<Epoch> {
     Ok(Epoch {
+        version: if row.get::<_, bool>(6)? { 2 } else { 1 },
         id: row.get(0)?,
         conversation: row.get(1)?,
         sequence: row.get(2)?,
@@ -584,7 +513,7 @@ fn read_epoch(row: &Row<'_>) -> rusqlite::Result<Epoch> {
 }
 
 const EPOCH_COLUMNS: &str =
-    "\"Id\", \"ConversationId\", \"Sequence\", \"PreviousEpochId\", \"CreatedById\", \"CreatedAt\"";
+    "\"Id\", \"ConversationId\", \"Sequence\", \"PreviousEpochId\", \"CreatedById\", \"CreatedAt\", EXISTS(SELECT 1 FROM AccountBoundEpochs WHERE EpochId = EncryptionEpochs.Id)";
 
 /// The envelopes of an epoch in the order the rows are keyed.
 fn envelopes_of(connection: &Connection, epoch: Id) -> rusqlite::Result<Vec<Envelope>> {
@@ -665,6 +594,9 @@ pub fn insert_epoch(connection: &Connection, epoch: &Epoch) -> rusqlite::Result<
             epoch.created_at
         ],
     )?;
+    if epoch.version == 2 {
+        connection.execute("INSERT INTO AccountBoundEpochs (EpochId) VALUES (?1)", [epoch.id])?;
+    }
     for envelope in &epoch.envelopes {
         connection.execute(
             "INSERT INTO \"EncryptionEnvelopes\" (\"EpochId\", \"RecipientKeyId\", \"RecipientUserId\", \"RecipientKind\",

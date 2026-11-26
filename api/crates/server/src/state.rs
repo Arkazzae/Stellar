@@ -37,6 +37,7 @@ struct Inner {
     mutation_gate: MutationGate,
     pin_attempts: AttemptLimiter,
     sealer: Sealer,
+    key_backup_sealer: Sealer,
     single_sign_on: SingleSignOn,
     mail: MailDelivery,
     presence: Arc<dyn Presence>,
@@ -60,6 +61,7 @@ impl AppState {
         events: Arc<dyn EventPublisher>,
         presence: Arc<dyn Presence>,
         sealer: Sealer,
+        key_backup_sealer: Sealer,
     ) -> AppState {
         AppState {
             inner: Arc::new(Inner {
@@ -73,6 +75,7 @@ impl AppState {
                 events,
                 single_sign_on: SingleSignOn::new(&sealer),
                 sealer,
+                key_backup_sealer,
                 mail: MailDelivery::new(),
                 presence,
                 setup_code: SetupCode::default(),
@@ -124,6 +127,11 @@ impl AppState {
     /// Seals values for clients and the database; see [`crate::seal`].
     pub fn sealer(&self) -> &Sealer {
         &self.inner.sealer
+    }
+
+    /// Independent of the instance master key that full ZIP archives include.
+    pub fn key_backup_sealer(&self) -> &Sealer {
+        &self.inner.key_backup_sealer
     }
 
     /// What signing in through a provider keeps between requests; see

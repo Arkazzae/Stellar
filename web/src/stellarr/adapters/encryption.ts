@@ -83,11 +83,11 @@ export function createEncryption(api: EncryptionApiClient, realtime: RealtimeCli
       client.subscribe((event) => {
         if (event.type === "status") listener();
       }),
-    setUp: (pin) => client.setUp(pin),
-    unlock: (pin) => client.unlock(pin),
-    prepareNewPin: (pin) => client.prepareNewPin(pin),
-    changePin: (prepared, password) => client.changePin(prepared, password),
-    prepareReset: (pin) => client.prepareReset(pin),
+    setUp: (code) => client.setUp(code),
+    unlock: (code) => client.unlock(code),
+    prepareRecoveryCode: (code) => client.prepareRecoveryCode(code),
+    changeRecoveryCode: (prepared, password) => client.changeRecoveryCode(prepared, password),
+    prepareReset: (code) => client.prepareReset(code),
     reset: (prepared, password) => client.reset(prepared, password),
     listDevices: () => client.listDevices(),
     removeDevice: (deviceId) => client.removeDevice(deviceId),
@@ -98,7 +98,7 @@ export function createEncryption(api: EncryptionApiClient, realtime: RealtimeCli
       return stored === null ? null : { code: stored.code, at: stored.at };
     },
     setVerified: (peerId, code) => client.setVerified(peerId, code),
-    clearVerified: (peerId) => client.clearVerified(peerId),
+    plaintextAllowed: client.plaintextAllowed,
     forget: () => client.forget(),
   };
 

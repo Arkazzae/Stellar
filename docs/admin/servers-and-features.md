@@ -85,10 +85,14 @@ Users can add friends by username, block accounts, message in 1:1 DMs, and start
 > [!WARNING]
 > Optional 1:1 end-to-end encryption is experimental and has not been independently audited yet.
 
-1. **Key & PIN setup:** Under **Settings → Encryption**, set a 6-digit PIN. Your browser generates an X25519 account key pair in IndexedDB and uploads an encrypted backup derived from your PIN (`PBKDF2-HMAC-SHA256`, 600,000 iterations; 10 wrong PIN guesses permanently delete the server backup).
-2. **Mutual activation:** Click **Enable encryption** in a 1:1 DM. Once the peer confirms (`off` → `requested` → `on`), both clients wrap a 256-bit conversation epoch key for all active session devices on both accounts (up to 10 devices per account).
+1. **Save your recovery code.** Under **Settings → Encryption**, save the generated code outside Stellarr, for example in your password manager. The browser uses it to protect a backup of your X25519 account key. On a new device, sign in and paste the code to recover your encrypted history. If you lose the code, an unlocked browser can issue a replacement. If you lose both, resetting encryption starts a new history.
+2. **Mutual activation:** Click **Enable encryption** in a 1:1 DM. Once the peer confirms, updated clients derive each new conversation key from the two account keys. A newly registered device must recover its account key with the recovery code to read or send encrypted messages and join encrypted calls.
 3. **Encrypted messages, files, and calls:** DM text and file metadata are sealed with AES-256-GCM before upload (`POST /api/uploads/encrypted`), and 1:1 calls encrypt Opus, VP8, and VP9 frames inside a WebRTC Encoded Transform worker (`SFrame`).
-4. **Verification:** Compare the 60-digit safety code (12 groups of 5 digits) in the DM profile panel out of band. New or revoked sessions automatically rotate the epoch on the next message or call.
+4. **Verification:** Compare the 60-digit safety code (12 groups of 5 digits) in the DM profile panel out of band. Mark the code as matching on each browser where you compared it. If it changes, sending is blocked until you verify the new code. New or revoked sessions trigger rotation on the next message or call.
+
+If your backup uses a six-digit PIN, open an updated browser and follow the migration prompt. On a new device, enter the old PIN first. Save the generated recovery code, then confirm the change. Your existing messages remain readable. Other browsers will need the new code, and contacts who previously verified you will need to compare the new safety code.
+
+If a pre-migration archive contains PIN backups for both people in a DM, both need to migrate. Someone with that archive and the matching instance key could recover either PIN-era account key and read messages sent while that key was still in use. After the second migration, compare the new safety code outside Stellarr before sending sensitive messages.
 
 ---
 

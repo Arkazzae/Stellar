@@ -131,7 +131,7 @@ async fn a_value_in_a_wrong_encoding_makes_the_whole_body_unreadable_before_anyt
     // exponent are not.
     let with_iterations = |iterations: &str| {
         format!(
-            "{{\"algorithm\":\"x25519\",\"publicKey\":\"{key}\",\"backup\":{{\"salt\":\"{}\",\"iterations\":{iterations},\"verifier\":\"{}\",\"iv\":\"{}\",\"ciphertext\":\"{}\"}}}}",
+            "{{\"algorithm\":\"x25519\",\"publicKey\":\"{key}\",\"backup\":{{\"version\":2,\"salt\":\"{}\",\"iterations\":{iterations},\"verifier\":\"{}\",\"iv\":\"{}\",\"ciphertext\":\"{}\"}}}}",
             text(&bytes(16, 1)), text(&bytes(32, 1)), text(&bytes(12, 1)), text(&bytes(64, 1))
         )
     };
@@ -296,7 +296,7 @@ async fn pin_attempts_are_limited_per_account_and_per_address() {
     let (maja_one, maja_two) = (from(&crowd.maja, "10.0.0.1").await, from(&crowd.maja, "10.0.0.2").await);
     let (ada_two, ada_three) = (from(&crowd.ada, "10.0.0.2").await, from(&crowd.ada, "10.0.0.3").await);
     async fn attempt(client: &crate::support::Client) -> crate::support::Response {
-        post(client, UNLOCK, &json!({ "authKey": text(&bytes(32, 9)) })).await
+        post(client, UNLOCK, &json!({ "version": 2, "authKey": text(&bytes(32, 9)) })).await
     }
 
     assert_eq!(attempt(&maja_one).await.status, 403);
@@ -338,8 +338,8 @@ async fn address_and_account_limits_charge_attempts_at_different_stages() {
             .status
             .as_u16()
     };
-    let wrong = json!({ "authKey": text(&bytes(32, 9)) }).to_string();
-    let short = json!({ "authKey": text(&bytes(16, 9)) }).to_string();
+    let wrong = json!({ "version": 2, "authKey": text(&bytes(32, 9)) }).to_string();
+    let short = json!({ "version": 2, "authKey": text(&bytes(16, 9)) }).to_string();
     let remaining = async |client: &crate::support::Client| read(client, BACKUP).await["remainingAttempts"].as_i64().unwrap();
 
     assert_eq!(raw(&maja_one, "{").await, 400);
@@ -369,7 +369,7 @@ async fn an_attempt_that_is_cut_off_still_costs_the_one_it_made() {
     .await;
     let crowd = Crowd::on(server).await;
     set_up(&crowd.maja.client).await;
-    let wrong = json!({ "authKey": text(&bytes(32, 9)) }).to_string();
+    let wrong = json!({ "version": 2, "authKey": text(&bytes(32, 9)) }).to_string();
 
     // The client hangs up the moment it has sent the request. Whether the
     // server has read it by then is up to the network, so it is done until one

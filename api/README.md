@@ -60,7 +60,7 @@ cargo test --workspace --locked
 | `own_profile/`, `client_settings/`, `bootstrap/`, `theme_sources/` | Profile & arrival sound, cross-device client settings sync, `/api/bootstrap`, and server-fetched external CSS/theme imports. |
 | `servers/`, `administration/`, `roles/`, `moderation/`, `discord_import/` | Server CRUD, invites, audit logs, ownership transfer, roles & overrides, kicks/bans, and background Discord structure/history/attachment imports. |
 | `channels/`, `messages/`, `message_views/`, `link_previews/` | Channels & sections, PWA share target, transcripts & `MessageChanges`, reactions, pins, threads, FTS5 search, and OpenGraph link unfurling worker. |
-| `social/`, `direct/`, `encryption/` | Friendships & blocks, 1:1 DMs, and 1:1 E2EE public keys, PIN backups, session-bound devices, and conversation epochs. |
+| `social/`, `direct/`, `encryption/` | Friendships & blocks, 1:1 DMs, and 1:1 E2EE public keys, versioned key backups, session-bound devices, and conversation epochs. |
 | `uploads/`, `assets/`, `emoji/`, `soundboard/` | Multipart & encrypted uploads, range-streamed `/assets/{id}` downloads, custom server emojis, and soundboard clips. |
 | `voice/`, `activities/` | Voice seats, SFU control broker & closer worker, voice moderation, installed/preview multiplayer activities, and live voice-bar activity state. |
 | `inbox/`, `delivery/` | In-app `@mention`/system inbox and async Web Push + email dispatcher worker (`notification-delivery`). |

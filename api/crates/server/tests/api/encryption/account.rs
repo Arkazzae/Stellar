@@ -84,7 +84,7 @@ async fn setup_returns_the_key_and_backup_fields() {
         "{text}"
     );
     assert!(text.contains("\"backup\":{\"iterations\":600000,\"failedAttempts\":0,\"remainingAttempts\":10,\"updatedAt\":\""), "{text}");
-    assert!(text.ends_with("\"device\":null}"), "{text}");
+    assert!(text.ends_with("\"device\":null,\"recoveryVersion\":2}"), "{text}");
 }
 
 #[tokio::test]
@@ -97,10 +97,10 @@ async fn wrong_pins_are_counted_and_the_tenth_in_a_row_deletes_the_backup_but_no
     assert_eq!(parameters["iterations"], 600_000);
     assert_eq!(parameters["remainingAttempts"], 10);
     assert_eq!(parameters["salt"], text(&bytes(16, 1)));
-    let short = post(maja, UNLOCK, &json!({ "authKey": text(&bytes(16, 0)) })).await;
+    let short = post(maja, UNLOCK, &json!({ "version": 2, "authKey": text(&bytes(16, 0)) })).await;
     assert_eq!(short.status, 400);
 
-    let wrong = post(maja, UNLOCK, &json!({ "authKey": text(&bytes(32, 9)) })).await;
+    let wrong = post(maja, UNLOCK, &json!({ "version": 2, "authKey": text(&bytes(32, 9)) })).await;
     assert_eq!(refusal(&wrong), (403, Some("pin-incorrect".into())));
     let text_of_wrong = wrong.text();
     assert!(
@@ -109,7 +109,7 @@ async fn wrong_pins_are_counted_and_the_tenth_in_a_row_deletes_the_backup_but_no
     );
 
     // A right PIN hands out the backup and forgets the wrong ones.
-    let right = post(maja, UNLOCK, &json!({ "authKey": text(&account.auth_key) })).await;
+    let right = post(maja, UNLOCK, &json!({ "version": 2, "authKey": text(&account.auth_key) })).await;
     assert_eq!(right.status, 200);
     let unlocked: Value = right.json();
     assert_eq!(unlocked["accountKeyId"], account.key_id.as_str());
@@ -119,17 +119,17 @@ async fn wrong_pins_are_counted_and_the_tenth_in_a_row_deletes_the_backup_but_no
 
     let mut remaining = Vec::new();
     for _ in 0..9 {
-        let response = post(maja, UNLOCK, &json!({ "authKey": text(&bytes(32, 9)) })).await;
+        let response = post(maja, UNLOCK, &json!({ "version": 2, "authKey": text(&bytes(32, 9)) })).await;
         assert_eq!(response.status, 403);
         remaining.push(response.json::<Value>()["remainingAttempts"].as_i64().unwrap());
     }
     assert_eq!(remaining, [9, 8, 7, 6, 5, 4, 3, 2, 1]);
-    let tenth = post(maja, UNLOCK, &json!({ "authKey": text(&bytes(32, 9)) })).await;
+    let tenth = post(maja, UNLOCK, &json!({ "version": 2, "authKey": text(&bytes(32, 9)) })).await;
     assert_eq!(refusal(&tenth), (410, Some("backup-deleted".into())));
     assert_eq!(tenth.json::<Value>()["remainingAttempts"], 0);
     assert!(tenth.text().contains("\"status\":410,\"remainingAttempts\":0,\"code\":\"backup-deleted\""));
 
-    let gone = post(maja, UNLOCK, &json!({ "authKey": text(&account.auth_key) })).await;
+    let gone = post(maja, UNLOCK, &json!({ "version": 2, "authKey": text(&account.auth_key) })).await;
     assert_eq!(refusal(&gone), (404, Some("backup-missing".into())));
     assert_eq!(refusal(&maja.get(BACKUP).await), (404, Some("backup-missing".into())));
     let state = read(maja, ACCOUNT).await;
@@ -146,7 +146,7 @@ async fn attempts_sent_at_once_are_counted_one_after_another() {
     let mut tasks = tokio::task::JoinSet::new();
     for _ in 0..12 {
         let client = Arc::clone(&client);
-        tasks.spawn(async move { post(&client, UNLOCK, &json!({ "authKey": text(&bytes(32, 9)) })).await });
+        tasks.spawn(async move { post(&client, UNLOCK, &json!({ "version": 2, "authKey": text(&bytes(32, 9)) })).await });
     }
     let mut answers = Vec::new();
     while let Some(answer) = tasks.join_next().await {
@@ -185,7 +185,7 @@ async fn a_new_pin_needs_the_password_a_fresh_second_step_and_a_browser_that_hol
 
     // A new PIN also brings back a backup that wrong PINs deleted.
     for _ in 0..10 {
-        post(maja, UNLOCK, &json!({ "authKey": text(&bytes(32, 9)) })).await;
+        post(maja, UNLOCK, &json!({ "version": 2, "authKey": text(&bytes(32, 9)) })).await;
     }
     assert_eq!(maja.get(BACKUP).await.status, 404);
     let replaced = put(maja, BACKUP, &new_pin(PASSWORD, &account.key_id)).await;
@@ -193,8 +193,8 @@ async fn a_new_pin_needs_the_password_a_fresh_second_step_and_a_browser_that_hol
     let status: Value = replaced.json();
     assert_eq!((status["remainingAttempts"].clone(), status["failedAttempts"].clone()), (json!(10), json!(0)));
     assert!(replaced.text().starts_with("{\"iterations\":600000,\"failedAttempts\":0,\"remainingAttempts\":10,\"updatedAt\":\""));
-    assert_eq!(refusal(&post(maja, UNLOCK, &json!({ "authKey": text(&account.auth_key) })).await).0, 403);
-    assert_eq!(post(maja, UNLOCK, &json!({ "authKey": text(&new_auth) })).await.status, 200);
+    assert_eq!(refusal(&post(maja, UNLOCK, &json!({ "version": 2, "authKey": text(&account.auth_key) })).await).0, 403);
+    assert_eq!(post(maja, UNLOCK, &json!({ "version": 2, "authKey": text(&new_auth) })).await.status, 200);
 
     // Once the account has a second step, it has to be fresh, whatever the password.
     add_second_step(&crowd.server, &crowd.maja.id);

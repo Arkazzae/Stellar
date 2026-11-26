@@ -2,6 +2,7 @@
 //! PIN backup and devices, and the switch and epochs of a conversation.
 
 mod account;
+mod backup_restore;
 mod direct;
 mod kit;
 mod lifecycle;

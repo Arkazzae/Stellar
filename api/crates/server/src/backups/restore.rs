@@ -218,10 +218,11 @@ pub fn apply_with(
     // Nobody stays signed in: a session that was ended after the archive was
     // made is running again in its copy, and a session of the instance being
     // replaced means nothing in the instance that replaces it.
-    if let Err(error) = end_sessions(&unpacked.join(DATABASE_FOLDER).join(DATABASE_FILE), now) {
+    let restored_db = unpacked.join(DATABASE_FOLDER).join(DATABASE_FILE);
+    if let Err(error) = prepare_database(&restored_db, &data_root, now) {
         let _ = std::fs::remove_dir_all(&unpacked);
         return Err(refused(format!(
-            "The sessions in the archive's database could not be ended: {error}"
+            "The archive's database could not be restored: {error}"
         )));
     }
 
@@ -238,13 +239,18 @@ pub fn apply_with(
     })
 }
 
-/// Ends what a copy may bring back (sessions, remembered browsers, open
-/// challenges and the rest of `auth::restore`) in the database at `path`, in
-/// one transaction, and leaves
-/// the file as a single file again (no write-ahead log beside it).
-fn end_sessions(path: &Path, now: Timestamp) -> Result<(), String> {
+/// Checks that this host can recover the archive's account key backups before the
+/// swap, then revokes replayable credentials and closes the staged database.
+fn prepare_database(path: &Path, data_root: &Path, now: Timestamp) -> Result<(), String> {
     let mut connection = rusqlite::Connection::open(path).map_err(|error| error.to_string())?;
     let transaction = connection.transaction().map_err(|error| error.to_string())?;
+    let live_path = data_root.join(DATABASE_FOLDER).join(DATABASE_FILE);
+    if live_path.try_exists().map_err(|e| e.to_string())? {
+        let live = rusqlite::Connection::open_with_flags(live_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|e| e.to_string())?;
+        crate::encryption::key_backups::check_restore(&live, &transaction).map_err(|e| e.to_string())?;
+    }
+    crate::encryption::key_backups::matching_key(&transaction, data_root).map_err(|error| error.to_string())?;
     crate::auth::restore::end_what_a_copy_may_bring_back(&transaction, now).map_err(|error| error.to_string())?;
     transaction.commit().map_err(|error| error.to_string())?;
     connection

@@ -24,6 +24,21 @@ describe("the browser's key store", () => {
     expect(await store.getDevice("u-2")).toBeNull();
   });
 
+  it("binds each conversation to one peer across tabs and keeps old comparisons for history", async () => {
+    const name = "test-" + crypto.randomUUID();
+    const a = createIndexedDbKeyStore(name);
+    const b = createIndexedDbKeyStore(name);
+    const results = await Promise.all([a.bindPeer("self", "dm", "peer"), b.bindPeer("self", "dm", "other")]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+    const peerId = (await a.getPeer("self", "dm"))!;
+    await a.putVerification({ userId: "self", peerId, code: "first", at: "then" });
+    await b.setPlaintextAllowed("self", peerId, true);
+    await a.putVerification({ userId: "self", peerId, code: "next", at: "now" });
+    const confirmed = await b.getVerification("self", peerId);
+    expect(confirmed?.previousCodes).toEqual(["first"]);
+    expect(confirmed?.plaintextAllowed).toBeFalsy();
+  });
+
   it("forgets the keys of one account on sign-out and keeps what was verified", async () => {
     const store = createIndexedDbKeyStore(`test-${crypto.randomUUID()}`);
     const device = await generateKeyPair(false);

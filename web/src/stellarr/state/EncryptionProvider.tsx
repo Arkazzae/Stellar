@@ -18,11 +18,11 @@ import { useSessionContext } from "./SessionProvider";
 
 /** The one encryption dialog that can be open, and what it is for. */
 export type EncryptionDialog =
-  /** First PIN; `then` is the switch it was raised for, run once the PIN is set. */
+  /** Initial recovery setup. Run the requested switch once the code has been saved. */
   | { kind: "setup"; then?: { conversationId: string; action: "request" | "confirm" } }
   | { kind: "unlock" }
   | { kind: "forgot" }
-  | { kind: "newPin"; mode: "change" | "reset" }
+  | { kind: "recoveryCode"; mode: "change" | "reset" }
   | { kind: "safety"; conversationId: string };
 
 export interface EncryptionValue {
@@ -34,7 +34,7 @@ export interface EncryptionValue {
   switching: string | null;
   /** The last switch that failed, and why, in words. */
   switchError: { conversationId: string; message: string } | null;
-  /** Switch on: asks, or confirms the other person's request; sets the PIN up first when there is none. */
+  /** Switch on: asks, or confirms the other person's request; sets up key recovery first if needed. */
   switchOn: (conversation: DmConversation) => void;
   /** Switch off: withdraws your request, declines theirs, or ends encryption after asking. */
   switchOff: (conversation: DmConversation) => void;
@@ -51,7 +51,7 @@ const EncryptionContext = createContext<EncryptionValue | null>(null);
  * Where encryption stands for the account and which of its dialogs is open.
  *
  * The status is the port's; this adds what the screens share: the switch
- * actions (which may have to set a PIN up first), the dialog any of them can
+ * actions (which may have to set up encryption first), the dialog any of them can
  * raise, and the requests put aside for now.
  */
 export function EncryptionProvider({ children }: { children: ReactNode }) {
@@ -60,7 +60,13 @@ export function EncryptionProvider({ children }: { children: ReactNode }) {
   const { t } = useLanguage();
   const confirm = useConfirm();
   const status = useSyncExternalStore(encryption.subscribe, encryption.getStatus, encryption.getStatus);
-  const [dialog, setDialog] = useState<EncryptionDialog | null>(null);
+  const [selectedDialog, setDialog] = useState<EncryptionDialog | null>(null);
+  const [dismissedMigration, setDismissedMigration] = useState<string | null>(null);
+  const migrationId = status.migrationRequired && (status.unlocked || status.backup) ? status.accountKey?.keyId : null;
+  const dialog = useMemo<EncryptionDialog | null>(() => {
+    if (selectedDialog !== null || !migrationId || migrationId === dismissedMigration) return selectedDialog;
+    return status.unlocked ? { kind: "recoveryCode", mode: "change" } : { kind: "unlock" };
+  }, [selectedDialog, migrationId, dismissedMigration, status.unlocked]);
   const [switching, setSwitching] = useState<string | null>(null);
   const [switchError, setSwitchError] = useState<EncryptionValue["switchError"]>(null);
   const [dismissedRequests, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
@@ -96,9 +102,8 @@ export function EncryptionProvider({ children }: { children: ReactNode }) {
   const switchOff = useCallback(
     (conversation: DmConversation) => {
       const state = conversation.encryption;
-      if (state === undefined || state.state === "off") return;
-      if (state.state === "requested") {
-        runSwitch(conversation.id, state.requestedById === user?.id ? "cancel" : "disable");
+      if (state?.state === "requested" && state.requestedById === user?.id) {
+        runSwitch(conversation.id, "cancel");
         return;
       }
       void confirm({
@@ -118,7 +123,10 @@ export function EncryptionProvider({ children }: { children: ReactNode }) {
     setDismissed((current) => new Set([...current, lineId]));
   }, []);
 
-  const closeDialog = useCallback(() => setDialog(null), []);
+  const closeDialog = useCallback(() => {
+    setDismissedMigration(migrationId ?? null);
+    setDialog(null);
+  }, [migrationId]);
 
   const value = useMemo<EncryptionValue>(
     () => ({

@@ -37,8 +37,10 @@ function problem(status: number, code: string, details: Record<string, unknown> 
 interface Person {
   userId: string;
   name: string;
+  recoveryVersion?: 1 | 2;
+  archiveId?: string;
   accountKey: PublicKeyRecord | null;
-  backup: (KeyBackupInput & { failed: number }) | null;
+  backup: (Omit<KeyBackupInput, "version"> & { failed: number; version: 1 | 2 }) | null;
   devices: { id: string; session: string; publicKey: string; revoked: boolean; label: string }[];
 }
 
@@ -123,7 +125,7 @@ export class FakeEncryptionServer {
   private forReader(stored: StoredEpoch, userId: string, session: string): EncryptionEpoch {
     const person = this.person(userId);
     const device = person.devices.find((candidate) => candidate.session === session && !candidate.revoked);
-    const mine = new Set([person.accountKey?.keyId, device?.id].filter((key) => key !== undefined));
+    const mine = new Set([person.accountKey?.keyId, device?.id, person.archiveId].filter((key) => key !== undefined));
     return { ...stored.epoch, envelopes: stored.envelopes.filter((envelope) => mine.has(envelope.recipientKeyId)) };
   }
 
@@ -151,6 +153,7 @@ export class FakeEncryptionServer {
       const backup = person().backup;
       return {
         accountKey: person().accountKey,
+        recoveryVersion: person().recoveryVersion ?? 1 as const,
         backup:
           backup === null
             ? null
@@ -166,18 +169,20 @@ export class FakeEncryptionServer {
           if (person().accountKey !== null) throw problem(409, "account-key-exists");
           person().accountKey = { keyId: id(), algorithm: "x25519", publicKey: input.publicKey, createdAt: WHEN };
           person().backup = { ...input.backup, failed: 0 };
+          person().recoveryVersion = 2;
           return { ...account(), device: null };
         }),
       getBackupParameters: () =>
         call("getBackupParameters", undefined, () => {
           const backup = person().backup;
           if (backup === null) throw problem(404, "backup-missing");
-          return { salt: backup.salt, iterations: backup.iterations, remainingAttempts: 10 - backup.failed };
+          return { version: backup.version, salt: backup.salt, iterations: backup.iterations, remainingAttempts: 10 - backup.failed };
         }),
-      unlockBackup: (authKey) =>
+      unlockBackup: (authKey, version) =>
         call("unlockBackup", authKey, async () => {
           const backup = person().backup;
           if (backup === null) throw problem(404, "backup-missing");
+          if (version !== backup.version) throw problem(404, "backup-missing");
           const verifier = new Uint8Array(await crypto.subtle.digest("SHA-256", fromBase64(authKey)));
           if (!sameBytes(verifier, fromBase64(backup.verifier))) {
             backup.failed += 1;
@@ -203,6 +208,12 @@ export class FakeEncryptionServer {
         }),
       resetAccountKey: (input) =>
         call("resetAccountKey", input, () => {
+          if (input.migrateFromKeyId && (person().recoveryVersion === 2 || input.migrateFromKeyId !== person().accountKey?.keyId)) {
+            throw problem(409, "account-key-changed");
+          }
+          if (input.migrateFromKeyId) person().archiveId = input.migrateFromKeyId;
+          else delete person().archiveId;
+          person().recoveryVersion = 2;
           const accountKey = { keyId: id(), algorithm: "x25519", publicKey: input.publicKey, createdAt: WHEN };
           person().accountKey = accountKey;
           person().backup = { ...input.backup, failed: 0 };
@@ -290,9 +301,10 @@ export class FakeEncryptionServer {
           if (input.previousEpochId !== this.encryption.currentEpochId) {
             throw problem(409, "epoch-stale", { currentEpochId: this.encryption.currentEpochId });
           }
-          const coverage = this.coverageOf(input.envelopes.map((envelope) => envelope.recipientKeyId));
+          const coverage = this.coverageOf([...input.envelopes.map((envelope) => envelope.recipientKeyId), ...input.deviceKeyIds]);
           if (coverage.missing.length > 0 || coverage.extra.length > 0) throw problem(409, "epoch-coverage", coverage);
           const epoch: EncryptionEpoch = {
+            version: input.version,
             id: input.epochId,
             sequence: this.epochs.length + 1,
             previousEpochId: input.previousEpochId,

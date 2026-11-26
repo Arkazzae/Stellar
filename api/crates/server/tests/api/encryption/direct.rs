@@ -237,6 +237,48 @@ async fn outsiders_find_nothing_and_a_block_closes_the_encryption_too() {
 }
 
 #[tokio::test]
+async fn account_bound_epochs_store_only_account_envelopes_and_prevent_downgrade() {
+    let crowd = Crowd::ready().await;
+    let client = &crowd.maja.client;
+    let conversation = crowd.conversation(&crowd.maja, &crowd.ada);
+    crowd.enable(&crowd.maja, &crowd.ada, &conversation).await;
+    let keys = crowd.keys(client, &conversation).await;
+    let every = crowd.recipients(client, &conversation).await;
+    let legacy = Id::random().to_string();
+    assert_eq!(post_epoch(client, &conversation, &epoch_body(&legacy, None, &every)).await.status, 201);
+    let ids = |kind: &str| keys["recipients"].as_array().unwrap().iter()
+        .filter(|r| r["kind"] == kind)
+        .map(|r| r["keyId"].as_str().unwrap().to_string()).collect::<Vec<_>>();
+    let id = Id::random().to_string();
+    let mut body = epoch_body(&id, Some(&legacy), &ids("account"));
+    body["version"] = json!(2);
+    body["deviceKeyIds"] = json!(ids("device"));
+    for e in body["envelopes"].as_array_mut().unwrap() {
+        e["ciphertext"] = json!(text(&bytes(80, 3)));
+    }
+    let mut swapped = body.clone();
+    swapped["envelopes"][0]["recipientKeyId"] = body["deviceKeyIds"][0].clone();
+    swapped["deviceKeyIds"][0] = body["envelopes"][0]["recipientKeyId"].clone();
+    assert_eq!(post_epoch(client, &conversation, &swapped).await.status, 400);
+    assert_eq!(post_epoch(client, &conversation, &body).await.status, 201);
+    for reader in [client, &crowd.ada.client] {
+        let view = crowd.keys(reader, &conversation).await;
+        let current = &view["currentEpoch"];
+        assert_eq!(current["version"], 2);
+        let envelopes = current["envelopes"].as_array().unwrap();
+        assert_eq!(envelopes.len(), 1);
+        assert_eq!(envelopes[0]["recipientKeyId"], view["self"]["accountKey"]["keyId"]);
+        assert_eq!(current["recipients"].as_array().unwrap().len(), every.len());
+    }
+    let old = epoch_body(&Id::random().to_string(), Some(&id), &every);
+    assert_eq!(post_epoch(client, &conversation, &old).await.status, 400);
+    assert_eq!(action(client, &conversation, "disable").await.status, 200);
+    crowd.enable(&crowd.maja, &crowd.ada, &conversation).await;
+    let old = epoch_body(&Id::random().to_string(), None, &every);
+    assert_eq!(post_epoch(client, &conversation, &old).await.status, 400);
+}
+
+#[tokio::test]
 async fn an_epoch_follows_the_current_one_and_reaches_exactly_every_key_of_both_people() {
     let crowd = Crowd::ready().await;
     let (maja, ada) = (&crowd.maja.client, &crowd.ada.client);
@@ -574,7 +616,7 @@ async fn the_account_is_told_of_its_own_changes_and_nobody_else_is() {
     assert_eq!(put(&crowd.maja.client, "/api/me/encryption/backup", &new_pin).await.status, 200);
     assert_eq!(names(&told(&mut maja).await), ["EncryptionAccountChanged"]);
     // A wrong PIN is not news.
-    let wrong = post(&crowd.maja.client, "/api/me/encryption/backup/unlock", &json!({ "authKey": text(&bytes(32, 9)) })).await;
+    let wrong = post(&crowd.maja.client, "/api/me/encryption/backup/unlock", &json!({ "version": 2, "authKey": text(&bytes(32, 9)) })).await;
     assert_eq!(wrong.status, 403);
     assert!(told(&mut maja).await.is_empty());
     let reset = json!({ "currentPassword": crate::support::PASSWORD, "algorithm": "x25519", "publicKey": text(&bytes(32, 3)), "backup": backup(&bytes(32, 1)) });

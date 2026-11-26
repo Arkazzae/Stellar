@@ -23,7 +23,7 @@ Hop into voice, stream your game in 4K 60 fps without paying for Nitro, spam the
 ### Private by design
 
 - Your server stays on your machine with no cloud accounts, ads, quests, or subscriptions. Noise suppression and message translation run locally in your browser, and link previews are fetched by your server so friends' browsers never ping external sites (you can turn previews off too).
-- Flip on optional 1:1 end-to-end encryption for private DMs, file uploads, and voice or video calls, with PIN-protected key backup and safety codes.
+- Flip on optional 1:1 end-to-end encryption for private DMs, file uploads, and voice or video calls, with a browser-generated recovery code for your key backup and safety codes for verifying contacts.
 - Lock down accounts with passkeys, TOTP, email codes, or your own OIDC provider, and schedule automatic daily backups to disk or Cloudflare R2.
 
 ### Easy to host, (over)engineered inside

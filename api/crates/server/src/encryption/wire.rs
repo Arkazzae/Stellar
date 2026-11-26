@@ -21,10 +21,11 @@ pub fn is_wire_id(text: &str) -> Option<Id> {
 
 // ---- requests ----
 
-/// The PIN-protected copy of the account's private key, as the browser made it.
+/// The client-encrypted copy of the account keys, as the browser made it.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BackupRequest {
+    pub version: Option<u8>,
     #[serde(default, deserialize_with = "optional_octets")]
     pub salt: Option<Vec<u8>>,
     pub iterations: Option<i32>,
@@ -39,7 +40,10 @@ pub struct BackupRequest {
 /// A backup that has every part, each of a size the protocol allows. Leaving
 /// room around what a browser sends means a wrong client is refused instead
 /// of stored.
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
 pub struct NewBackup {
+    #[serde(default = "legacy_version")]
+    pub version: u8,
     pub salt: Vec<u8>,
     pub iterations: i32,
     pub verifier: Vec<u8>,
@@ -47,10 +51,14 @@ pub struct NewBackup {
     pub ciphertext: Vec<u8>,
 }
 
+fn legacy_version() -> u8 { 1 }
+
 impl BackupRequest {
     /// The backup, when it is complete and its parts fit.
     pub fn checked(self) -> Option<NewBackup> {
+        if self.version != Some(2) { return None; }
         let backup = NewBackup {
+            version: 2,
             salt: self.salt?,
             iterations: self.iterations?,
             verifier: self.verifier?,
@@ -76,10 +84,12 @@ pub struct SetUp {
     pub backup: Option<BackupRequest>,
 }
 
-/// A new account key and its backup, for when nobody holds the old one.
+/// Rotates the account key on migration or an explicit destructive reset.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Reset {
+    pub migrate_from_key_id: Option<Id>,
+    pub expected_account_key_id: Option<Id>,
     pub current_password: Option<String>,
     pub algorithm: Option<String>,
     #[serde(default, deserialize_with = "optional_octets")]
@@ -87,7 +97,7 @@ pub struct Reset {
     pub backup: Option<BackupRequest>,
 }
 
-/// A new PIN: the same account key, encrypted again.
+/// Reissues the code for a backup that already uses recovery codes.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Replace {
@@ -99,6 +109,7 @@ pub struct Replace {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Unlock {
+    pub version: Option<u8>,
     #[serde(default, deserialize_with = "optional_octets")]
     pub auth_key: Option<Vec<u8>>,
 }
@@ -127,6 +138,8 @@ pub struct EnvelopeRequest {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EpochRequest {
+    pub version: Option<u8>,
+    pub device_key_ids: Option<Vec<Id>>,
     pub epoch_id: Option<String>,
     pub previous_epoch_id: Option<Id>,
     /// `None` where the request had `null` for an envelope.
@@ -156,6 +169,7 @@ pub struct BackupStatusDto {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BackupParametersDto {
+    pub version: u8,
     pub salt: Octets,
     pub iterations: i32,
     pub remaining_attempts: i32,
@@ -187,6 +201,7 @@ pub struct AccountDto {
     pub account_key: Option<PublicKeyDto>,
     pub backup: Option<BackupStatusDto>,
     pub device: Option<OwnDeviceDto>,
+    pub recovery_version: u8,
 }
 
 #[derive(Serialize)]
@@ -257,6 +272,7 @@ pub struct EpochDto {
     pub created_at: Timestamp,
     pub recipients: Vec<RecipientKeyDto>,
     pub envelopes: Vec<EnvelopeDto>,
+    pub version: u8,
 }
 
 #[derive(Serialize)]

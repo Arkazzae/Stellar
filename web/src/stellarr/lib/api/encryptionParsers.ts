@@ -78,9 +78,16 @@ export function parseOwnDevice(value: unknown, path: string): OwnDevice {
   };
 }
 
+function recoveryVersion(value: unknown): 1 | 2 {
+  if (value === 1) return 1;
+  if (value === 2) return 2;
+  throw new ApiError("malformed", "Unknown account recovery version");
+}
+
 export function parseEncryptionAccount(value: unknown, path: string): EncryptionAccount {
   const record = expectRecord(value, path);
   return {
+    ...(record["recoveryVersion"] === undefined ? {} : { recoveryVersion: recoveryVersion(record["recoveryVersion"]) }),
     accountKey: nullablePublicKey(record["accountKey"], `${path}.accountKey`),
     backup:
       record["backup"] === null || record["backup"] === undefined
@@ -102,6 +109,7 @@ export function parseOwnDevices(value: unknown, path: string): OwnDevice[] {
 export function parseBackupParameters(value: unknown, path: string): BackupParameters {
   const record = expectRecord(value, path);
   return {
+    version: recoveryVersion(record["version"]),
     salt: expectString(record, "salt", path),
     iterations: expectNumber(record, "iterations", path),
     remainingAttempts: expectNumber(record, "remainingAttempts", path),
@@ -148,7 +156,10 @@ function parseEnvelope(value: unknown, path: string): EpochEnvelope {
 
 export function parseEpoch(value: unknown, path: string): EncryptionEpoch {
   const record = expectRecord(value, path);
+  const version = record["version"];
+  if (version !== undefined && version !== 1 && version !== 2) throw new ApiError("malformed", "Unknown epoch version");
   return {
+    ...(version === undefined ? {} : { version }),
     id: expectString(record, "id", path),
     sequence: expectNumber(record, "sequence", path),
     previousEpochId: nullableString(record, "previousEpochId", path),

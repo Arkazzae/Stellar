@@ -176,7 +176,7 @@ async fn two_attempts_at_once_when_one_is_left_delete_the_backup_once() {
         .server
         .database()
         .execute(
-            "UPDATE \"AccountKeyBackups\" SET \"FailedAttempts\" = 9 WHERE \"UserId\" = ?1",
+            "UPDATE \"ProtectedAccountKeyBackups\" SET \"FailedAttempts\" = 9 WHERE \"UserId\" = ?1",
             params![Id::parse(&crowd.maja.id).unwrap()],
         )
         .unwrap();
@@ -184,13 +184,13 @@ async fn two_attempts_at_once_when_one_is_left_delete_the_backup_once() {
     let requests: Vec<_> = (0..2)
         .map(|_| {
             let client = Arc::clone(&client);
-            async move { post(&client, "/api/me/encryption/backup/unlock", &json!({ "authKey": text(&bytes(32, 9)) })).await }
+            async move { post(&client, "/api/me/encryption/backup/unlock", &json!({ "version": 2, "authKey": text(&bytes(32, 9)) })).await }
         })
         .collect();
 
     let answers = together(requests).await;
 
     assert_eq!(statuses(&answers), [404, 410]);
-    let left: i64 = crowd.server.database().query_row("SELECT COUNT(*) FROM \"AccountKeyBackups\"", [], |row| row.get(0)).unwrap();
+    let left: i64 = crowd.server.database().query_row("SELECT COUNT(*) FROM \"ProtectedAccountKeyBackups\"", [], |row| row.get(0)).unwrap();
     assert_eq!(left, 0);
 }

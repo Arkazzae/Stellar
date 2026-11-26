@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS ProtectedAccountKeyBackups (
+    UserId TEXT NOT NULL PRIMARY KEY REFERENCES Users(Id) ON DELETE CASCADE,
+    Sealed TEXT NOT NULL,
+    FailedAttempts INTEGER NOT NULL,
+    UpdatedAt TEXT NOT NULL
+);

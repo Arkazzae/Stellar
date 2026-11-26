@@ -581,7 +581,7 @@ mod tests {
 
         let (_folder, database) = new_database();
         let settings = Settings::load(&[("STELLARR_ENVIRONMENT".into(), "Testing".into())]).unwrap();
-        let state = AppState::new(settings, database.clone(), Arc::new(Unconnected), Arc::new(Unconnected), Sealer::from_key([1; 32]));
+        let state = AppState::new(settings, database.clone(), Arc::new(Unconnected), Arc::new(Unconnected), Sealer::from_key([1; 32]), Sealer::from_key([6; 32]));
         let messages = state.messages();
         let starter = starter::prepare(&starter::ServerRequest { name: Some("Crew".into()), ..Default::default() }, messages).ok().unwrap();
         let input = || NewAccount { username: "maya".into(), display_name: "Maya".into(), email: "maya@example.test".into(), password_hash: None, external: None };
