@@ -8,8 +8,8 @@ import { RequestChart } from "../components/request-chart";
 import { ServiceUptime, UptimeAxis } from "../components/service-uptime";
 import { StatTile } from "../components/stat-tile";
 import { StatusBadge } from "../components/status-badge";
-import { getLocale, t } from "../i18n";
-import { formatDateTime, formatMegabytes, formatNumber } from "../i18n/format";
+import { t } from "../i18n";
+import { formatDateTime, formatMegabytes, formatNumber, formatTime } from "../i18n/format";
 import { cockpitApi, type CockpitRuntime, type CockpitRuntimeSample } from "../lib/api";
 import { bucketize } from "../lib/sparkline";
 import { formatUptime, minuteSlots, serviceSlotStates } from "../lib/uptime";
@@ -27,13 +27,6 @@ const REQUEST_CHART_CHROME = 56;
 const MIN_PLOT = 64;
 
 const formatMemory = (bytes: number) => formatMegabytes(bytes, 1);
-
-function formatClock(at: string): string {
-  return new Date(at).toLocaleTimeString(getLocale() === "pl" ? "pl-PL" : "en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 interface TrendProps {
   history: readonly CockpitRuntimeSample[];
@@ -58,8 +51,8 @@ function Trend({ history, pick, combine, format, form, tone }: TrendProps) {
       value: point.value ?? 0,
       note:
         point.value === null
-          ? formatClock(new Date(point.end).toISOString())
-          : `${formatClock(new Date(point.end).toISOString())}: ${format(point.value)}`,
+          ? formatTime(point.end)
+          : `${formatTime(point.end)}: ${format(point.value)}`,
     }));
   return (
     <div className="h-12">
@@ -176,7 +169,7 @@ function RequestsChart({ data, className }: { data: CockpitRuntime; className?: 
             label={t("runtime.chart.requests")}
             okLabel={t("runtime.chart.answered")}
             errorLabel={t("runtime.metric.serverErrors")}
-            formatTime={formatClock}
+            formatTime={formatTime}
             tableCaption={t("runtime.chart.requestsTable")}
             timeHeading={t("runtime.chart.time")}
             height={Math.max(MIN_PLOT * scale, height - REQUEST_CHART_CHROME * scale)}

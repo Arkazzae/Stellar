@@ -6,9 +6,6 @@ import { describe, expect, it } from "vitest";
 const SRC = join(process.cwd(), "src");
 const POLISH_LETTER = /[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/;
 
-/** Interface text is written once per language, in the catalogs. */
-const isCatalog = (path: string) => path.startsWith("stellarr/i18n/messages/");
-
 /** Cockpit is an app of its own, with its own catalogs and checks (cockpit/i18n/). */
 const isCockpit = (path: string) => path.startsWith("cockpit/");
 
@@ -53,7 +50,7 @@ function sourceFiles(directory: string): string[] {
 
 const files = sourceFiles(SRC)
   .map((path) => ({ path: relative(SRC, path), text: readFileSync(path, "utf8") }))
-  .filter(({ path }) => !isCatalog(path) && !isTestCode(path) && !isCockpit(path));
+  .filter(({ path }) => !isTestCode(path) && !isCockpit(path));
 
 const isAllowed = (path: string, line: string) =>
   ALLOWED.some((entry) => entry.file === path && line.includes(entry.line));

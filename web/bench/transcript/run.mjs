@@ -16,6 +16,7 @@ import tailwindcss from "@tailwindcss/postcss";
 import { build } from "vite";
 
 import { stellarrArtifactSizes } from "../../artifactSizes.ts";
+import { compileLocales } from "../../localization.ts";
 import { launch } from "../cdp.mjs";
 
 const here = import.meta.dirname;
@@ -137,6 +138,7 @@ function parseArgs(argv) {
 
 async function buildFixture() {
   const started = performance.now();
+  compileLocales();
   await build({
     configFile: false,
     root: fixtureRoot,

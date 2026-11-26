@@ -1,3 +1,4 @@
+import { locales } from "@/i18n";
 import { useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from "react";
 
 import { Icon } from "@stellarr/icons";
@@ -61,7 +62,7 @@ export function ComposerCodeHead({
   t,
 }: ComposerCodeHeadProps) {
   const sendKey = onApplePlatform() ? "⌘" : "Ctrl";
-  const count = (value: number) => value.toLocaleString(locale === "en" ? "en-GB" : "pl-PL");
+  const count = (value: number) => value.toLocaleString(locales[locale].tag);
   const counter =
     room >= WARN_BELOW
       ? null

@@ -17,12 +17,11 @@ beforeEach(() => {
 
 /** The copy a localized component reads from the provider. */
 function LanguageProbe() {
-  const { locale, t, text } = useLanguage();
+  const { locale, t } = useLanguage();
   return (
     <div>
       <output aria-label="locale">{locale}</output>
       <output aria-label="title">{t("settings.language.title")}</output>
-      <output aria-label="greeting">{text("Cześć", "Hello")}</output>
     </div>
   );
 }
@@ -50,7 +49,6 @@ describe("screens on an English page", () => {
 
     expect(screen.getByLabelText("locale")).toHaveTextContent("en");
     expect(screen.getByLabelText("title")).toHaveTextContent("Language");
-    expect(screen.getByLabelText("greeting")).toHaveTextContent("Hello");
   });
 });
 
@@ -69,6 +67,20 @@ describe("the same screens for a person who chose Polish", () => {
     expect(screen.getByRole("button", { name: "Profil: Ada" })).toBeInTheDocument();
     expect(screen.getByLabelText("locale")).toHaveTextContent("pl");
     expect(screen.getByLabelText("title")).toHaveTextContent("Język");
-    expect(screen.getByLabelText("greeting")).toHaveTextContent("Cześć");
   });
+});
+
+it("shows German sign-in fields and settings when the instance starts in German", () => {
+  document.documentElement.lang = "de";
+  render(
+    <LanguageProvider>
+      <LoginScreen onSubmit={vi.fn()} />
+      <LanguageProbe />
+    </LanguageProvider>,
+  );
+
+  expect(screen.getByRole("heading", { name: "Anmelden" })).toBeInTheDocument();
+  expect(screen.getByRole("textbox", { name: "Benutzername oder E-Mail-Adresse" })).toBeInTheDocument();
+  expect(screen.getByLabelText("locale")).toHaveTextContent("de");
+  expect(screen.getByLabelText("title")).toHaveTextContent("Sprache");
 });

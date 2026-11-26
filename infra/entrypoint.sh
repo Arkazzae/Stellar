@@ -67,18 +67,14 @@ resolve_public_ip() {
 # Writes the instance's default language from STELLARR_LANGUAGE to the file
 # nginx serves as /stellarr-instance.js, which the web client's document runs
 # before its first paint. One image serves every instance, so the language
-# cannot be part of the build. The value lands in a script, so only a language
-# the client ships is written; anything else is written as null, and the
-# client falls back to English. The bytes are those of instanceLanguageSource
-# in web/src/stellarr/i18n/localeScript.ts, which web/documents.test.ts checks
-# against this function.
+# cannot be part of the build. Only serialize a plain language tag here.
+# The pre-paint script resolves it against the catalogs shipped in that build.
 write_instance_language() {
   local file="$1" language="${STELLARR_LANGUAGE:-}" value=null
-  case "$language" in
-    en|pl) value="\"$language\"" ;;
-    '') ;;
-    *) echo "STELLARR_LANGUAGE=$language is not a language the web client ships (en, pl); it starts in English for anyone who has not chosen one." >&2 ;;
-  esac
+  local LC_ALL=C
+  if [[ "$language" =~ ^[a-z]{2,3}(-[A-Za-z0-9]{1,8})*$ ]]; then
+    value="\"$language\""
+  fi
   mkdir -p "$(dirname "$file")"
   printf 'window.stellarrInstanceLanguage=%s;\n' "$value" > "$file"
 }

@@ -7,12 +7,11 @@ import { LanguageProvider, useLanguage } from "./LanguageProvider";
 const STORAGE_KEY = "stellarr_language_settings";
 
 function Probe() {
-  const { locale, t, text, update } = useLanguage();
+  const { locale, t, update } = useLanguage();
   return (
     <div>
       <output aria-label="locale">{locale}</output>
       <output aria-label="title">{t("settings.language.title")}</output>
-      <output aria-label="text">{text("Cześć", "Hello")}</output>
       <button type="button" onClick={() => update({ chatTranslationEnabled: true })}>
         Translate chat
       </button>
@@ -45,7 +44,6 @@ describe("the language before anyone chose one", () => {
 
     expect(screen.getByLabelText("locale")).toHaveTextContent("en");
     expect(screen.getByLabelText("title")).toHaveTextContent("Language");
-    expect(screen.getByLabelText("text")).toHaveTextContent("Hello");
   });
 
   it("starts the provider in the page's language when the server gave none", () => {

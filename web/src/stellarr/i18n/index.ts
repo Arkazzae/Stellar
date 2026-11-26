@@ -1,9 +1,15 @@
-import type { pl } from "./messages/pl";
+import { SUPPORTED_LOCALES, type SupportedLocale } from "../../i18n/locales";
+import type en from "../../../.locales/web/en.json";
 
-export const SUPPORTED_LOCALES = ["pl", "en"] as const;
-export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number];
+export { isSupportedLocale, locales, SUPPORTED_LOCALES, type SupportedLocale } from "../../i18n/locales";
 export type InterfaceLocale = SupportedLocale;
-export type TranslationTargetLanguage = "pl" | "en";
+// Target languages of the bundled offline translation models.
+export const TRANSLATION_TARGETS = ["en", "pl"] as const;
+export type TranslationTargetLanguage = (typeof TRANSLATION_TARGETS)[number];
+
+export function isTranslationTarget(value: unknown): value is TranslationTargetLanguage {
+  return TRANSLATION_TARGETS.some((target) => target === value);
+}
 
 export interface LanguageSettings {
   locale: InterfaceLocale;
@@ -19,8 +25,7 @@ export const TRANSLATION_DEFAULTS = {
   chatTranslationTargetLanguage: "en",
 } as const satisfies Omit<LanguageSettings, "locale">;
 
-/** Polish is the source catalog; the English one is typed against its keys. */
-export type MessageKey = keyof typeof pl;
+export type MessageKey = keyof typeof en;
 export type MessageValues = Record<string, string | number>;
 export type Translator = (key: MessageKey, values?: MessageValues) => string;
 export type MessageCatalog = Record<MessageKey, string>;
@@ -31,17 +36,12 @@ export type MessageCatalog = Record<MessageKey, string>;
  * and `main.tsx` renders once it is here; another one is fetched when the
  * person picks its language.
  */
-const LOADERS: Record<SupportedLocale, () => Promise<MessageCatalog>> = {
-  pl: async () => (await import("./messages/pl")).pl,
-  en: async () => (await import("./messages/en")).en,
-};
+async function fetchCatalog(locale: SupportedLocale): Promise<MessageCatalog> {
+  return (await import(`../../../.locales/web/${locale}.json`)).default;
+}
 
 const catalogs: Partial<Record<SupportedLocale, MessageCatalog>> = {};
 const pending: Partial<Record<SupportedLocale, Promise<void>>> = {};
-
-export function isSupportedLocale(value: unknown): value is SupportedLocale {
-  return SUPPORTED_LOCALES.some((locale) => locale === value);
-}
 
 /** Whether `locale` can be translated into right now, without waiting. */
 export function catalogLoaded(locale: SupportedLocale): boolean {
@@ -56,7 +56,7 @@ export function loadCatalog(locale: SupportedLocale): Promise<void> {
   if (catalogs[locale] !== undefined) return Promise.resolve();
   const inFlight = pending[locale];
   if (inFlight !== undefined) return inFlight;
-  const request = LOADERS[locale]().then(
+  const request = fetchCatalog(locale).then(
     (catalog) => {
       catalogs[locale] = catalog;
       delete pending[locale];

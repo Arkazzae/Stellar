@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { en } from "./messages/en";
-import { pl } from "./messages/pl";
+import en from "../../../.locales/web/en.json";
+import pl from "../../../.locales/web/pl.json";
 import { translateMessage } from ".";
 
 describe("interface message catalogs", () => {

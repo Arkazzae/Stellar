@@ -1,9 +1,6 @@
-import { getLocale, type Locale } from "./index";
+import { getLocale, locales } from "./index";
 
-// English is formatted day-first with a 24-hour clock, like Polish.
-const intlTags: Record<Locale, string> = { pl: "pl-PL", en: "en-GB" };
-
-const intlTag = () => intlTags[getLocale()];
+const intlTag = () => locales[getLocale()].tag;
 
 export function formatNumber(value: number, options?: Intl.NumberFormatOptions): string {
   return value.toLocaleString(intlTag(), options);
@@ -29,8 +26,8 @@ export function formatShortDateTime(value: string): string {
 }
 
 /** A time of day to the minute, as the charts of the last hour name their points. */
-export function formatTime(value: string | number): string {
-  return new Date(value).toLocaleTimeString(intlTag(), { hour: "2-digit", minute: "2-digit" });
+export function formatTime(value: string | number, options?: Intl.DateTimeFormatOptions): string {
+  return new Date(value).toLocaleTimeString(intlTag(), { hour: "2-digit", minute: "2-digit", ...options });
 }
 
 export function formatDate(value: string): string {

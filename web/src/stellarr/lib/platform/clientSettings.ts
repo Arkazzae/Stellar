@@ -2,6 +2,7 @@ import { DEFAULT_THEME, normaliseTheme, type ThemePreference } from "@/design/th
 import {
   TRANSLATION_DEFAULTS,
   isSupportedLocale,
+  isTranslationTarget,
   type InterfaceLocale,
   type LanguageSettings,
 } from "@/i18n";
@@ -93,7 +94,7 @@ export function languageFromWire(value: Wire): Partial<LanguageSettings> {
   if (typeof value["chatTranslationEnabled"] === "boolean") {
     patch.chatTranslationEnabled = value["chatTranslationEnabled"];
   }
-  if (isSupportedLocale(value["chatTranslationTargetLanguage"])) {
+  if (isTranslationTarget(value["chatTranslationTargetLanguage"])) {
     patch.chatTranslationTargetLanguage = value["chatTranslationTargetLanguage"];
   }
   return patch;

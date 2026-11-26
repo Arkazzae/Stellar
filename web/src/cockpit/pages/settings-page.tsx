@@ -21,7 +21,7 @@ import { useState, type ComponentProps, type FormEvent, type KeyboardEvent, type
 
 import { PageHeader } from "../components/page-header";
 import { SecretField } from "../components/secret-field";
-import { LOCALES, t, type Locale, type MessageKey } from "../i18n";
+import { locales, LOCALES, t, type Locale, type MessageKey } from "../i18n";
 import {
   CockpitApiError,
   cockpitApi,
@@ -115,11 +115,9 @@ interface CardProps {
 }
 
 /** Each language named in itself, so it can be found whatever the panel shows now. */
-const LANGUAGE_NAMES: Record<Locale, string> = { en: "English", pl: "Polski" };
-
 const LANGUAGE_OPTIONS: readonly DropdownOption<Locale>[] = LOCALES.map((locale) => ({
   value: locale,
-  label: LANGUAGE_NAMES[locale],
+  label: locales[locale].nativeName,
   lang: locale,
 }));
 

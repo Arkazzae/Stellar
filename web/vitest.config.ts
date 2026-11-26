@@ -4,6 +4,9 @@ import react from "@vitejs/plugin-react";
 import { configDefaults, defineConfig } from "vitest/config";
 
 import { stellarrArtifactSizes } from "./artifactSizes";
+import { compileLocales, watchLocales } from "./localization";
+
+compileLocales();
 
 // Suites that can run without the browser globals, locale or storage from vitest.setup.ts.
 const nodeTests = [
@@ -35,7 +38,7 @@ const nodeTests = [
 // does vite.config.ts, so the local import above needs no file extension.
 export default defineConfig({
   // The sizes of the prebuilt files, which the client reads as the build gives them.
-  plugins: [react(), stellarrArtifactSizes()],
+  plugins: [react(), stellarrArtifactSizes(), watchLocales()],
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src/stellarr", import.meta.url)),

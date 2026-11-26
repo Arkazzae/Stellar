@@ -3,7 +3,7 @@ import { readdirSync } from "node:fs";
 import type { Connect, Plugin, Rollup } from "vite";
 
 import { THEME_SCRIPT } from "./src/stellarr/design/themeScript";
-import { SUPPORTED_LOCALES, type SupportedLocale } from "./src/stellarr/i18n";
+import { mapLocales, SUPPORTED_LOCALES, type SupportedLocale } from "./src/i18n/locales";
 import { LANGUAGE_SETTINGS_KEY } from "./src/stellarr/i18n/defaultLocale";
 import {
   INSTANCE_LANGUAGE_PATH,
@@ -119,10 +119,7 @@ export const PRELOAD_MARKER = "<!-- preload -->";
 export const PRELOAD_CHOSEN_MARKER = "<!-- preload-chosen -->";
 
 /** Each language's catalog, by its path in the source; each is a chunk of its own. */
-export const CATALOG_MODULES: Readonly<Record<SupportedLocale, string>> = {
-  pl: "src/stellarr/i18n/messages/pl.ts",
-  en: "src/stellarr/i18n/messages/en.ts",
-};
+export const CATALOG_MODULES = mapLocales((locale) => `.locales/web/${locale}.json`);
 
 /** The files the document fetches ahead of the entry's own requests for them. */
 export interface PreloadPlan {
@@ -159,13 +156,12 @@ export function preloadPlan(bundle: Rollup.OutputBundle, entry: string, base = "
     }
     return [...staticClosure(chunks, chunk.fileName)].filter((file) => !loaded.has(file)).map((file) => `${base}${file}`);
   };
-  const plan: PreloadPlan = {
-    catalogs: { pl: filesOf(CATALOG_MODULES.pl), en: filesOf(CATALOG_MODULES.en) },
-  };
-  if (plan.catalogs.pl.some((file) => plan.catalogs.en.includes(file))) {
-    throw new Error("The two catalogs share a chunk, so a page would fetch both.");
+  const catalogs = mapLocales((locale) => filesOf(CATALOG_MODULES[locale]));
+  const files = Object.values(catalogs).flat();
+  if (new Set(files).size !== files.length) {
+    throw new Error("Language catalogs share a chunk, so a page would fetch more than its language.");
   }
-  return plan;
+  return { catalogs };
 }
 
 /**

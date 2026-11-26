@@ -13,6 +13,7 @@ import {
   TRANSLATION_DEFAULTS,
   catalogLoaded,
   isSupportedLocale,
+  isTranslationTarget,
   loadCatalog,
   translateMessage,
   type InterfaceLocale,
@@ -20,6 +21,7 @@ import {
   type MessageKey,
   type MessageValues,
 } from "@/i18n";
+import { mapLocales } from "../../i18n/locales";
 import { documentLocale, LANGUAGE_SETTINGS_KEY } from "@/i18n/defaultLocale";
 
 export type { InterfaceLocale, LanguageSettings, TranslationTargetLanguage } from "@/i18n";
@@ -47,12 +49,9 @@ export interface LanguageValue extends LanguageSettings {
    * which nothing should store on their behalf.
    */
   chosenLocale: () => InterfaceLocale | undefined;
-  /** Short component copy in both languages, without a catalog entry. */
-  text: (polish: string, english: string) => string;
   /** Typed catalog lookup for copy shared across surfaces. */
   t: (key: MessageKey, values?: MessageValues) => string;
 }
-
 
 const DEFAULTS = TRANSLATION_DEFAULTS;
 
@@ -66,7 +65,7 @@ function readStored(fallbackLocale: InterfaceLocale): LanguageSettings {
       locale: isSupportedLocale(stored.locale) ? stored.locale : fallbackLocale,
       chatTranslationEnabled: translationEnabled,
       chatAutoTranslateEnabled: translationEnabled && stored.chatAutoTranslateEnabled === true,
-      chatTranslationTargetLanguage: isSupportedLocale(stored.chatTranslationTargetLanguage)
+      chatTranslationTargetLanguage: isTranslationTarget(stored.chatTranslationTargetLanguage)
         ? stored.chatTranslationTargetLanguage
         : DEFAULTS.chatTranslationTargetLanguage,
     };
@@ -126,7 +125,6 @@ function standaloneValue(locale: InterfaceLocale): LanguageValue {
     update: () => undefined,
     switching: null,
     chosenLocale: () => undefined,
-    text: (polish, english) => (locale === "en" ? english : polish),
     t: (key, values) => translateMessage(locale, key, values),
   };
 }
@@ -134,10 +132,7 @@ function standaloneValue(locale: InterfaceLocale): LanguageValue {
 // What a component sees when no provider is mounted, as in most component
 // tests: the page's language, and changes go nowhere. One value per locale, so
 // the identity of `t` stays stable between renders.
-const STANDALONE: Record<InterfaceLocale, LanguageValue> = {
-  pl: standaloneValue("pl"),
-  en: standaloneValue("en"),
-};
+const STANDALONE = mapLocales(standaloneValue);
 
 const LanguageContext = createContext<LanguageValue | null>(null);
 
@@ -231,18 +226,14 @@ export function LanguageProvider({
   );
 
   const { locale } = settings;
-  const text = useCallback(
-    (polish: string, english: string) => (locale === "en" ? english : polish),
-    [locale],
-  );
   const t = useCallback(
     (key: MessageKey, values?: MessageValues) => translateMessage(locale, key, values),
     [locale],
   );
 
   const value = useMemo<LanguageValue>(
-    () => ({ ...settings, update, switching, chosenLocale: readStoredLocale, text, t }),
-    [settings, update, switching, text, t],
+    () => ({ ...settings, update, switching, chosenLocale: readStoredLocale, t }),
+    [settings, update, switching, t],
   );
 
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;

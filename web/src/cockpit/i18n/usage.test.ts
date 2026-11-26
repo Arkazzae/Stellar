@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { pl } from "./pl";
+import catalogs from "../../../.locales/cockpit.json";
 
 /** Cockpit's code, without its catalogs and tests. */
 const cockpit = join(process.cwd(), "src", "cockpit");
@@ -14,7 +14,7 @@ const sources = readdirSync(cockpit, { recursive: true, encoding: "utf8" })
 describe("the catalog", () => {
   it("has no key that the interface never asks for", () => {
     const code = sources.join("\n");
-    const unused = Object.keys(pl).filter((key) => !code.includes(`"${key}"`));
+    const unused = Object.keys(catalogs.en).filter((key) => !code.includes(`"${key}"`));
 
     expect(unused).toEqual([]);
   });

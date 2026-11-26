@@ -79,6 +79,7 @@ docker-compose.override.yaml
 /docs/.vitepress/dist/
 /docs/.vitepress/cache/
 /web/bench/results/
+/web/.locales/
 
 # Static browser files installed from the two Stellarr runtime packages.
 /web/public/audio/*-worklet.js

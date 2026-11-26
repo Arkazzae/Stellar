@@ -1,3 +1,4 @@
+import { locales } from "@/i18n";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { Translator } from "@/i18n";
@@ -70,7 +71,7 @@ export function MessageEditor({ original, onSave, onCancel, t }: MessageEditorPr
       : authored;
     if (next.length > CODE_MESSAGE_MAX_LENGTH) {
       setError(t("composer.codeTooLong", {
-        count: CODE_MESSAGE_MAX_LENGTH.toLocaleString(documentLocale() === "en" ? "en-GB" : "pl-PL"),
+        count: CODE_MESSAGE_MAX_LENGTH.toLocaleString(locales[documentLocale()].tag),
       }));
       return;
     }

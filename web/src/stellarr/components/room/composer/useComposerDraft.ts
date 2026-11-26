@@ -1,3 +1,4 @@
+import { locales } from "@/i18n";
 import { useDeferredValue, useMemo, useState, useSyncExternalStore, type FormEvent } from "react";
 
 import type { InterfaceLocale, Translator } from "@/i18n";
@@ -89,7 +90,7 @@ export function useComposerDraft({ draftScope, restoringFiles, chips, onSubmit, 
       if (body.length > CODE_MESSAGE_MAX_LENGTH) {
         setSendError(
           t("composer.codeTooLong", {
-            count: CODE_MESSAGE_MAX_LENGTH.toLocaleString(locale === "en" ? "en-GB" : "pl-PL"),
+            count: CODE_MESSAGE_MAX_LENGTH.toLocaleString(locales[locale].tag),
           }),
         );
         return;

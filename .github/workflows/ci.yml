@@ -65,7 +65,7 @@ jobs:
             fi
           }
           # Run the native tests when either shared fixture changes.
-          check api '^(api/|sdk/(client|media|dev/room)\.js$|sdk/test/fixtures/manifest-parity\.json$|web/src/stellarr/lib/messages/message-syntax\.json$|\.github/workflows/ci\.yml$)'
+          check api '^(locales/|api/|sdk/(client|media|dev/room)\.js$|sdk/test/fixtures/manifest-parity\.json$|web/src/stellarr/lib/messages/message-syntax\.json$|\.github/workflows/ci\.yml$)'
           # web/ holds the web client and Cockpit (web/src/cockpit/). It is a
           # workspace of one npm project with the shared packages, so a change
           # to them or to the root manifest or lockfile runs the web job too.
@@ -75,7 +75,7 @@ jobs:
           # manifest, so the Dockerfile stages and the bake file that build
           # them count too.
           check sdk '^(sdk/|package(-lock)?\.json$|\.github/workflows/ci\.yml$)'
-          check web '^(web/|sdk/(dev/|host/|package\.json$)|artifacts/|packages/|package(-lock)?\.json$|website/src/images/logo/mono\.svg$|infra/(nginx\.conf|entrypoint\.sh)$|Dockerfile$|docker-bake\.hcl$|\.github/workflows/ci\.yml$)'
+          check web '^(locales/|web/|sdk/(dev/|host/|package\.json$)|artifacts/|packages/|package(-lock)?\.json$|website/src/images/logo/mono\.svg$|infra/(nginx\.conf|entrypoint\.sh)$|Dockerfile$|docker-bake\.hcl$|\.github/workflows/ci\.yml$)'
           check media '^(media/|\.github/workflows/ci\.yml$)'
           check init '^(init/|\.github/workflows/ci\.yml$)'
           # website/ is the project site, its own npm project outside the root
@@ -93,7 +93,7 @@ jobs:
           # image, so its sources count, not only its manifest. It takes the
           # recipes' outputs from the recipes job, which builds them with the
           # bake file.
-          check image '^(Dockerfile$|sdk/(dev/|host/|client\.js$|media\.js$|package\.json$)|docker-bake\.hcl$|\.dockerignore$|artifacts/|infra/|api/(Cargo\.(toml|lock)$|crates/[^/]+/(Cargo\.toml$|build\.rs$|src/|assets/))|packages/|package(-lock)?\.json$|\.npmrc$|web/|media/(Cargo\.(toml|lock)$|src/|build\.rs$)|docker-compose\.yml$|infra/compose/|init/(Cargo\.(toml|lock)$|src/)|\.github/workflows/ci\.yml$)'
+          check image '^(locales/|Dockerfile$|sdk/(dev/|host/|client\.js$|media\.js$|package\.json$)|docker-bake\.hcl$|\.dockerignore$|artifacts/|infra/|api/(Cargo\.(toml|lock)$|crates/[^/]+/(Cargo\.toml$|build\.rs$|src/|assets/))|packages/|package(-lock)?\.json$|\.npmrc$|web/|media/(Cargo\.(toml|lock)$|src/|build\.rs$)|docker-compose\.yml$|infra/compose/|init/(Cargo\.(toml|lock)$|src/)|\.github/workflows/ci\.yml$)'
 
   sdk:
     needs: changes

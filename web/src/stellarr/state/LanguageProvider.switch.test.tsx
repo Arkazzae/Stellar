@@ -18,15 +18,15 @@ function holdPolish() {
   const gate = new Promise<void>((resolve) => {
     release = resolve;
   });
-  vi.doMock("@/i18n/messages/pl", async () => {
+  vi.doMock("../../../.locales/web/pl.json", async () => {
     await gate;
-    return await vi.importActual<object>("@/i18n/messages/pl");
+    return await vi.importActual<object>("../../../.locales/web/pl.json");
   });
 }
 
 /** The Polish catalog cannot be fetched, as after an upgrade replaced its file. */
 function losePolish() {
-  vi.doMock("@/i18n/messages/pl", () => {
+  vi.doMock("../../../.locales/web/pl.json", () => {
     throw new Error("Failed to fetch dynamically imported module");
   });
 }
@@ -82,7 +82,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  vi.doUnmock("@/i18n/messages/pl");
+  vi.doUnmock("../../../.locales/web/pl.json");
 });
 
 describe("switching to a language whose catalog is not here yet", () => {

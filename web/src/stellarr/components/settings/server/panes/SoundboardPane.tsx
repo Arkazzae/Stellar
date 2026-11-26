@@ -1,3 +1,4 @@
+import { locales } from "@/i18n";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 
 import { Button } from "@stellarr/ui";
@@ -64,7 +65,7 @@ export function SoundboardPane({
 }: SoundboardPaneProps) {
   const { locale, t } = useLanguage();
   const confirm = useConfirm();
-  const decimal = new Intl.NumberFormat(locale === "en" ? "en-GB" : "pl-PL", {
+  const decimal = new Intl.NumberFormat(locales[locale].tag, {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   });

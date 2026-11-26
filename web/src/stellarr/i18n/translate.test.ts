@@ -29,7 +29,7 @@ describe("isSupportedLocale", () => {
   it("accepts the shipped locales only", () => {
     expect(isSupportedLocale("pl")).toBe(true);
     expect(isSupportedLocale("en")).toBe(true);
-    expect(isSupportedLocale("de")).toBe(false);
+    expect(isSupportedLocale("qaa-Test")).toBe(false);
     expect(isSupportedLocale(undefined)).toBe(false);
   });
 });

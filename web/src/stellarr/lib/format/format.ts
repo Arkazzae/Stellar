@@ -1,4 +1,4 @@
-import { translateMessage, type InterfaceLocale } from "@/i18n";
+import { locales, translateMessage, type InterfaceLocale } from "@/i18n";
 import { documentLocale } from "@/i18n/defaultLocale";
 import type { Message, MessageReference } from "@/lib/api/types";
 
@@ -7,11 +7,6 @@ import type { Message, MessageReference } from "@/lib/api/types";
 // `messageReference`, `buildTranscript`, `buildThreadTranscript`) fall back to
 // the page's language, for a caller with no provider to ask.
 
-const LOCALE_TAG: Record<InterfaceLocale, string> = {
-  pl: "pl-PL",
-  en: "en-GB",
-};
-
 /** Formats a timestamp, or returns "" for one that does not parse. */
 function formatWithDate(
   date: Date,
@@ -19,7 +14,7 @@ function formatWithDate(
   options: Intl.DateTimeFormatOptions,
 ): string {
   if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat(LOCALE_TAG[locale], options).format(date);
+  return new Intl.DateTimeFormat(locales[locale].tag, options).format(date);
 }
 
 function formatWith(
@@ -138,7 +133,7 @@ export function formatAgo(iso: string, now: Date, locale: InterfaceLocale): stri
 export function formatShortAgo(iso: string, now: Date, locale: InterfaceLocale): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  const tag = LOCALE_TAG[locale];
+  const tag = locales[locale].tag;
 
   const minutes = Math.floor(Math.max(0, now.getTime() - date.getTime()) / 60_000);
   const unit = (count: number, name: "minute" | "hour") =>

@@ -15,7 +15,7 @@ describe("stableJson", () => {
 describe("languageFromWire", () => {
   it("takes only what this client can show", () => {
     expect(
-      languageFromWire({ locale: "de", chatTranslationEnabled: "yes", chatTranslationTargetLanguage: "pl" }),
+      languageFromWire({ locale: "qaa-Test", chatTranslationEnabled: "yes", chatTranslationTargetLanguage: "pl" }),
     ).toEqual({ chatTranslationTargetLanguage: "pl" });
   });
 

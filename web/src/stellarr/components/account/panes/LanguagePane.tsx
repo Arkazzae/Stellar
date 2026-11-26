@@ -7,6 +7,8 @@ import { Switch } from "@/components/primitives/Switch";
 import { useRovingRadio } from "@/components/primitives/useRovingRadio";
 import {
   SUPPORTED_LOCALES,
+  TRANSLATION_TARGETS,
+  locales,
   type InterfaceLocale,
   type LanguageSettings,
   type TranslationTargetLanguage,
@@ -18,12 +20,6 @@ import {
 } from "@/lib/chatTranslation/useModelStatus";
 
 import { FormRow } from "./VoiceFields";
-
-/** Each language is always shown in its own tongue, whatever the interface speaks. */
-const NATIVE_NAMES: Record<InterfaceLocale, string> = {
-  pl: "Polski",
-  en: "English",
-};
 
 /**
  * How much of the app a language covers, once packs come from the server.
@@ -79,6 +75,7 @@ function ToggleRow({ label, detail, checked, disabled, onChange }: ToggleRowProp
 }
 
 interface LanguageListProps {
+  locale: InterfaceLocale;
   label: string;
   value: InterfaceLocale;
   t: Translator;
@@ -91,14 +88,20 @@ interface LanguageListProps {
  * way; a language that covers only part of the app says how much. Once the
  * list is long it searches.
  */
-function LanguageList({ label, value, t, onChange }: LanguageListProps) {
+function LanguageList({ label, locale, value, t, onChange }: LanguageListProps) {
   const [query, setQuery] = useState("");
   const searchable = SUPPORTED_LOCALES.length >= SEARCH_FROM;
   const needle = fold(query.trim());
+  const names = new Intl.DisplayNames(locale, { type: "language" });
+  function displayName(code: InterfaceLocale): string {
+    if (code === locale) return locales[code].nativeName;
+    const name = names.of(code) ?? locales[code].nativeName;
+    return name.charAt(0).toLocaleUpperCase(locale) + name.slice(1);
+  }
   const shown = SUPPORTED_LOCALES.filter(
     (code) =>
       needle === "" ||
-      fold(`${NATIVE_NAMES[code]} ${t(`language.name.${code}`)} ${code}`).includes(needle),
+      fold(`${locales[code].nativeName} ${displayName(code)} ${code}`).includes(needle),
   );
   const roving = useRovingRadio(
     shown.length,
@@ -126,7 +129,7 @@ function LanguageList({ label, value, t, onChange }: LanguageListProps) {
         ) : (
           shown.map((code, index) => {
             const selected = code === value;
-            const translatedName = t(`language.name.${code}`);
+            const translatedName = displayName(code);
             const coverage = COVERAGE[code];
             return (
               <button
@@ -141,10 +144,10 @@ function LanguageList({ label, value, t, onChange }: LanguageListProps) {
                 onKeyDown={(event) => roving.onKeyDown(event, index)}
               >
                 <span className="lang-name">
-                  <b lang={code}>{NATIVE_NAMES[code]}</b>
+                  <b lang={code}>{locales[code].nativeName}</b>
                   {selected ? (
                     <span lang={code}>{sampleDate(code)}</span>
-                  ) : translatedName === NATIVE_NAMES[code] ? null : (
+                  ) : translatedName === locales[code].nativeName ? null : (
                     <span>{translatedName}</span>
                   )}
                 </span>
@@ -282,6 +285,7 @@ export function LanguagePane({
         <header className="sc-h">{t("language.interface.title")}</header>
         {/* The pick is marked at once; the page follows when its text is here. */}
         <LanguageList
+          locale={locale}
           label={t("language.interface.title")}
           value={switching?.locale ?? locale}
           t={t}
@@ -292,7 +296,7 @@ export function LanguagePane({
             icon="warning"
             tone="bad"
             role="alert"
-            title={t("language.interface.switchFailed", { name: NATIVE_NAMES[switching.locale] })}
+            title={t("language.interface.switchFailed", { name: locales[switching.locale].nativeName })}
           >
             <Button type="button" variant="secondary" size="sm" onClick={() => window.location.reload()}>
               {t("language.interface.reload")}
@@ -301,7 +305,7 @@ export function LanguagePane({
         ) : (
           <ModelLine
             icon="refresh"
-            title={t("language.interface.switching", { name: NATIVE_NAMES[switching.locale] })}
+            title={t("language.interface.switching", { name: locales[switching.locale].nativeName })}
           />
         )}
         <p className="lang-foot">{t("language.interface.description")}</p>
@@ -339,9 +343,9 @@ export function LanguagePane({
                   <span className="frm-lab">{t("language.translation.target")}</span>
                   <div className="frm-ctl ap-end">
                     <Segmented
-                      options={SUPPORTED_LOCALES.map((code) => ({
+                      options={TRANSLATION_TARGETS.map((code) => ({
                         value: code,
-                        label: NATIVE_NAMES[code],
+                        label: locales[code].nativeName,
                       }))}
                       value={chatTranslationTargetLanguage}
                       onChange={(target: TranslationTargetLanguage) =>

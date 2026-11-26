@@ -64,7 +64,7 @@ export function InviteModal({
   onInvite,
   onCopy,
 }: InviteModalProps) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const titleId = useId();
   const [query, setQuery] = useState("");
   const [progress, setProgress] = useState<Progress>({});
@@ -85,11 +85,11 @@ export function InviteModal({
 
   const hasLink = inviteUrl !== "";
   const hasFriends = people.length > 0;
-  const needle = query.trim().toLocaleLowerCase("pl-PL");
+  const needle = query.trim().toLocaleLowerCase(locale);
   const shown =
     needle === ""
       ? people
-      : people.filter((person) => person.displayName.toLocaleLowerCase("pl-PL").includes(needle));
+      : people.filter((person) => person.displayName.toLocaleLowerCase(locale).includes(needle));
 
   const mark = (personId: string, status: "sending" | "sent" | undefined) =>
     setProgress((current) => ({ ...current, [personId]: status }));

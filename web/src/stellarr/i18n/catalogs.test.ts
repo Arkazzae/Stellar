@@ -7,8 +7,8 @@ async function freshRegistry() {
 }
 
 afterEach(() => {
-  vi.doUnmock("./messages/en");
-  vi.doUnmock("./messages/pl");
+  vi.doUnmock("../../../.locales/web/en.json");
+  vi.doUnmock("../../../.locales/web/pl.json");
 });
 
 describe("the message catalogs", () => {
@@ -36,7 +36,7 @@ describe("the message catalogs", () => {
   });
 
   it("ask again after a failed fetch instead of remembering it", async () => {
-    vi.doMock("./messages/en", () => {
+    vi.doMock("../../../.locales/web/en.json", () => {
       throw new Error("offline");
     });
     const i18n = await freshRegistry();
@@ -44,7 +44,7 @@ describe("the message catalogs", () => {
     await expect(i18n.loadCatalog("en")).rejects.toThrow();
     expect(i18n.catalogLoaded("en")).toBe(false);
 
-    vi.doUnmock("./messages/en");
+    vi.doUnmock("../../../.locales/web/en.json");
     await i18n.loadCatalog("en");
     expect(i18n.catalogLoaded("en")).toBe(true);
   });

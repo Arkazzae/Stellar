@@ -33,6 +33,7 @@ COPY packages/ packages/
 # The web build checks the pinned npm package contents against the inventory.
 COPY artifacts/assemble.mjs artifacts/manifest.json artifacts/
 COPY web/ web/
+COPY locales/ locales/
 COPY sdk/ sdk/
 WORKDIR /src/web
 # The build writes both apps to dist/. nginx sends the .gz file beside the

@@ -74,7 +74,7 @@ describe("LanguagePane", () => {
     expect(screen.queryByRole("searchbox")).toBeNull();
 
     polish.focus();
-    await userEvent.keyboard("{ArrowDown}");
+    await userEvent.keyboard("{ArrowUp}");
     expect(update).toHaveBeenCalledWith({ locale: "en" });
   });
 

@@ -9,7 +9,7 @@ describe("resolveLocale", () => {
   });
 
   it("skips candidates that are absent or unknown", () => {
-    expect(resolveLocale(undefined, "de", "", "pl")).toBe("pl");
+    expect(resolveLocale(undefined, "qaa-Test", "", "pl")).toBe("pl");
     expect(resolveLocale(null, "EN", "en")).toBe("en");
   });
 
@@ -33,7 +33,7 @@ describe("the page's language", () => {
     document.documentElement.lang = "";
     expect(documentLocale()).toBe("en");
 
-    document.documentElement.lang = "de";
+    document.documentElement.lang = "qaa-Test";
     expect(documentLocale()).toBe("en");
   });
 

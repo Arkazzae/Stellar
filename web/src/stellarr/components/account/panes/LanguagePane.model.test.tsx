@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -61,6 +61,16 @@ describe("LanguagePane model states", () => {
     );
 
     expect(update).toHaveBeenCalledWith({ chatTranslationTargetLanguage: "en" });
+  });
+
+  it("offers German as an interface language and lists only the bundled translation targets", async () => {
+    const update = setup();
+    const ui = screen.getByRole("radiogroup", { name: "Interface language" });
+    await userEvent.click(within(ui).getByRole("radio", { name: /Deutsch/ }));
+    expect(update).toHaveBeenCalledWith({ locale: "de" });
+    const target = screen.getByRole("radiogroup", { name: "Translation target language" });
+    expect(within(target).getAllByRole("radio")).toHaveLength(2);
+    expect(within(target).queryByRole("radio", { name: /Deutsch/ })).toBeNull();
   });
 
   it("shows download progress", () => {

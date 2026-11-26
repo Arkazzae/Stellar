@@ -1,7 +1,7 @@
+import { FALLBACK_LOCALE } from "../../i18n/locales";
 import { isSupportedLocale, translateMessage, type SupportedLocale, type Translator } from ".";
 
-/** What a person sees when neither they nor the instance's operator chose a language. */
-export const FALLBACK_LOCALE: SupportedLocale = "en";
+export { FALLBACK_LOCALE } from "../../i18n/locales";
 
 /**
  * Where this browser keeps the language settings: the interface language
