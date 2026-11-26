@@ -30,7 +30,7 @@ export interface FriendsListActions {
 }
 
 export interface FriendsListsProps extends FriendsListActions {
-  tab: Exclude<FriendsTab, "add">;
+  tab: Exclude<FriendsTab, "add" | "activities">;
   /** The search box as typed. */
   query: string;
   friends: FriendVM[];

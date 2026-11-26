@@ -13,6 +13,7 @@ export const TAB_LABEL: Record<ListTab, MessageKey> = {
   all: "friends.tabAll",
   pending: "friends.tabPending",
   blocked: "friends.tabBlocked",
+  activities: "friends.tabActivities",
 };
 
 export function tabId(idBase: string, tab: ListTab): string {
@@ -46,6 +47,7 @@ export interface FriendsTabListProps {
   incoming: number;
   /** Prefix of the ids the tabs and the panel they control share. */
   idBase: string;
+  showActivities?: boolean;
 }
 
 /**
@@ -53,10 +55,11 @@ export interface FriendsTabListProps {
  * carries the state, and only one tab is in the tab order. While the add panel
  * is open none of them is selected, so the first one holds the tab stop.
  */
-export function FriendsTabList({ tab, onTabChange, incoming, idBase }: FriendsTabListProps) {
+export function FriendsTabList({ tab, onTabChange, incoming, idBase, showActivities }: FriendsTabListProps) {
   const { t } = useLanguage();
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
-  const selected = LIST_TABS.findIndex((candidate) => candidate === tab);
+  const tabs: readonly ListTab[] = showActivities ? [...LIST_TABS, "activities"] : LIST_TABS;
+  const selected = tabs.findIndex((candidate) => candidate === tab);
   const tabStop = Math.max(selected, 0);
 
   // On a phone the strip scrolls sideways in the header; keep the tab that
@@ -70,8 +73,8 @@ export function FriendsTabList({ tab, onTabChange, incoming, idBase }: FriendsTa
   }, [tab, tabStop]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, from: number) => {
-    const to = destination(event.key, from, LIST_TABS.length);
-    const next = to === null ? undefined : LIST_TABS[to];
+    const to = destination(event.key, from, tabs.length);
+    const next = to === null ? undefined : tabs[to];
     if (to === null || next === undefined) return;
     event.preventDefault();
     buttons.current[to]?.focus();
@@ -80,7 +83,7 @@ export function FriendsTabList({ tab, onTabChange, incoming, idBase }: FriendsTa
 
   return (
     <div className="fr-tabs" role="tablist" aria-label={t("friends.tabListLabel")}>
-      {LIST_TABS.map((value, index) => (
+      {tabs.map((value, index) => (
         <button
           key={value}
           type="button"

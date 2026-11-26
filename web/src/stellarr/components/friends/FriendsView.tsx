@@ -30,6 +30,7 @@ export interface FriendsViewProps extends FriendsListActions {
   notificationButton?: ReactNode;
   /** Live friend activity, composed by the container and shown on wide screens. */
   activityPanel?: ReactNode;
+  personalActivities?: ReactNode;
 }
 
 /**
@@ -52,6 +53,7 @@ export function FriendsView({
   onAddFriend,
   notificationButton,
   activityPanel,
+  personalActivities,
   ...actions
 }: FriendsViewProps) {
   const { t } = useLanguage();
@@ -61,6 +63,7 @@ export function FriendsView({
   const searchRef = useRef<HTMLInputElement>(null);
   const form = useAddFriend(onAddFriend);
 
+  const personal = tab === "activities";
   const adding = tab === "add";
   const incoming = requests.filter((request) => request.direction === "incoming").length;
 
@@ -72,7 +75,7 @@ export function FriendsView({
   }, [searchRequested, adding, onSearchFocused]);
 
   return (
-    <main className={activityPanel ? "room friends has-activity" : "room friends"}>
+    <main className={activityPanel && !personal ? "room friends has-activity" : "room friends"}>
       <header className="room-header">
         <button
           type="button"
@@ -93,6 +96,7 @@ export function FriendsView({
           onTabChange={onTabChange}
           incoming={incoming}
           idBase={idBase}
+          showActivities={Boolean(personalActivities)}
         />
 
         {notificationButton}
@@ -122,7 +126,7 @@ export function FriendsView({
         aria-labelledby={adding ? undefined : tabId(idBase, tab)}
       >
         <div className="fr-inner">
-          {adding ? (
+          {personal ? personalActivities : adding ? (
             <AddFriendPanel form={form} />
           ) : (
             <>
@@ -157,7 +161,7 @@ export function FriendsView({
           )}
         </div>
       </div>
-      {activityPanel}
+      {!personal && activityPanel}
     </main>
   );
 }
