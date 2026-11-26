@@ -1189,6 +1189,8 @@ describe("the state of the one connection", () => {
       connectedPeerCount: 1,
     });
 
+    expect(client.getSnapshot().error?.message).toBe(english("voiceClient.incomingAudioMissing"));
+
     nextRound();
     pc.stats = [outbound(20), inbound("b1", 10), inbound("c1", 8)];
     await sampleStats(client);
@@ -1198,6 +1200,7 @@ describe("the state of the one connection", () => {
     pc.stats = [outbound(30), inbound("b1", 15), inbound("c1", 16)];
     await sampleStats(client);
     expect(client.getSnapshot().transport).toMatchObject({ media: "connected", connectedPeerCount: 2 });
+    expect(client.getSnapshot().error).toBeNull();
   });
 
   it("is connecting, not degraded, while the others' microphones are on their way", async () => {

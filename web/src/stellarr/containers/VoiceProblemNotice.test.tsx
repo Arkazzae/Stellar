@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { IDLE_VOICE_STATE } from "@/lib/voice/types";
 import type { UiValue, VoiceValue } from "@/state/hooks";
 import { fakeLanguage, fakeUi, fakeVoice, t } from "@/test/roomFakes";
 
@@ -130,12 +131,23 @@ describe("VoiceProblemNotice", () => {
     expect(mocks.voice.join).not.toHaveBeenCalled();
   });
 
+  it("copies transport measurements without participant or channel identifiers", async () => {
+    const user = userEvent.setup();
+    voiceWith({ problem: problem("transport"), state: IDLE_VOICE_STATE });
+    render(<VoiceProblemNotice />);
+    await user.click(button("voiceError.copyDiagnostics"));
+    const report = JSON.parse(await navigator.clipboard.readText());
+    expect(report).toMatchObject({ app: "Stellarr", problem: "transport", media: mocks.voice.state.transport.media });
+    expect(JSON.stringify(report)).not.toContain("ch-salon");
+    expect(button("voiceError.diagnosticsCopied")).toBeVisible();
+  });
+
   it("has no way to reconnect when there is no call to reconnect to", () => {
     voiceWith({ problem: problem("ice-config"), channelId: null });
 
     render(<VoiceProblemNotice />);
 
-    expect(buttonNames()).toEqual([]);
+    expect(buttonNames()).toEqual([t("voiceError.copyDiagnostics")]);
   });
 
   it("centres a notice for a call another device took over, with nothing to press", () => {

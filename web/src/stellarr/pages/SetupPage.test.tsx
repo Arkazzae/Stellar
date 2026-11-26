@@ -58,7 +58,7 @@ beforeEach(() => {
   mocks.session.phase = "anonymous";
   mocks.setup.setupRequired = true;
   mocks.setup.failed = false;
-  mocks.ports.admin.createInvite.mockResolvedValue({ id: "i-1", url: "https://chat.example/invite/k7qm2xwp" });
+  mocks.ports.admin.createInvite.mockResolvedValue({ id: "i-1", url: "https://127.0.0.1:8443/invite/k7qm2xwp" });
 });
 
 describe("SetupPage", () => {
@@ -100,7 +100,9 @@ describe("SetupPage", () => {
     });
     expect(mocks.setup.markSetUp).toHaveBeenCalledOnce();
     expect(mocks.ports.admin.createInvite).toHaveBeenCalledOnce();
-    expect(await screen.findByText("https://chat.example/invite/k7qm2xwp")).toBeVisible();
+    expect(await screen.findByText("https://127.0.0.1:8443/invite/k7qm2xwp")).toBeVisible();
+    expect(screen.getByText(t("auth.setup.localInvite"))).toBeVisible();
+    expect(screen.getByRole("link", { name: t("auth.setup.configureAccess") })).toHaveAttribute("rel", "noreferrer");
     // Set up and anonymous to the provider, the page still shows its last step.
     expect(history.navigations).toEqual([]);
 

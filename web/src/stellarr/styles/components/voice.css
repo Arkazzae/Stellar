@@ -5,6 +5,19 @@
     padding: 12px 20px 0;
   }
 
+  .voice-diagnostics-report {
+    display: grid;
+    gap: var(--sp-1);
+    margin-top: var(--sp-2);
+  }
+
+  .voice-diagnostics-report textarea {
+    width: 100%;
+    min-height: 6em;
+    font-family: monospace;
+    resize: vertical;
+  }
+
   /* A replaced session is a terminal state for this room, not an error tied
      to a control. Keep it in the middle of the channel instead of pinning it
      to the top edge like recoverable microphone and camera notices. */
