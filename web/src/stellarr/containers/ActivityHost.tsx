@@ -7,6 +7,7 @@ import { Avatar } from "@/components/primitives/Avatar";
 import { ConfirmDialog, useConfirm } from "@/components/primitives/ConfirmDialog";
 import { Popover } from "@/components/primitives/Popover";
 import { useChromeIdle } from "@/components/voice/useChromeIdle";
+import { ActivityCameraTransport } from "@/lib/activities/camera";
 import { activitiesApi } from "@/lib/activities/api";
 import {
   useActivities,
@@ -15,6 +16,7 @@ import {
   useSession,
   useUi,
   useVoiceCall,
+  useVoiceLive,
   type ActivitySession,
 } from "@/state/hooks";
 import { useOptionalRealtime } from "@/state/PortsProvider";
@@ -141,6 +143,7 @@ export function ActivityPanel({ slot, session, target }: PanelProps) {
   const { leave, lose, openPicker, end } = activities;
   const ui = useUi();
   const call = useVoiceCall();
+  const { cloneLocalCamera } = useVoiceLive();
   const { user } = useSession();
   const { members, channelName } = useDirectory();
   const confirm = useConfirm();
@@ -218,10 +221,9 @@ export function ActivityPanel({ slot, session, target }: PanelProps) {
     },
     [realtime, room, place, install, access],
   );
-  const tile = useCallback(
-    async (action: Record<string, unknown>, signal: AbortSignal) =>
-      (await activitiesApi.act(place, "tile", { install, access, action }, signal)) as Record<string, string | null>,
-    [place, install, access],
+  const camera = useCallback(
+    () => new ActivityCameraTransport(realtime, selfId, place, { install, access }),
+    [realtime, selfId, place, install, access],
   );
   const lost = useCallback(() => lose(slot, access), [lose, slot, access]);
 
@@ -456,7 +458,8 @@ export function ActivityPanel({ slot, session, target }: PanelProps) {
         room={room}
         liveRoom={realtime?.activityRoom ? liveRoom : undefined}
         realtime={realtime}
-        tile={tile}
+        camera={camera}
+        cloneLocalCamera={cloneLocalCamera}
         onLost={lost}
         bar={bar}
         ask={ask}

@@ -3,10 +3,12 @@ import { capture } from "./devices.js";
 import { createYouTubeHost } from "./youtube.js";
 
 const kinds = ["microphoneLevel", "cameraTile"];
-export function bindMediaHost({ frame, origin, nonce, youtube, title, permissions = [], controls, tile, volume, muted = () => false, fixtures = false, language = "en", overlay, ask, labels = {} }) {
+export function bindMediaHost({ frame, origin, nonce, youtube, title, permissions = [], controls, tile, camera, cloneLocalCamera, volume, muted = () => false, fixtures = false, language = "en", overlay, ask, labels = {} }) {
   const words = (en, polish) => (typeof language === "function" ? language() : language).startsWith("pl") ? polish : en;
   const deviceName = kind => kind === "microphoneLevel" ? words("Microphone", "Mikrofon") : words("Camera", "Kamera");
   const deviceFiles = new Map(), active = new Map(), mounts = new Map();
+  let transport;
+  const cameraTransport = () => transport ??= camera?.();
   let port, prompt, simMuted = false, disposed = false, requestingImages = false;
   function send(data) { port?.postMessage(data); }
   const player = youtube && nonce ? createYouTubeHost(frame, send) : undefined;
@@ -73,7 +75,7 @@ export function bindMediaHost({ frame, origin, nonce, youtube, title, permission
       const device = { button: control, controller, id, ready: false };
       active.set(kind, device);
       try {
-        await capture(kind, { file: deviceFiles.get(kind), muted: () => simMuted || muted(), send: data => requester.postMessage(data), tile, ended: end, signal: controller.signal });
+        await capture(kind, { file: deviceFiles.get(kind), muted: () => simMuted || muted(), send: data => requester.postMessage(data), tile, cloneLocalCamera, camera: kind === "cameraTile" ? cameraTransport() : undefined, ended: end, signal: controller.signal });
         if (controller.signal.aborted) throw new Error("Device stopped.");
         device.ready = true;
         reply(id);
@@ -102,7 +104,12 @@ export function bindMediaHost({ frame, origin, nonce, youtube, title, permission
     document.body.append(dialog);
     dialog.showModal();
   }
-  function removeMount(id) { mounts.get(id)?.image.remove(); mounts.delete(id); }
+  function removeMount(id) {
+    const item = mounts.get(id);
+    item?.unwatch?.();
+    item?.image.remove();
+    mounts.delete(id);
+  }
   // Camera images are drawn over the frame. Inside `overlay`, when given, they
   // stay with the frame wherever it goes, full screen included.
   function layout({ image, bounds }) {
@@ -122,17 +129,34 @@ export function bindMediaHost({ frame, origin, nonce, youtube, title, permission
     let item = mounts.get(data.id);
     if (!item) {
       if (mounts.size >= 16) return;
-      const image = document.createElement("img");
-      image.alt = labels.camera ?? words("Activity camera", "Kamera w aktywności");
+      const image = document.createElement(camera ? "video" : "img");
+      const name = labels.camera ?? words("Activity camera", "Kamera w aktywności");
+      if (camera) {
+        image.autoplay = image.muted = image.playsInline = true;
+        image.setAttribute("aria-label", name);
+      } else image.alt = name;
       image.style.cssText = (overlay ? "position:absolute" : "position:fixed") + ";pointer-events:none;object-fit:cover;z-index:5;border-radius:8px";
       image.hidden = true;
       (overlay ?? document.body).append(image);
       mounts.set(data.id, item = { image });
     }
+    if (camera && data.participant !== item.participant) {
+      item.unwatch?.();
+      item.unwatch = cameraTransport().watch(data.participant, stream => {
+        if (item.image.srcObject !== stream) item.image.srcObject = stream;
+        item.image.hidden = !stream;
+      });
+    }
     Object.assign(item, { participant: data.participant, bounds: data.bounds });
     layout(item);
   }
-  const refresh = setInterval(async () => {
+  // Only development previews use an image relay. WebRTC tiles follow
+  // track changes, and layout changes are independent of the video frames.
+  const relayout = () => { for (const item of mounts.values()) layout(item); };
+  const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(relayout);
+  observer?.observe(frame);
+  window.addEventListener("scroll", relayout, true);
+  const refresh = !camera && tile && setInterval(async () => {
     if (!mounts.size || requestingImages) return;
     requestingImages = true;
     try {
@@ -153,6 +177,8 @@ export function bindMediaHost({ frame, origin, nonce, youtube, title, permission
     prompt?.cancel();
     for (const kind of active.keys()) stop(kind, "closed");
     for (const id of mounts.keys()) removeMount(id);
+    transport?.dispose();
+    transport = undefined;
     port?.close();
     port = undefined;
   }
@@ -190,6 +216,8 @@ export function bindMediaHost({ frame, origin, nonce, youtube, title, permission
       // image poll or the listeners behind.
       disposed = true;
       clearInterval(refresh);
+      observer?.disconnect();
+      window.removeEventListener("scroll", relayout, true);
       volume.removeEventListener("input", volumeChanged);
       window.removeEventListener("message", bind);
       window.removeEventListener("pagehide", reset);

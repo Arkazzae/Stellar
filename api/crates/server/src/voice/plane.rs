@@ -18,8 +18,8 @@ use tokio::sync::{Mutex, MutexGuard};
 
 use super::protocol::VERSION;
 use crate::events::{Audience, Event};
-use crate::realtime::presence::{MediaSession, SeatedMediaSession};
 use crate::realtime::Realtime;
+use crate::realtime::presence::{MediaSession, SeatedMediaSession};
 use crate::state::AppState;
 use crate::values::Id;
 
@@ -71,12 +71,36 @@ impl Plane {
 /// server for or close it, or the media server would keep a session no seat
 /// holds.
 pub async fn open(state: &AppState, connection: &str, room: Id, user: Id) -> Opening {
+    if let Some(rt) = state.realtime() {
+        rt.presence().close_media_session(connection);
+    }
+    open_for(state, connection, room, user, None).await
+}
+
+/// Opens a session only while the activity still holds this specific grant.
+pub async fn open_camera(
+    state: &AppState,
+    connection: &str,
+    room: Id,
+    user: Id,
+    grant: Id,
+) -> Opening {
+    open_for(state, connection, room, user, Some(grant)).await
+}
+
+async fn open_for(
+    state: &AppState,
+    connection: &str,
+    room: Id,
+    user: Id,
+    grant: Option<Id>,
+) -> Opening {
     let Some(realtime) = state.realtime().cloned() else {
         return Opening::Unavailable;
     };
     let state = state.clone();
     let connection = connection.to_string();
-    tokio::spawn(async move { create(&state, &realtime, &connection, room, user).await })
+    tokio::spawn(async move { create(&state, &realtime, &connection, room, user, grant).await })
         .await
         .unwrap_or(Opening::Unavailable)
 }
@@ -87,9 +111,9 @@ async fn create(
     connection: &str,
     room: Id,
     user: Id,
+    grant: Option<Id>,
 ) -> Opening {
     let presence = realtime.presence();
-    presence.close_media_session(connection);
 
     // A hub call must not hang on a pump that is stuck behind a slow media
     // server, so the wait is as long as a command may take.
@@ -102,7 +126,16 @@ async fn create(
         return Opening::Unavailable;
     }
 
-    let created = match voice.control().create_session(room, user).await {
+    // A revoked attempt that waited in the queue must not cause the SFU
+    // to replace a newer camera session for the same player.
+    if grant.is_some_and(|grant| !presence.has_camera_grant(connection, room, grant)) {
+        return Opening::NotSeated;
+    }
+    let created = match voice
+        .control()
+        .create_session(room, user, grant.is_some())
+        .await
+    {
         Ok(created) => created,
         Err(error) => {
             tracing::warn!("Opening a media session failed: {error}");
@@ -113,7 +146,11 @@ async fn create(
         session_id: created.session_id,
         epoch: created.epoch,
     };
-    if presence.attach_media_session(connection, room, session.clone()) {
+    let attached = match grant {
+        Some(grant) => presence.attach_camera(connection, room, grant, session.clone()),
+        None => presence.attach_media_session(connection, room, session.clone()),
+    };
+    if attached {
         return Opening::Opened(session.session_id);
     }
     presence.close_session(session);

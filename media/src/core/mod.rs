@@ -276,6 +276,7 @@ enum Work {
 
 struct Room {
     id: String,
+    scope: SessionScope,
     sessions: Vec<SessionKey>,
 }
 
@@ -286,6 +287,12 @@ pub struct CoreConfig {
     pub candidates: Vec<SocketAddr>,
 }
 
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
+pub enum SessionScope {
+    Voice,
+    Activity,
+}
+
 pub struct Core {
     epoch: String,
     candidates: Vec<SocketAddr>,
@@ -293,11 +300,11 @@ pub struct Core {
     crypto: Arc<CryptoProvider>,
     sessions: HashMap<SessionKey, Session>,
     by_id: HashMap<String, SessionKey>,
-    by_user: HashMap<String, SessionKey>,
+    voice_by_user: HashMap<String, SessionKey>,
     by_addr: HashMap<Endpoint, SessionKey>,
     by_ufrag: HashMap<String, SessionKey>,
     rooms: HashMap<RoomKey, Room>,
-    room_by_id: HashMap<String, RoomKey>,
+    room_by_id: HashMap<(SessionScope, String), RoomKey>,
     timers: BinaryHeap<Reverse<(Instant, SessionKey)>>,
     log: EventLog,
     outgoing: Vec<Outgoing>,
@@ -521,7 +528,7 @@ impl Core {
             crypto: Arc::new(str0m::crypto::from_feature_flags()),
             sessions: HashMap::new(),
             by_id: HashMap::new(),
-            by_user: HashMap::new(),
+            voice_by_user: HashMap::new(),
             by_addr: HashMap::new(),
             by_ufrag: HashMap::new(),
             rooms: HashMap::new(),
@@ -623,6 +630,16 @@ impl Core {
         room_id: &str,
         user_id: &str,
     ) -> Result<Created, ApiError> {
+        self.create_scoped_session(now, room_id, user_id, SessionScope::Voice)
+    }
+
+    pub fn create_scoped_session(
+        &mut self,
+        now: Instant,
+        room_id: &str,
+        user_id: &str,
+        scope: SessionScope,
+    ) -> Result<Created, ApiError> {
         if !is_uuid(room_id) {
             return Err(ApiError::InvalidRequest("roomId must be a uuid.".into()));
         }
@@ -630,8 +647,23 @@ impl Core {
             return Err(ApiError::InvalidRequest("userId must be a uuid.".into()));
         }
 
-        // One session per account: a new one replaces the old one silently.
-        if let Some(&old) = self.by_user.get(user_id) {
+        // An account has one voice call and an independent camera seat in
+        // each activity it joins. Replace only the session for that purpose.
+        let room_identity = (scope, room_id.to_string());
+        let old = match scope {
+            SessionScope::Voice => self.voice_by_user.get(user_id).copied(),
+            SessionScope::Activity => self
+                .room_by_id
+                .get(&room_identity)
+                .and_then(|room| self.rooms.get(room))
+                .and_then(|room| {
+                    room.sessions
+                        .iter()
+                        .copied()
+                        .find(|key| self.sessions[key].user_id == user_id)
+                }),
+        };
+        if let Some(old) = old {
             self.close(now, old, None, true);
         }
 
@@ -639,15 +671,16 @@ impl Core {
         self.next_key += 1;
         let id = random_id();
 
-        let room = match self.room_by_id.get(room_id) {
+        let room = match self.room_by_id.get(&room_identity) {
             Some(&room) => room,
             None => {
                 let room = RoomKey(key.0);
-                self.room_by_id.insert(room_id.to_string(), room);
+                self.room_by_id.insert(room_identity, room);
                 self.rooms.insert(
                     room,
                     Room {
                         id: room_id.to_string(),
+                        scope,
                         sessions: Vec::new(),
                     },
                 );
@@ -715,7 +748,9 @@ impl Core {
         ctx.reschedule(&mut session);
 
         self.by_id.insert(id.clone(), key);
-        self.by_user.insert(user_id.to_string(), key);
+        if scope == SessionScope::Voice {
+            self.voice_by_user.insert(user_id.to_string(), key);
+        }
         self.by_ufrag.insert(ufrag, key);
         self.sessions.insert(key, session);
         if let Some(r) = self.rooms.get_mut(&room) {
@@ -2027,8 +2062,8 @@ impl Core {
             self.closed_sessions.push(key);
         }
         self.by_id.remove(&s.id);
-        if self.by_user.get(&s.user_id) == Some(&key) {
-            self.by_user.remove(&s.user_id);
+        if self.voice_by_user.get(&s.user_id) == Some(&key) {
+            self.voice_by_user.remove(&s.user_id);
         }
         self.by_ufrag.remove(&s.ufrag);
         for addr in &s.addrs {
@@ -2042,7 +2077,7 @@ impl Core {
             room.sessions.retain(|k| *k != key);
             others = room.sessions.clone();
             if room.sessions.is_empty() {
-                let id = room.id.clone();
+                let id = (room.scope, room.id.clone());
                 self.rooms.remove(&s.room);
                 self.room_by_id.remove(&id);
             }

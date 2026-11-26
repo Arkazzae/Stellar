@@ -251,6 +251,7 @@ function defaults(): HookStubs {
       playSound: vi.fn(),
     }),
     voiceLive: stub<VoiceLive>({
+      cloneLocalCamera: () => undefined,
       subscribe: () => () => undefined,
       participantVolumeOf: () => undefined,
       participantGateOf: () => undefined,

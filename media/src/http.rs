@@ -20,7 +20,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot, watch};
 
-use crate::core::{ApiError, Core};
+use crate::core::{ApiError, Core, SessionScope};
 
 /// The largest request body the control API reads.
 pub const MAX_BODY_BYTES: usize = 256 * 1024;
@@ -53,7 +53,14 @@ impl AppState {
 pub fn router(state: AppState) -> Router {
     let protected = Router::new()
         .route("/v1/reset", post(reset))
-        .route("/v1/sessions", post(create_session))
+        .route(
+            "/v1/sessions",
+            post(|state, body| create_session(state, body, SessionScope::Voice)),
+        )
+        .route(
+            "/v1/activity-sessions",
+            post(|state, body| create_session(state, body, SessionScope::Activity)),
+        )
         .route("/v1/sessions/{id}", delete(delete_session))
         .route("/v1/sessions/{id}/offer", post(offer))
         .route("/v1/sessions/{id}/answer", post(answer))
@@ -231,6 +238,7 @@ async fn reset(State(state): State<AppState>) -> Response {
 async fn create_session(
     State(state): State<AppState>,
     body: Result<Bytes, BytesRejection>,
+    scope: SessionScope,
 ) -> Response {
     let body = match json_body(body) {
         Ok(b) => b,
@@ -251,7 +259,7 @@ async fn create_session(
     };
 
     match call(&state, move |core, now| {
-        core.create_session(now, &room_id, &user_id)
+        core.create_scoped_session(now, &room_id, &user_id, scope)
     })
     .await
     {

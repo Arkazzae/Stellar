@@ -52,8 +52,8 @@ pub struct Canned {
 
 struct State {
     requests: Vec<Recorded>,
-    /// Session id to (room, user).
-    sessions: HashMap<String, (String, String)>,
+    /// Session id to (room, user, activity camera).
+    sessions: HashMap<String, (String, String, bool)>,
     events: Vec<String>,
     signal_answers: HashMap<String, u16>,
     epoch: String,
@@ -172,7 +172,7 @@ impl FakeMedia {
 
     /// The room and the account a session was created for.
     pub fn session_of(&self, session: &str) -> Option<(String, String)> {
-        self.inner.state().sessions.get(session).cloned()
+        self.inner.state().sessions.get(session).map(|(room, owner, _)| (room.clone(), owner.clone()))
     }
 
     /// When set, every request is cut off as a media server that is not there
@@ -574,7 +574,8 @@ async fn respond(inner: &Arc<Inner>, request: &Recorded) -> Answer {
     }
     match (request.method.as_str(), segments.as_slice()) {
         ("POST", ["v1", "reset"]) => reset(inner),
-        ("POST", ["v1", "sessions"]) => create(inner, &request.body).await,
+        ("POST", ["v1", "sessions"]) => create(inner, &request.body, false).await,
+        ("POST", ["v1", "activity-sessions"]) => create(inner, &request.body, true).await,
         ("DELETE", ["v1", "sessions", id]) => {
             inner.state().sessions.remove(*id);
             Answer::Empty(204)
@@ -603,7 +604,7 @@ fn reset(inner: &Inner) -> Answer {
     )
 }
 
-async fn create(inner: &Arc<Inner>, body: &str) -> Answer {
+async fn create(inner: &Arc<Inner>, body: &str, activity: bool) -> Answer {
     let Ok(request) = serde_json::from_str::<Value>(body) else {
         return error(422, "invalid-request");
     };
@@ -617,12 +618,13 @@ async fn create(inner: &Arc<Inner>, body: &str) -> Answer {
     }
     let (session, epoch, wait_for) = {
         let mut state = inner.state();
-        // One session per account, as the media server keeps it.
-        state.sessions.retain(|_, (_, owner)| *owner != user);
+        state.sessions.retain(|_, (place, owner, camera)| {
+            *owner != user || *camera != activity || (activity && *place != room)
+        });
         state.session_count += 1;
         let session = format!("session-{}", state.session_count);
         let epoch = state.epoch.clone();
-        state.sessions.insert(session.clone(), (room, user));
+        state.sessions.insert(session.clone(), (room, user, activity));
         (session, epoch, state.signal_on_create.clone())
     };
     if let Some((kind, payload)) = wait_for {

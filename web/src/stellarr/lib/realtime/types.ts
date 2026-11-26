@@ -263,6 +263,7 @@ export interface RealtimeClient {
     event: E,
     handler: (payload: RealtimeEventMap[E]) => void,
   ): () => void;
+  activityCamera?(place: string, input: Record<string, unknown>): Promise<Record<string, unknown>>;
   activityRoom?(place: string, input: Record<string, unknown>): Promise<Record<string, unknown>>;
   /** Advertises the signed-in user's chosen status to every client. */
   setPresence(presence: Presence): Promise<void>;

@@ -237,7 +237,7 @@ export const activitiesApi = {
   /** A request a frame makes of its own activity. */
   async act(
     place: string,
-    kind: "room" | "tile",
+    kind: "room",
     input: Lease & { action: Record<string, unknown> },
     signal?: AbortSignal,
   ): Promise<Record<string, unknown>> {

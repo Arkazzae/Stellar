@@ -111,6 +111,8 @@ export interface VoiceValue {
  * to, instead of rendering for every snapshot of it.
  */
 export interface VoiceLive {
+  /** A video-only track the activity can stop independently after the player consents. */
+  cloneLocalCamera: () => MediaStreamTrack | undefined;
   /** Fires on every snapshot of the call; the getters below then read it anew. */
   subscribe: (listener: () => void) => () => void;
   participantVolumeOf: (userId: string) => number | undefined;
@@ -492,6 +494,8 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     const remote = (userId: string) =>
       holder.getState().peers.find((peer) => !peer.self && peer.userId === userId);
     return {
+      cloneLocalCamera: () => holder.getState().localCamera?.stream?.getVideoTracks()
+        .find(track => track.enabled && track.readyState === "live")?.clone(),
       subscribe: holder.subscribe,
       participantVolumeOf: (userId) => remote(userId)?.playbackVolume,
       participantGateOf: (userId) => remote(userId)?.gated,

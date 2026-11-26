@@ -98,6 +98,12 @@ export class DeferredRealtimeClient implements RealtimeClient {
     };
   }
 
+  async activityCamera(place: string, input: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const client = await this.ready();
+    if (!client.activityCamera) throw new Error("Activity camera unavailable");
+    return client.activityCamera(place, input);
+  }
+
   async activityRoom(place: string, input: Record<string, unknown>): Promise<Record<string, unknown>> {
     const client = await this.ready();
     if (!client.activityRoom) throw new Error("Activity room transport unavailable");
