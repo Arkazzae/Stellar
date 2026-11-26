@@ -160,6 +160,26 @@ export interface UiValue extends PanelsValue, DialogsValue {
   returnToChannel: () => void;
 }
 
+/** Save an explicit choice on this device. A missing value uses the viewport default. */
+function useWidePanelPreference(key: string) {
+  const [preference, setPreference] = useState<boolean | null>(() => {
+    try {
+      const saved = window.localStorage.getItem(key);
+      if (saved === "open") return true;
+      if (saved === "closed") return false;
+    } catch { /* Storage can be unavailable. */ }
+    return null;
+  });
+  const remember = useCallback((open: boolean) => {
+    setPreference(open);
+    try {
+      window.localStorage.setItem(key, open ? "open" : "closed");
+    } catch { /* Keep the choice for this visit. */ }
+  }, [key]);
+
+  return [preference, remember] as const;
+}
+
 /**
  * The rail drawer, the roster, the channel panel and the profile or chat
  * beside a conversation. `callRoom` is the open conversation while you are in
@@ -177,18 +197,11 @@ function usePanels(callRoom: string | null, joinedRoom: string | null): PanelsVa
   const rosterFits = useMediaQuery("(min-width: 1440px)", true);
 
   const [railOpen, setRailState] = useState(false);
-  /*
-   * The wide roster holds "no preference yet" rather than an initial `true`: the
-   * default depends on the viewport, which the server render does not have, and
-   * guessing wrong is a hydration mismatch. The drawer has its own state so the
-   * desktop preference does not ride along into a narrow window and greet it
-   * with the panel already covering the room.
-   */
-  const [rosterPreference, setRosterPreference] = useState<boolean | null>(null);
+  const [rosterPreference, setRosterPreference] = useWidePanelPreference("stellarr.layout.roster");
   const [rosterDrawerOpen, setRosterDrawerOpen] = useState(false);
   const [channelPanel, setChannelPanel] = useState<ChannelPanelTab | null>(null);
   const [channelPanelTab, setChannelPanelTab] = useState<ChannelPanelTab>("pinned");
-  const [profilePreference, setProfilePreference] = useState<boolean | null>(null);
+  const [profilePreference, setProfilePreference] = useWidePanelPreference("stellarr.layout.dm-profile");
   const [profileDrawerOpen, setProfileDrawerOpen] = useState(false);
   /*
    * A call starts with the column empty: the call gets the whole room. The
@@ -202,7 +215,7 @@ function usePanels(callRoom: string | null, joinedRoom: string | null): PanelsVa
 
   const rosterOpen = rosterIsDrawer
     ? rosterDrawerOpen
-    : (rosterPreference ?? rosterFits);
+    : !(channelPanelIsDrawer && channelPanel !== null) && (rosterPreference ?? rosterFits);
   const callSide =
     callRoom !== null &&
     callSideChoice?.room === callRoom &&
@@ -227,7 +240,7 @@ function usePanels(callRoom: string | null, joinedRoom: string | null): PanelsVa
       if (open) setRailState(false);
       setRosterDrawerOpen(open);
     },
-    [channelPanelIsDrawer, rosterIsDrawer],
+    [channelPanelIsDrawer, rosterIsDrawer, setRosterPreference],
   );
 
   const showCallSide = useCallback(
@@ -258,7 +271,7 @@ function usePanels(callRoom: string | null, joinedRoom: string | null): PanelsVa
       if (open) setRailState(false);
       setProfileDrawerOpen(open);
     },
-    [callRoom, rosterIsDrawer, showCallSide],
+    [callRoom, rosterIsDrawer, setProfilePreference, showCallSide],
   );
 
   const setCallChatOpen = useCallback(
@@ -292,15 +305,13 @@ function usePanels(callRoom: string | null, joinedRoom: string | null): PanelsVa
   const toggleChannelPanel = useCallback(
     (tab: ChannelPanelTab) => {
       if (channelPanelIsDrawer) {
-        // The roster is still a grid track between 1024 and 1279px, but it
-        // has to make room for this drawer all the same.
         setRailState(false);
-        setRosterOpen(false);
+        setRosterDrawerOpen(false);
       }
       setChannelPanelTab(tab);
       setChannelPanel((current) => (current === tab ? null : tab));
     },
-    [channelPanelIsDrawer, setRosterOpen],
+    [channelPanelIsDrawer],
   );
 
   const showChannelPanelTab = useCallback((tab: ChannelPanelTab) => {
