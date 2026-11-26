@@ -67,6 +67,8 @@ STELLARR_MEDIA_PORT=49000
 
 ## Diagnostics
 
+If the call offers **Copy diagnostics for the host**, send the report to the person running the instance. It includes signaling and media status, participant counts, and the latest network measurements. A missing measurement appears as `null`.
+
 Run through these checks in order when calls stay on `Connecting` or produce one-way audio:
 
 1. **Secure context & permissions:** Confirm the browser opened `https://` (or `http://localhost`) and granted microphone permission.

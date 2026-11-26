@@ -6,6 +6,7 @@ import { ServerTile } from "@/components/auth/Faces";
 import { DialogClose } from "@/components/primitives/DialogClose";
 import { Sticker } from "@/components/primitives/MascotArt";
 import { Modal } from "@/components/primitives/Modal";
+import { InviteReachHint } from "@/components/auth/InviteReachHint";
 import { Segmented } from "@/components/primitives/Segmented";
 import { StepIndicator } from "@/components/primitives/StepIndicator";
 import { Switch } from "@/components/primitives/Switch";
@@ -265,7 +266,11 @@ export function ServerCreateModal({
                   {copied ? t("auth.setup.copied") : t("auth.setup.copy")}
                 </Button>
               </div>
-              <p className={css("hint", "doneNote")}>{t("auth.setup.inviteHint")}</p>
+              <p className={css("hint", "doneNote")}>
+                <InviteReachHint url={invite.state === "ready" ? invite.url : ""} t={t}>
+                  {t("auth.setup.inviteHint")}
+                </InviteReachHint>
+              </p>
             </>
           )}
         </div>

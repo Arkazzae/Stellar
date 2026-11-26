@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@stellarr/ui";
 import { Icon } from "@stellarr/icons";
+import { InviteReachHint } from "@/components/auth/InviteReachHint";
 import { Avatar } from "@/components/primitives/Avatar";
 import { Modal } from "@/components/primitives/Modal";
 import { DialogHeader } from "@/components/settings/DialogHeader";
@@ -298,7 +299,7 @@ function InviteLink({ url, expiresAt, alone, onCreate, onCopy }: InviteLinkProps
           </div>
           <p className="inv-note">
             {lifetime === null ? null : `${lifetime} `}
-            {t("invite.linkNote")}
+            <InviteReachHint url={url} t={t}>{t("invite.linkNote")}</InviteReachHint>
           </p>
         </>
       )}

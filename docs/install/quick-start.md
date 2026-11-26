@@ -13,13 +13,13 @@ Deploy a local Stellarr instance, create the owner account and initial server, i
 The installer checks host prerequisites, writes `docker-compose.yml` and `.env`, starts the container, waits for health checks, and prints your instance URL and one-time setup code:
 
 ```bash
-curl -fsSL https://stellarr.online/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Arkazzae/Stellarr/main/install.sh | bash
 ```
 
 For unattended deployments, pass `--yes` (`-y`) alongside your target domain and public IP policy:
 
 ```bash
-curl -fsSL https://stellarr.online/install.sh | bash -s -- \
+curl -fsSL https://raw.githubusercontent.com/Arkazzae/Stellarr/main/install.sh | bash -s -- \
   --yes --domain chat.example.com --public-ip auto
 ```
 
@@ -89,7 +89,7 @@ Complete the three-step `/setup` wizard:
 
 1. **Owner account:** Enter the setup code, display name, username (`3–32` characters: letters, digits, `.`, `-`, `_`), email address, and password (`8+` characters).
 2. **First server:** Set the server name (`1–80` characters), optional description, first text channel (default `general`), and voice channel toggle (default `lounge`). Click **Create account and server**.
-3. **Invite link:** The wizard commits the owner account and primary server in a single SQLite transaction, invalidates the setup code, and displays an invite URL. Copy the link and click **Open server**.
+3. **Invite link:** A loopback invitation such as `https://localhost/invite/…` opens only on the device running Stellarr. Choose **Set up access for friends** to configure a reachable address. The wizard commits the owner account and primary server in a single SQLite transaction, invalidates the setup code, and displays an invite URL. Copy the link and click **Open server**.
 
 ## 5. Invite a second user
 

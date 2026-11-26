@@ -154,8 +154,22 @@ export class SfuHealth {
     }
     const { error, transport } = store.getSnapshot();
     if (
-      error?.kind === "transport" &&
-      (transport.media === "connected" || transport.media === "ready")
+      link?.connection.connectionState === "connected" && link.flow.verified &&
+      transport.media === "degraded" && (error === null || error.kind === "transport" || error.kind === "incoming-audio") &&
+      [...this.env.people.values()].some((person) =>
+        !person.muted && !this.arriving.has(person.userId) && !this.isPending(person.userId, condition.upAt, Date.now()),
+      )
+    ) {
+      store.set({ error: {
+        kind: "incoming-audio",
+        message: translate("voiceClient.incomingAudioMissing"),
+        recoverable: true,
+      } });
+      return;
+    }
+    if (
+      error?.kind === "incoming-audio" ||
+      (error?.kind === "transport" && (transport.media === "connected" || transport.media === "ready"))
     ) {
       store.set({ error: null });
     }

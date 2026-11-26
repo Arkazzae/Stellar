@@ -53,6 +53,7 @@ export type VoiceErrorKind =
   | "ice-config"
   | "signaling"
   | "transport"
+  | "incoming-audio"
   | "session-replaced"
   | "channel-kicked"
   | "channel-access-revoked"

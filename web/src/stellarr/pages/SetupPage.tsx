@@ -13,6 +13,7 @@ import controls from "@/components/auth/AuthControls.module.css";
 import { AuthField, FormError } from "@/components/auth/AuthField";
 import { AuthFrame } from "@/components/auth/AuthFrame";
 import { Chip, ServerTile } from "@/components/auth/Faces";
+import { InviteReachHint } from "@/components/auth/InviteReachHint";
 import { ServerUnreachable } from "@/components/auth/Outcomes";
 import { StepIndicator } from "@/components/primitives/StepIndicator";
 import { Switch } from "@/components/primitives/Switch";
@@ -234,7 +235,11 @@ export default function SetupPage() {
                 <span>{copied ? t("auth.setup.copied") : t("auth.setup.copy")}</span>
               </button>
             </div>
-            <p className={controls.hint}>{t("auth.setup.inviteHint")}</p>
+            <p className={controls.hint}>
+              <InviteReachHint url={invite.state === "ready" ? invite.url : ""} t={t}>
+                {t("auth.setup.inviteHint")}
+              </InviteReachHint>
+            </p>
           </div>
         )}
         <button
