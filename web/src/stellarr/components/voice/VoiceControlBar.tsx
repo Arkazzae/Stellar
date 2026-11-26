@@ -230,10 +230,9 @@ export function VoiceControlBar({
             />
           </div>
           {onOpenActivities && (
-            <button type="button" className="vc-btn vc-activities" aria-haspopup="dialog"
+            <button type="button" className="vc-btn" aria-haspopup="dialog"
               aria-label={t("friends.tabActivities")} title={t("friends.tabActivities")} onClick={onOpenActivities}>
               <Icon name="game" size={20} />
-              <span>{t("friends.tabActivities")}</span>
             </button>
           )}
           <div className="vc-ctl vc-wide-only">

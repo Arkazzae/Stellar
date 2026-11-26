@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { Icon } from "@stellarr/icons";
 import { DialogClose } from "@/components/primitives/DialogClose";
 import { Modal } from "@/components/primitives/Modal";
 import { request } from "@/lib/api/transport";
@@ -43,25 +44,45 @@ interface LibraryProps {
 
 function ActivityLibrary({ entries, voice, busy, currentInstall, onChoose }: LibraryProps) {
   const { t } = useLanguage();
+  const libraryId = useId();
   return (
-    <ul className="personal-activity-library">
+    <ul className={voice ? "activity-picker-grid" : "personal-activity-library"}>
       {entries.map(entry => {
         const isCurrent = currentInstall === entry.install;
         let label = t("stage.launchForMyself");
         if (voice) label = t(entry.running ? "stage.joinActivity" : "stage.startActivity");
         if (isCurrent) label = t("stage.returnToActivity");
         else if (!entry.supported) label = entry.devices?.join(", ") || t("stage.unsupportedActivityDevice");
+        const artwork = (
+          <span className="personal-activity-image">
+            {entry.artwork?.cover && <img alt="" className="personal-activity-cover" src={entry.artwork.cover} loading="lazy" />}
+            {entry.artwork?.icon && <img alt="" className="personal-activity-icon" src={entry.artwork.icon} loading="lazy" />}
+          </span>
+        );
+        const action = {
+          disabled: busy || (!entry.supported && !isCurrent),
+          "aria-label": entry.name + " · " + label,
+          onClick: () => onChoose(entry.install),
+        };
+        if (voice) return (
+          <li key={entry.install}>
+            <button type="button" className="activity-picker-card" aria-describedby={libraryId + entry.install} {...action}>
+              {artwork}
+              <strong className="activity-picker-name">{entry.name}</strong>
+              <span className="activity-picker-description" id={libraryId + entry.install}>{entry.description}</span>
+              <span className="activity-picker-action">
+                {label}{!action.disabled && <Icon name="arrowRight" size={16} />}
+              </span>
+            </button>
+          </li>
+        );
         return (
           <li key={entry.install}>
-            <div className="personal-activity-image">
-              {entry.artwork?.cover && <img alt="" className="personal-activity-cover" src={entry.artwork.cover} loading="lazy" />}
-              {entry.artwork?.icon && <img alt="" className="personal-activity-icon" src={entry.artwork.icon} loading="lazy" />}
-            </div>
+            {artwork}
             <div className="personal-activity-details">
               <h3>{entry.name}</h3>
               <p>{entry.description}</p>
-              <button type="button" className="st-chip st-button" disabled={busy || (!entry.supported && !isCurrent)}
-                aria-label={entry.name + " · " + label} onClick={() => onChoose(entry.install)}>
+              <button type="button" className="st-chip st-button" {...action}>
                 {label}
               </button>
             </div>
@@ -219,13 +240,13 @@ function ActivitiesForScope({ channel, muted, cameraOn, pickerOpen = false, onCl
       {player}{!pickerOpen && notice}
     </section>}
     {pickerOpen && createPortal(
-      <Modal open onClose={dismissPicker} labelledBy={titleId} className="act-modal activity-picker">
-        <div className="am-card">
-          <header className="am-head">
+      <Modal open onClose={dismissPicker} labelledBy={titleId} className="sv-wrap">
+        <div className="sv activity-picker">
+          <header className="sv-bar">
+            <div className="sv-bar-txt"><h2 id={titleId}>{t("friends.tabActivities")}</h2></div>
             <DialogClose label={t("common.close")} onClose={dismissPicker} />
-            <h2 id={titleId}>{t("friends.tabActivities")}</h2>
           </header>
-          <div className="ch-body">{notice}{library}</div>
+          <div className="sv-panes">{notice}{library}</div>
         </div>
       </Modal>,
       document.fullscreenElement ?? document.body,

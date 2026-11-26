@@ -73,6 +73,8 @@ it("opens the activity picker from one control next to the camera in a channel c
   expect(screen.queryByRole("button", { name: "Aktywności" })).toBeNull();
   rerender(<VoiceControlBar {...props({ onOpenActivities })} />);
   const button = screen.getByRole("button", { name: "Aktywności" });
+  expect(button).toHaveTextContent(/^$/);
+  expect(button).toHaveAttribute("title", "Aktywności");
   expect(button.previousElementSibling?.querySelector("button")).toHaveAccessibleName("Włącz kamerę");
   expect(button).toHaveAttribute("aria-haspopup", "dialog");
   fireEvent.click(button);
