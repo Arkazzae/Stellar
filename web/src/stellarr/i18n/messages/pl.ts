@@ -1867,7 +1867,6 @@ export const pl = {
   "share.watchedBy": "Oglądają: {names}",
   "stage.activityPlayers": "Uczestnicy",
   "stage.activityDisconnected": "Rozłączono",
-  "friends.tabActivities": "Aktywności",
   "stage.devPreview": "Podgląd aktywności",
   "stage.closePreview": "Zamknij podgląd",
   "stage.previewCode": "Kod zaproszenia",
