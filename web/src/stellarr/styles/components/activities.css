@@ -174,4 +174,180 @@
     .act-top-row{flex-wrap:wrap}
     .act-top-acts{width:100%;justify-content:flex-end}
   }
+
+  /* ---------- The frame ---------- */
+  .activity-frame-controls{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2)}
+  .activity-volume{display:inline-flex;align-items:center;gap:6px;color:var(--text-muted)}
+  .activity-volume input{width:72px;accent-color:var(--accent)}
+  .activity-viewport{position:relative;overflow:hidden}
+  .activity-viewport iframe{display:block;width:100%;height:clamp(320px, 58vh, 680px);border:0}
+
+  /*
+   * ---------- The running activity's panel ----------
+   * One element per session, for the app's whole life, laid over the slot the
+   * open view keeps for it: a moved frame would reload. While no view shows a
+   * slot the panel is parked out of sight, and the activity goes on.
+   */
+  .act-panel{
+    position:fixed;z-index:10;left:0;top:0;width:0;height:0;
+    display:flex;flex-direction:column;gap:var(--sp-2);min-width:0;
+  }
+  .act-panel[data-parked]{visibility:hidden;pointer-events:none}
+  .act-panel .activity-viewport{
+    container:activity-space / size;
+    flex:1;min-height:0;display:grid;place-items:center;
+    border-radius:var(--radius-md);background:var(--surface-stage);
+  }
+  /* Between 16:9 and 16:10 of the space it has; on a phone held upright the
+     activity takes all of it for its own mobile layout. */
+  .act-panel .activity-viewport iframe{
+    width:min(100cqw, calc(100cqh * 16 / 9));
+    height:min(100cqh, calc(100cqw * 10 / 16));
+  }
+  @container activity-space (max-width:550px) and (orientation:portrait){
+    .act-panel .activity-viewport iframe{width:100%;height:100%}
+  }
+
+  /* The activity's own bar: what it is, who is in it, and everything you do
+     with it. The call's bar has no activity slot while you are inside. */
+  .act-bar{
+    position:relative;flex:none;display:flex;align-items:center;gap:10px;min-width:0;
+    min-height:48px;padding:6px 6px 6px 10px;
+    border-radius:var(--radius-lg);background:var(--surface-pop);border:1px solid var(--line);
+    transition:opacity var(--dur-base) var(--ease-standard);
+  }
+  .act-bar-title{min-width:0;display:flex;flex-direction:column;line-height:1.3}
+  .act-bar-title b{font-size:var(--text-14);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .act-bar-title span{font-size:var(--text-12);color:var(--text-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .act-faces{flex:none;display:inline-flex;align-items:center}
+  .act-face{display:inline-flex;margin-left:-6px;border-radius:50%;box-shadow:0 0 0 2px var(--surface-pop)}
+  .act-face:first-child{margin-left:0}
+  .act-face .av{--av-size:22px}
+  .act-bar-tools{flex:none;margin-left:auto;display:flex;align-items:center;gap:4px}
+  .act-bar-call{display:flex;gap:2px;margin-right:4px;padding-right:6px;border-right:1px solid var(--line)}
+  .activity-devices{display:contents}
+  .activity-device-controls{display:inline-flex;align-items:center;gap:4px}
+  .activity-device-controls button{
+    height:32px;padding:0 10px;border-radius:8px;
+    background:var(--surface-active);color:var(--text);font-size:var(--text-12);font-weight:600;
+  }
+  .activity-device-controls button:hover{background:var(--surface-overlay)}
+  .act-leave{display:inline-flex;align-items:center;gap:1px}
+  .act-leave-btn,
+  .act-more-btn{
+    height:34px;display:inline-flex;align-items:center;justify-content:center;
+    background:var(--surface-active);color:var(--text);
+    transition:background var(--dur-fast) var(--ease-standard);
+  }
+  .act-leave-btn{padding:0 12px;border-radius:10px;font-size:var(--text-13);font-weight:600;white-space:nowrap}
+  .act-leave:has(.act-more) .act-leave-btn{border-radius:10px 0 0 10px}
+  .act-more{position:relative;display:inline-flex}
+  .act-more-btn{width:28px;border-radius:0 10px 10px 0;color:var(--text-muted)}
+  .act-leave-btn:hover,
+  .act-more-btn:hover,
+  .act-more-btn[aria-expanded="true"]{background:var(--surface-overlay);color:var(--text)}
+  .act-more-btn svg{transition:transform var(--dur-base) var(--ease-standard)}
+  .act-more-btn[aria-expanded="true"] svg{transform:rotate(180deg)}
+  .act-leave-btn:focus-visible,
+  .act-more-btn:focus-visible{outline:2px solid var(--accent-quiet);outline-offset:2px}
+  .act-more > .dock-pop.act-menu{left:auto;right:0;top:calc(100% + 6px);bottom:auto;width:288px}
+  .act-menu .qm-note{margin:6px 8px 4px}
+  .qm-more.danger,
+  .qm-more.danger .qm-more-icon{color:var(--danger-text)}
+  .qm-more.danger:hover{background:var(--danger-soft)}
+  .act-hang{
+    height:34px;padding:0 14px;border-radius:10px;display:inline-flex;align-items:center;
+    background:var(--hang);color:var(--on-hang);
+    transition:background var(--dur-fast) var(--ease-standard);
+  }
+  .act-hang:hover{background:var(--hang-hover)}
+
+  /* For yourself, the panel is the room: its bar stands where the header does. */
+  .act-panel[data-slot="personal"]{gap:0}
+  .act-panel[data-slot="personal"] .act-bar{
+    min-height:52px;padding:0 12px 0 20px;
+    border-width:0 0 1px;border-radius:0;background:var(--surface-room);
+  }
+  .act-panel[data-slot="personal"] .activity-viewport{border-radius:0}
+  .activity-room{display:block}
+  .activity-room > .act-slot{height:100%}
+
+  /* Full screen: the frame on the whole screen, the bar over its top edge,
+     faded after two seconds without the pointer and back at the edge. */
+  .act-panel:fullscreen{visibility:visible;pointer-events:auto;gap:0;background:var(--surface-canvas-solid)}
+  .act-panel:fullscreen .activity-viewport{border-radius:0;background:var(--surface-canvas-solid)}
+  .act-panel:fullscreen .act-bar{position:absolute;z-index:3;top:12px;left:12px;right:12px}
+  .act-panel:fullscreen[data-chrome="idle"] .act-bar:not(:focus-within){opacity:0;pointer-events:none}
+  .act-wake{position:absolute;z-index:2;top:0;left:0;right:0;height:16px}
+  /* A touch screen has no pointer to move over the frame: the bar stays. */
+  @media (hover:none){
+    .act-panel:fullscreen[data-chrome="idle"] .act-bar:not(:focus-within){opacity:1;pointer-events:auto}
+  }
+  .act-hint{
+    position:absolute;z-index:4;left:50%;bottom:24px;transform:translateX(-50%);
+    padding:8px 14px;border-radius:10px;background:var(--veil-strong);color:var(--on-veil);
+    font-size:var(--text-13);pointer-events:none;
+  }
+
+  /* ---------- On the call's stage ---------- */
+  .call-stage{flex:1;min-height:0;display:flex;flex-direction:column}
+  /*
+   * While an activity has the stage, the call's view stands above its panel
+   * (10): the menus the call bar and the strip open in place (the device
+   * menus, the soundboard, a tile's menu) then draw over the activity, which
+   * would otherwise depend on whether the view's own container makes a
+   * stacking context. Neither `.room-body` nor `.room` makes one, so 11 is
+   * measured against the panel's 10. The view has no background and the
+   * slot is empty, so the panel shows through; the pointer goes through to it
+   * everywhere but the view's own controls. Drawers (from 20 up) and dialogs
+   * stay above both.
+   */
+  .view:has(> .call-stage[data-activity]){z-index:11;pointer-events:none}
+  .view:has(> .call-stage[data-activity]) > :not(.call-stage),
+  .call-stage[data-activity] > :not(.act-slot){pointer-events:auto}
+  .act-slot{flex:1;min-height:0;margin:var(--sp-3) var(--sp-4) 0}
+  .call-stage[data-activity="cinema"] > .act-slot{margin:0}
+  .call-stage[data-activity="cinema"] > .voice-stage{display:none}
+  /* Inside, the people stay: one row of small tiles under the activity. */
+  .voice-stage[data-layout="strip"]{flex:none;padding:var(--sp-2) var(--sp-4) var(--sp-1);overflow:visible}
+  .voice-stage[data-layout="strip"] .tiles{
+    flex:none;height:88px;flex-wrap:nowrap;justify-content:safe center;align-content:normal;
+    overflow-x:auto;overflow-y:hidden;
+  }
+  .voice-stage[data-layout="strip"] .tile{
+    flex:none;width:150px;max-width:none;aspect-ratio:16 / 9;border-radius:var(--radius-md);
+  }
+  .voice-stage[data-layout="strip"] .tile .t-name{font-size:var(--text-12)}
+  /* The activity's mark after the name of someone inside it. */
+  .tile .t-name > .t-act{flex:none;display:inline-flex;overflow:visible}
+  .act-ended{
+    flex:none;margin:12px 20px 0;padding:8px 12px;border-radius:var(--radius-md);
+    background:var(--surface-field);color:var(--text-muted);font-size:var(--text-13);
+  }
+
+  /* The reason a join failed, over the bar's slot until it fades. */
+  .vc-act-wrap{position:relative;display:inline-flex;align-items:center}
+  .vc-act-error{
+    position:absolute;z-index:40;left:50%;bottom:calc(100% + 12px);transform:translateX(-50%);
+    width:max-content;max-width:240px;padding:8px 10px;border-radius:10px;
+    background:var(--surface-raised);border:1px solid var(--line);box-shadow:var(--elev-modal);
+    color:var(--danger-text);font-size:var(--text-12);line-height:1.4;
+  }
+
+  @media (max-width:767px){
+    .act-faces{display:none}
+    .act-bar{gap:8px}
+    .act-panel[data-slot="personal"] .act-bar{padding:0 8px 0 12px}
+    .activity-volume input{width:56px}
+  }
+
+  @media (pointer:coarse){
+    .act-leave-btn,.act-more-btn,.act-hang{height:44px}
+    .act-more-btn{width:44px}
+    .activity-volume input{min-height:44px}
+  }
+
+  @media (prefers-reduced-motion:reduce){
+    .act-bar,.act-more-btn svg{transition:none}
+  }
 }

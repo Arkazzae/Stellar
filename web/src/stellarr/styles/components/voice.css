@@ -33,79 +33,6 @@
     container:stage / inline-size;
   }
 
-  .call-participants:not([hidden]),
-  .voice-activity-stage {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    min-block-size: 0;
-    min-inline-size: 0;
-  }
-  .voice-activity-stage {
-    gap: var(--sp-2);
-    padding: var(--sp-2) var(--sp-3) 0;
-  }
-  .voice-activity-stage[data-view="people"] { flex: none; }
-  .activity-frame-controls {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--sp-2);
-  }
-  .activity-stage-switch {
-    display: inline-flex;
-    min-width: 0;
-    max-width: 100%;
-    gap: 2px;
-    margin-inline-end: auto;
-    padding: 2px;
-    border-radius: var(--radius-md);
-    background: var(--surface-base);
-  }
-  .activity-stage-switch button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 0;
-    gap: 6px;
-    padding: 5px 10px;
-    border-radius: var(--radius-sm);
-    color: var(--text-muted);
-    cursor: pointer;
-  }
-  .activity-stage-switch button svg { flex: none; }
-  .activity-stage-switch button span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .activity-stage-switch button[aria-pressed="true"] { background: var(--surface-overlay); color: var(--text); }
-  .activity-stage-switch button:hover { color: var(--text); }
-  .activity-stage-switch button:focus-visible { outline: 2px solid var(--accent); }
-  .activity-volume { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); }
-  .activity-volume input { width: 72px; accent-color: var(--accent); }
-  .activity-viewport { position: relative; overflow: hidden; }
-  .activity-viewport iframe { display: block; width: 100%; height: clamp(320px, 58vh, 680px); border: 0; }
-  .voice-activity-stage .activity-viewport:not([hidden]) {
-    container: activity-space / size;
-    flex: 1;
-    min-height: 0;
-    display: grid;
-    place-items: center;
-    overflow: hidden;
-    border-radius: var(--radius-md);
-    background: var(--surface-stage);
-  }
-  /* Fit the available stage between 16:9 and 16:10. On a phone in portrait
-     the activity can use the full height for its own mobile layout. */
-  .voice-activity-stage iframe {
-    width: min(100cqw, calc(100cqh * 16 / 9));
-    height: min(100cqh, calc(100cqw * 10 / 16));
-  }
-  @container activity-space (max-width: 550px) and (orientation: portrait) {
-    .voice-activity-stage iframe { width: 100%; height: 100%; }
-  }
-
   /* Referenced by `.am-card` and `.sv` too; the mockup defines it here, beside
      the band it was written for. */
   @keyframes actIn{from{opacity:0;transform:scale(0.985) translateY(8px)}to{opacity:1;transform:none}}
@@ -317,26 +244,14 @@
     width:auto;height:40px;padding:0 11px 0 7px;gap:9px;
     color:var(--text);text-align:left;
   }
-  .vc-btn.vc-act-join:disabled{opacity:.65;cursor:progress}
+  .vc-btn.vc-act-join[aria-busy="true"]{cursor:progress}
+  .vc-btn.vc-act-join[aria-disabled="true"]{cursor:default}
+  .vc-btn.vc-act-join[data-full] .vc-act-txt{color:var(--text-faint)}
   .vc-act-ico{
     width:26px;height:26px;border-radius:7px;flex:none;
     object-fit:cover;border:1px solid var(--line-subtle);
   }
-  .vc-act-fallback{
-    display:inline-flex;align-items:center;justify-content:center;
-    background:var(--surface-overlay);color:var(--text-muted);
-  }
-  .vc-act-txt{display:flex;flex-direction:column;gap:1px;min-width:0;line-height:1.15}
-  .vc-act-name{
-    max-width:148px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-    font-size:var(--text-13);font-weight:600;color:var(--text);
-  }
-  .vc-act-sub{
-    font-size:var(--text-11);font-weight:500;color:var(--text-faint);
-    transition:color var(--dur-fast) var(--ease-standard);
-  }
-  .vc-act-join:hover:not(:disabled) .vc-act-sub,
-  .vc-act-join:focus-visible .vc-act-sub{color:var(--accent-text)}
+  .vc-act-txt{min-width:0;font-size:var(--text-13);font-weight:600;color:var(--text);white-space:nowrap}
   .vc-caret{
     width:22px;height:40px;border-radius:12px;margin-right:2px;
     display:inline-flex;align-items:center;justify-content:center;color:var(--text-faint);
@@ -378,6 +293,8 @@
     .vc-btn.vc-act-join{width:auto;height:44px}
     .vc-caret{width:44px;height:44px;margin-right:0}
   }
+  /* A narrow bar keeps the activity slot, as its icon alone; the button
+     still names what it joins. */
   @container room-view (max-width:560px){
     .vc-act-sep,.vc-act-txt{display:none}
     .vc-btn.vc-act-join{width:44px;padding:0;justify-content:center}

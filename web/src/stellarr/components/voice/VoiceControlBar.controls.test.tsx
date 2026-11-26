@@ -68,10 +68,10 @@ function props(overrides: Partial<VoiceControlBarProps> = {}): VoiceControlBarPr
 }
 
 it("groups the three device controls together and opens activities beside screen sharing", () => {
-  const onOpenActivities = vi.fn();
+  const onOpen = vi.fn();
   const { rerender } = render(<VoiceControlBar {...props()} />);
   expect(screen.queryByRole("button", { name: "Aktywności" })).toBeNull();
-  rerender(<VoiceControlBar {...props({ onOpenActivities })} />);
+  rerender(<VoiceControlBar {...props({ activity: { kind: "pick", onOpen } })} />);
   const button = screen.getByRole("button", { name: "Aktywności" });
   expect(button).toHaveTextContent(/^$/);
   expect(button).toHaveAttribute("title", "Aktywności");
@@ -85,52 +85,39 @@ it("groups the three device controls together and opens activities beside screen
   ]);
   expect(button).toHaveAttribute("aria-haspopup", "dialog");
   fireEvent.click(button);
-  expect(onOpenActivities).toHaveBeenCalledOnce();
+  expect(onOpen).toHaveBeenCalledOnce();
 });
 
-it("joins a live voice activity directly from the bar without opening the picker modal", () => {
-  const onOpenActivities = vi.fn();
-  const onJoinActivity = vi.fn();
-  const onLeaveActivity = vi.fn();
-  const liveActivity = { install: "sketch", name: "Kalambury", icon: "/icon.png" };
+it("joins a running activity in one click, and refuses nothing it cannot do", () => {
+  const onJoin = vi.fn();
+  const running = {
+    kind: "join" as const,
+    install: "sketch",
+    name: "Kalambury",
+    icon: "/icon.png",
+    busy: false,
+    full: null,
+    error: null,
+    onJoin,
+  };
+  const { rerender } = render(<VoiceControlBar {...props({ activity: running })} />);
 
-  const { rerender } = render(
-    <VoiceControlBar
-      {...props({
-        liveActivity,
-        onOpenActivities,
-        onJoinActivity,
-        onLeaveActivity,
-      })}
-    />,
-  );
+  const join = screen.getByRole("button", { name: "Dołącz do Kalambury" });
+  expect(join).not.toHaveAttribute("aria-haspopup");
+  expect(join).toHaveTextContent("Dołącz");
+  fireEvent.click(join);
+  expect(onJoin).toHaveBeenCalledOnce();
 
-  expect(screen.queryByRole("button", { name: "Aktywności" })).toBeNull();
-  const joinButton = screen.getByRole("button", { name: "Dołącz: Kalambury" });
-  expect(joinButton).not.toHaveAttribute("aria-haspopup");
-  expect(joinButton).toHaveTextContent("Kalambury");
-  expect(joinButton).toHaveTextContent("Trwa · Dołącz");
-  fireEvent.click(joinButton);
-  expect(onJoinActivity).toHaveBeenCalledOnce();
-  expect(onOpenActivities).not.toHaveBeenCalled();
+  rerender(<VoiceControlBar {...props({ activity: { ...running, busy: true } })} />);
+  expect(screen.getByRole("button", { name: "Dołączanie…" })).toHaveAttribute("aria-busy", "true");
 
-  rerender(
-    <VoiceControlBar
-      {...props({
-        liveActivity,
-        activityJoined: true,
-        onOpenActivities,
-        onJoinActivity,
-        onLeaveActivity,
-      })}
-    />,
-  );
-
-  const leaveButton = screen.getByRole("button", { name: "Opuść aktywność" });
-  expect(leaveButton).toHaveAttribute("aria-pressed", "true");
-  expect(leaveButton).toHaveAttribute("title", "Opuść aktywność: Kalambury");
-  fireEvent.click(leaveButton);
-  expect(onLeaveActivity).toHaveBeenCalledOnce();
+  const full = "Komplet, 2 z 2. Spróbuj, gdy ktoś wyjdzie.";
+  rerender(<VoiceControlBar {...props({ activity: { ...running, full, error: "Nie udało się. Spróbuj ponownie." } })} />);
+  const seatless = screen.getByRole("button", { name: full });
+  expect(seatless).toHaveTextContent("Komplet");
+  fireEvent.click(seatless);
+  expect(onJoin).toHaveBeenCalledOnce();
+  expect(screen.getByRole("alert")).toHaveTextContent("Nie udało się. Spróbuj ponownie.");
 });
 
 const compactMenu = () => document.querySelector<HTMLElement>(".vc-mobile-menu")!;

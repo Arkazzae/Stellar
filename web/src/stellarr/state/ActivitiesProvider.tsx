@@ -85,7 +85,7 @@ export interface ActivitiesValue {
   /** Where each session's frame is shown; null while nothing on screen holds a place for it. */
   slots: Readonly<Record<SessionSlot, HTMLElement | null>>;
   /** The ref a view puts on the element the frame should cover. */
-  slotRef: Readonly<Record<SessionSlot, (element: HTMLElement | null) => void>>;
+  publishSlot: Readonly<Record<SessionSlot, (element: HTMLElement | null) => void>>;
 }
 
 /** A seat lapses after a minute without word; this renews it well before. */
@@ -456,7 +456,7 @@ export function ActivitiesProvider({ children }: { children: ReactNode }) {
   }, []);
   const closePicker = useCallback(() => setPicker(null), []);
 
-  const slotRef = useMemo(
+  const publishSlot = useMemo(
     () => ({
       voice: (element: HTMLElement | null) =>
         setSlots((current) => (current.voice === element ? current : { ...current, voice: element })),
@@ -483,7 +483,7 @@ export function ActivitiesProvider({ children }: { children: ReactNode }) {
       end,
       lose,
       slots,
-      slotRef,
+      publishSlot,
     }),
     [
       live,
@@ -501,7 +501,7 @@ export function ActivitiesProvider({ children }: { children: ReactNode }) {
       end,
       lose,
       slots,
-      slotRef,
+      publishSlot,
     ],
   );
 
@@ -549,6 +549,14 @@ function useLease(
       if (timer !== undefined) clearTimeout(timer);
     };
   }, [session, beat, setLive, drop, slot]);
+}
+
+/**
+ * The ref a view puts on the element a session's frame should cover. Asked
+ * for on its own, so the view's other reads of the activities stay plain values.
+ */
+export function useActivitySlot(slot: SessionSlot): (element: HTMLElement | null) => void {
+  return useActivitiesContext().publishSlot[slot];
 }
 
 export function useActivitiesContext(): ActivitiesValue {

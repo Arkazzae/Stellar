@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_SETTINGS } from "@/lib/voice/settings";
 import type {
+  ActivitiesValue,
   ChatValue,
   DirectoryValue,
   UiValue,
@@ -26,6 +27,7 @@ const mocks = vi.hoisted(() => ({
   chat: null as unknown as ChatValue,
   ui: null as unknown as UiValue,
   voice: null as unknown as VoiceValue,
+  activities: null as unknown as ActivitiesValue,
   language: null as unknown,
   joinFromPopoutLink: vi.fn(),
   profile: { toggle: vi.fn() },
@@ -50,6 +52,8 @@ vi.mock("@/state/hooks", () => ({
   useChatRoom: () => mocks.chat,
   useChatTranscript: () => mocks.chat,
   useVoice: () => mocks.voice,
+  useActivities: () => mocks.activities,
+  useActivitySlot: () => mocks.activities.publishSlot.voice,
   useEmoji: () => ({ emoji: [] }),
   useLanguage: () => mocks.language,
   useAccount: () => ({ preferences: { developerMode: false } }),
@@ -116,6 +120,16 @@ beforeEach(() => {
   mocks.ports.voiceSettings.getSnapshot = () => DEFAULT_SETTINGS;
   mocks.ui = fakeUi();
   mocks.voice = fakeVoice();
+  mocks.activities = {
+    live: new Map(),
+    voice: null,
+    joining: null,
+    joinFailure: null,
+    ended: null,
+    openPicker: vi.fn(),
+    join: vi.fn(),
+    publishSlot: { voice: vi.fn(), personal: vi.fn() },
+  } as unknown as ActivitiesValue;
 });
 
 afterEach(() => {
@@ -213,6 +227,48 @@ describe("RoomContainer in a call", () => {
 
     expect(requestFullscreen).toHaveBeenCalledOnce();
     expect(requestFullscreen.mock.contexts[0]).toBe(container.querySelector("main"));
+  });
+});
+
+describe("RoomContainer with an activity on the channel", () => {
+  const synctube = {
+    install: "synctube",
+    name: "SyncTube",
+    icon: null,
+    host: "u-ada",
+    participants: ["u-ada"],
+    seats: null,
+  };
+
+  it("joins what runs in one click from outside, and gives it the stage once inside", () => {
+    inCall();
+    mocks.activities = { ...mocks.activities, live: new Map([["ch-salon", synctube]]) };
+    const { container, rerender } = render(<RoomContainer />);
+
+    expect(screen.queryByRole("button", { name: "Aktywności" })).toBeNull();
+    expect(within(views(container).call).getByRole("img", { name: "W SyncTube" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Dołącz do SyncTube" }));
+    expect(mocks.activities.join).toHaveBeenCalledWith("ch-salon");
+    expect(container.querySelector(".act-slot")).toBeNull();
+
+    mocks.activities = {
+      ...mocks.activities,
+      voice: { place: "ch-salon", install: "synctube", access: "a", src: "", title: "SyncTube", icon: null, permissions: [], youtube: false },
+    };
+    rerender(<RoomContainer />);
+
+    expect(container.querySelector(".act-slot")).not.toBeNull();
+    expect(container.querySelector(".voice-stage")).toHaveAttribute("data-layout", "strip");
+    expect(screen.queryByRole("button", { name: "Dołącz do SyncTube" })).toBeNull();
+    expect(mocks.activities.publishSlot.voice).toHaveBeenCalledWith(container.querySelector(".act-slot"));
+  });
+
+  it("opens the picker from the bar while nothing runs", () => {
+    inCall();
+    render(<RoomContainer />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Aktywności" }));
+    expect(mocks.activities.openPicker).toHaveBeenCalledWith({ scope: "voice", channelId: "ch-salon", change: false });
   });
 });
 

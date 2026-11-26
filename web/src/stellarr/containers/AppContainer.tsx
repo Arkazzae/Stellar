@@ -19,6 +19,7 @@ import { ProfileProvider } from "@/state/ProfileProvider";
 import { UiProvider } from "@/state/UiProvider";
 import { VoiceProvider } from "@/state/VoiceProvider";
 
+import { ActivityHost } from "./ActivityHost";
 import { ActivityPicker } from "./ActivityPicker";
 import { AppAppearance } from "./AppAppearance";
 import { ClientSettingsSync } from "./ClientSettingsSync";
@@ -143,6 +144,10 @@ function Shell({ entry, onEntryHandled }: LaunchProps) {
         stageFull={ui.cinema}
         onExitStageFull={() => ui.setCinema(false)}
       />
+      {/* The running activities' frames: outside the rooms, so going
+          elsewhere hides a frame instead of unloading it, and laid over the
+          place the open view keeps for it. */}
+      <ActivityHost />
       {/* Outside the grid: the dialogs are fixed overlays, and mounting them
           inside `.app` would put them under the shell's stacking context. */}
       <ModalsContainer />
