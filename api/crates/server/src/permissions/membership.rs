@@ -119,12 +119,9 @@ impl FromRequestParts<AppState> for ActiveServer {
 
 /// The first server ever created is the instance server.
 pub fn instance_server(db: &Connection) -> rusqlite::Result<Option<Id>> {
-    db.query_row(
-        "SELECT \"Id\" FROM \"Servers\" ORDER BY \"CreatedAt\", \"Id\" LIMIT 1",
-        [],
-        |row| row.get(0),
-    )
-    .optional()
+    db.prepare_cached("SELECT \"Id\" FROM \"Servers\" ORDER BY \"CreatedAt\", \"Id\" LIMIT 1")?
+        .query_row([], |row| row.get(0))
+        .optional()
 }
 
 /// The instance server when the user owns it, and none otherwise. Owning a

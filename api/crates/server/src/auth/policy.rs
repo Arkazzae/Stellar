@@ -79,24 +79,23 @@ impl SecurityPolicy {
             return Ok(SecurityPolicy::default());
         };
         let row = connection
-            .query_row(
+            .prepare_cached(
                 "SELECT \"MfaRequirement\", \"TrustedDeviceDays\", \"AuthChallengeMinutes\", \"EmailCodeMinutes\",
                         \"EmailCodeCooldownSeconds\", \"EmailCodeMaxAttempts\", \"EmailCodeSendsPerHour\", \"CliRecoveryMinutes\"
                  FROM \"OperationsSettings\" WHERE \"ServerId\" = ?1",
-                [server],
-                |row| {
-                    Ok(SecurityPolicy {
-                        mfa_requirement: normalize_requirement(row.get::<_, Option<String>>(0)?.as_deref()),
-                        trusted_device_days: row.get(1)?,
-                        auth_challenge_minutes: row.get(2)?,
-                        email_code_minutes: row.get(3)?,
-                        email_code_cooldown_seconds: row.get(4)?,
-                        email_code_max_attempts: row.get(5)?,
-                        email_code_sends_per_hour: row.get(6)?,
-                        cli_recovery_minutes: row.get(7)?,
-                    })
-                },
-            )
+            )?
+            .query_row([server], |row| {
+                Ok(SecurityPolicy {
+                    mfa_requirement: normalize_requirement(row.get::<_, Option<String>>(0)?.as_deref()),
+                    trusted_device_days: row.get(1)?,
+                    auth_challenge_minutes: row.get(2)?,
+                    email_code_minutes: row.get(3)?,
+                    email_code_cooldown_seconds: row.get(4)?,
+                    email_code_max_attempts: row.get(5)?,
+                    email_code_sends_per_hour: row.get(6)?,
+                    cli_recovery_minutes: row.get(7)?,
+                })
+            })
             .optional()?;
         Ok(row.unwrap_or_default())
     }
@@ -142,11 +141,12 @@ impl SecurityPolicy {
         connection: &Connection,
         user: Id,
     ) -> rusqlite::Result<bool> {
-        match self.mfa_requirement {
-            EVERYONE => Ok(true),
-            ADMINS => access::is_instance_admin(connection, user),
-            _ => Ok(false),
-        }
+        let admin = self.mfa_requirement == ADMINS && access::is_instance_admin(connection, user)?;
+        Ok(self.requires_login_mfa(admin))
+    }
+
+    pub(super) fn requires_login_mfa(&self, is_admin: bool) -> bool {
+        self.mfa_requirement == EVERYONE || (self.mfa_requirement == ADMINS && is_admin)
     }
 
     /// Whether a session that has passed `fresh_mfa` (a real second step) or

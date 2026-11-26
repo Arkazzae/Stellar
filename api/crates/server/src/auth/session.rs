@@ -6,17 +6,20 @@
 //! a cookie alone is never trusted, so ending a session in the database ends
 //! it everywhere at once.
 
+use std::collections::HashSet;
 use std::time::Duration;
 
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::{Deserialize, Serialize};
 
 use super::cookies;
-use super::policy::SecurityPolicy;
+use super::policy::{ADMINS, SecurityPolicy};
 use crate::database::DbError;
+use crate::instance::access;
+use crate::permissions::snapshot::{Snapshot, Targets};
 use crate::seal::Sealer;
 use crate::settings::Environment;
-use crate::values::{Id, Timestamp};
+use crate::values::{Id, Timestamp, json_ids};
 
 const PURPOSE: &str = "session-cookie";
 /// How long a kept sign-in lasts, and how long the cookie of one does.
@@ -306,6 +309,17 @@ impl Touch {
     }
 }
 
+// Both the HTTP check and the live connection sweep read these columns.
+macro_rules! select_sessions {
+    ($filter:literal) => {
+        concat!(
+            "SELECT s.LastSeenAt, s.ExpiresAt, s.AbsoluteExpiresAt, s.RevokedAt, s.SecurityVersion,
+                    s.MfaCompletedAt, s.MfaEvidence, u.SessionVersion, u.IsDisabled, s.UserId, s.Id
+             FROM UserSessions s JOIN Users u ON u.Id = s.UserId WHERE ", $filter
+        )
+    };
+}
+
 /// Checks the cookie of a request against the database, as of `now`. A valid
 /// session seen more than five minutes ago comes back with a [`Touch`] to
 /// write: it is marked seen, and its end moved out to a full lifetime when it
@@ -320,42 +334,15 @@ pub fn authenticate(
     now: Timestamp,
 ) -> Result<Authentication, DbError> {
     let Some(row) = connection
-        .query_row(
-            "SELECT s.\"LastSeenAt\", s.\"ExpiresAt\", s.\"AbsoluteExpiresAt\", s.\"RevokedAt\", s.\"SecurityVersion\",
-                    s.\"MfaCompletedAt\", s.\"MfaEvidence\", u.\"SessionVersion\", u.\"IsDisabled\"
-             FROM \"UserSessions\" s JOIN \"Users\" u ON u.\"Id\" = s.\"UserId\"
-             WHERE s.\"Id\" = ?1 AND s.\"UserId\" = ?2",
-            params![ticket.session, ticket.user],
-            |row| {
-                Ok(Row {
-                    last_seen_at: row.get(0)?,
-                    expires_at: row.get(1)?,
-                    absolute_expires_at: row.get(2)?,
-                    revoked_at: row.get(3)?,
-                    security_version: row.get(4)?,
-                    mfa_completed: row.get::<_, Option<Timestamp>>(5)?.is_some(),
-                    mfa_evidence: row.get(6)?,
-                    user_session_version: row.get(7)?,
-                    user_is_disabled: row.get(8)?,
-                })
-            },
-        )
+        .prepare_cached(select_sessions!("s.Id = ?1 AND s.UserId = ?2"))?
+        .query_row(params![ticket.session, ticket.user], Row::read)
         .optional()?
     else {
         return Ok(Authentication::Rejected);
     };
-    let Some(absolute) = row.absolute_expires_at else {
+    let Some(absolute) = row.active_until(ticket.version, now) else {
         return Ok(Authentication::Rejected);
     };
-    if row.user_is_disabled
-        || row.security_version != ticket.version
-        || row.user_session_version != ticket.version
-        || row.revoked_at.is_some()
-        || row.expires_at <= now
-        || absolute <= now
-    {
-        return Ok(Authentication::Rejected);
-    }
     let policy = SecurityPolicy::load(connection)?;
     if policy.is_required_at_login(connection, ticket.user)?
         && !policy.is_satisfied(row.mfa_completed, row.mfa_evidence.as_deref())
@@ -402,6 +389,8 @@ pub fn authenticate(
 }
 
 struct Row {
+    user: Id,
+    session: Id,
     last_seen_at: Timestamp,
     expires_at: Timestamp,
     absolute_expires_at: Option<Timestamp>,
@@ -413,6 +402,80 @@ struct Row {
     user_is_disabled: bool,
 }
 
+impl Row {
+    fn read(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            last_seen_at: row.get(0)?,
+            expires_at: row.get(1)?,
+            absolute_expires_at: row.get(2)?,
+            revoked_at: row.get(3)?,
+            security_version: row.get(4)?,
+            mfa_completed: row.get::<_, Option<Timestamp>>(5)?.is_some(),
+            mfa_evidence: row.get(6)?,
+            user_session_version: row.get(7)?,
+            user_is_disabled: row.get(8)?,
+            user: row.get(9)?,
+            session: row.get(10)?,
+        })
+    }
+
+    fn active_until(&self, version: i64, now: Timestamp) -> Option<Timestamp> {
+        self.absolute_expires_at.filter(|absolute| {
+            !self.user_is_disabled
+                && self.revoked_at.is_none()
+                && self.security_version == version
+                && self.user_session_version == version
+                && self.expires_at > now
+                && *absolute > now
+        })
+    }
+}
+
+/// The (account, session, version) identities that may keep their connections
+/// in this snapshot. Deadlines are checked even when nobody writes to the database.
+pub(crate) fn active_sessions(
+    db: &Connection,
+    ids: &[Id],
+    now: Timestamp,
+) -> rusqlite::Result<HashSet<(Id, Id, i64)>> {
+    let policy = SecurityPolicy::load(db)?;
+    let mut statement = db.prepare_cached(select_sessions!(
+        "s.Id IN (SELECT value FROM json_each(?1))"
+    ))?;
+    let mut active = HashSet::new();
+    let mut without_proof = Vec::new();
+    for row in statement.query_map([json_ids(ids)], Row::read)? {
+        let row = row?;
+        if row.active_until(row.security_version, now).is_none() {
+            continue;
+        }
+        let identity = (row.user, row.session, row.security_version);
+        if policy.is_satisfied(row.mfa_completed, row.mfa_evidence.as_deref()) {
+            active.insert(identity);
+        } else {
+            without_proof.push(identity);
+        }
+    }
+    let admins = if policy.mfa_requirement == ADMINS && !without_proof.is_empty() {
+        let users: Vec<_> = without_proof.iter().map(|&(user, _, _)| user).collect();
+        access::instance_server(db)?
+            .map(|server| Snapshot::load(db, server, Some(&users), Targets::none()))
+            .transpose()?
+    } else {
+        None
+    };
+    for identity in without_proof {
+        let is_admin = admins
+            .as_ref()
+            .and_then(|snapshot| snapshot.subject(identity.0))
+            .is_some_and(|subject| subject.permissions() & access::MANAGE_SERVER != 0);
+        if !policy.requires_login_mfa(is_admin) {
+            active.insert(identity);
+        }
+    }
+    Ok(active)
+}
+
 /// Ends a session. True when it was running and now is not, so that the one
 /// request that ends it is the one that records it.
 pub fn revoke(tx: &Transaction, session: Id, now: Timestamp) -> Result<bool, DbError> {
@@ -421,4 +484,45 @@ pub fn revoke(tx: &Transaction, session: Id, now: Timestamp) -> Result<bool, DbE
         params![session, now],
     )?;
     Ok(changed == 1)
+}
+
+#[cfg(test)]
+mod sweep_tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    use super::*;
+    use crate::auth::fixtures;
+    use rusqlite::trace::{TraceEvent, TraceEventCodes};
+
+    #[test]
+    fn sweeping_thirty_sessions_reads_the_policy_once_and_observes_clock_only_expiry() {
+        let (_folder, mut db) = fixtures::open();
+        fixtures::add_instance_server(&db);
+        let now = Timestamp::now();
+        let mut ids = Vec::new();
+        let mut expected = HashSet::new();
+        for _ in 0..30 {
+            let user = fixtures::add_user(&db, None);
+            let id = fixtures::add_session(&db, user, now, None);
+            ids.push(id);
+            expected.insert((user, id, 1));
+        }
+        let count = Arc::new(AtomicUsize::new(0));
+        let seen = Arc::clone(&count);
+        db.trace_v2(
+            TraceEventCodes::SQLITE_TRACE_STMT,
+            Some(move |_: TraceEvent<'_>| {
+                seen.fetch_add(1, Ordering::Relaxed);
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(active_sessions(&db, &ids, now).unwrap(), expected);
+        assert_eq!(count.load(Ordering::Relaxed), 3);
+        let deadline = now.plus(Duration::from_secs(86_400));
+        assert!(active_sessions(&db, &ids, deadline).unwrap().is_empty());
+    }
 }

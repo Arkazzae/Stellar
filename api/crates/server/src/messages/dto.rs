@@ -15,7 +15,7 @@ use stellarr_unicode::utf16;
 
 use crate::database::DbError;
 use crate::instance::users::UserDto;
-use crate::values::{Id, Timestamp};
+use crate::values::{Id, Timestamp, json_ids};
 
 /// A reference to a reply's target is cut to this many UTF-16 units, the last
 /// of which is the ellipsis.
@@ -173,21 +173,6 @@ fn attachment_from(row: &Row<'_>, from: usize) -> rusqlite::Result<AttachmentDto
 
 const ATTACHMENT_COLUMNS: &str = "a.\"Id\", a.\"FileName\", a.\"ContentType\", a.\"SizeBytes\", a.\"Width\", a.\"DurationSeconds\",
     a.\"PosterObjectKey\", a.\"PreviewObjectKey\", a.\"Height\", a.\"IsVoiceMessage\", a.\"Placeholder\"";
-
-pub(crate) fn json_ids(ids: &[Id]) -> String {
-    let mut text = String::with_capacity(ids.len() * 39 + 2);
-    text.push('[');
-    for (index, id) in ids.iter().enumerate() {
-        if index > 0 {
-            text.push(',');
-        }
-        text.push('"');
-        text.push_str(&id.to_db_text());
-        text.push('"');
-    }
-    text.push(']');
-    text
-}
 
 struct Row_ {
     id: Id,
