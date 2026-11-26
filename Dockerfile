@@ -213,6 +213,7 @@ COPY infra/nginx.conf /etc/nginx/nginx.conf.template
 COPY infra/turnserver.conf.template /etc/turnserver.conf.template
 COPY --from=init-build /out/stellarr-init /usr/local/bin/stellarr-init
 # How the settings are read, which the entrypoint and the CLI's wrapper source.
+RUN install -d -m 0755 /usr/local/lib/stellarr
 COPY --chmod=0644 infra/settings.sh /usr/local/lib/stellarr/settings.sh
 COPY --chmod=0755 infra/entrypoint.sh /usr/local/bin/stellarr-entrypoint
 COPY --chmod=0755 infra/tls-maintenance.sh /usr/local/bin/stellarr-tls-maintenance
