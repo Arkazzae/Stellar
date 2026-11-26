@@ -2,6 +2,7 @@
 import { realpath } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { readRelease } from "./dev/files.js";
+import { warnAboutHtmlPaths } from "./dev/html-paths.js";
 import { packageRelease } from "./dev/release.js";
 import { startLocal } from "./dev/local.js";
 
@@ -33,6 +34,7 @@ async function main() {
   const root = await realpath(directories[0]);
   if (command === "validate") {
     const { manifest, assets } = await readRelease(root);
+    warnAboutHtmlPaths(assets);
     console.log(manifest.id + " " + manifest.version + " · " + assets.size + " files");
     return;
   }

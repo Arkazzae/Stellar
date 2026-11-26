@@ -101,3 +101,43 @@ test("validate and pack require an icon, and accept a valid icon without cover",
   await assert.rejects(run(process.execPath, [cli, "pack", "--dir", source, "--out", source]), error =>
     error.code === 1 && /separate from the activity root/.test(error.stderr));
 });
+
+test("validate warns about root-relative src and href in each published HTML file", async t => {
+  const source = await mkdtemp(join(tmpdir(), "activity-validate-paths-"));
+  t.after(() => rm(source, { recursive: true, force: true }));
+  await activity(source, "paths");
+  await writeFile(join(source, "index.html"), `<script type="module" src="/assets/game.js"></script>`);
+  await writeFile(join(source, "art", "level.HTML"), `
+    <link title="Level > Menu" rel="stylesheet"
+      HREF = '/assets/level.css?v=2'>
+    <img src=/_stellarr-extra/logo.png>
+  `);
+
+  const { stdout, stderr } = await run(process.execPath, [cli, "validate", "--dir", source]);
+  assert.match(stdout, /paths 1\.0\.0 · 5 files/);
+  assert.match(stderr, /index\.html[^\n]*\/assets\/game\.js/);
+  assert.match(stderr, /art\/level\.HTML[^\n]*\/assets\/level\.css\?v=2/);
+  assert.match(stderr, /art\/level\.HTML[^\n]*\/_stellarr-extra\/logo\.png/);
+  assert.match(stderr, /base: "\.\/"/);
+});
+
+test("validate ignores reserved, relative and external URLs and markup shown as text", async t => {
+  const source = await mkdtemp(join(tmpdir(), "activity-validate-clean-"));
+  t.after(() => rm(source, { recursive: true, force: true }));
+  await activity(source, "clean");
+  await writeFile(join(source, "index.html"), `
+    <!-- <img src="/comment.png"> -->
+    <script src="/_stellarr/sdk/v1.js"></script>
+    <a href="/_stellarr/help">Help</a>
+    <script src="./assets/game.js"></script>
+    <img src=../art/icon.png data-src="/example.png" title='example: src="/example.png"'>
+    <link href="//cdn.example.org/style.css"><a href="https://example.org/help">Help</a>
+    <a href="#start">Start</a><img src="data:image/png;base64,AA==">
+    <script>const example = '<img src="/from-script.png">';</script>
+    <textarea><link href="/from-textarea.css"></textarea>
+  `);
+
+  const { stdout, stderr } = await run(process.execPath, [cli, "validate", "--dir", source]);
+  assert.match(stdout, /clean 1\.0\.0 · 4 files/);
+  assert.equal(stderr, "");
+});
