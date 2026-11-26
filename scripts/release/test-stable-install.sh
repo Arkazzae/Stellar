@@ -4,7 +4,7 @@ set -euo pipefail
 version=${1:?expected version}
 work=$(mktemp -d)
 cd "$work"
-curl -fsSL --retry 3 https://stellarr.online/install.sh -o install.sh
+curl -fsSL --retry 3 https://raw.githubusercontent.com/Arkazzae/Stellarr/main/install.sh -o install.sh
 bash install.sh --yes --dir "$work/instance" --domain localhost --public-ip 127.0.0.1 --disable-turn
 test "$(docker inspect --format '{{.Config.Image}}' stellarr)" = "ghcr.io/arkazzae/stellarr:$version"
 curl -kfsS https://localhost/health/ready >/dev/null

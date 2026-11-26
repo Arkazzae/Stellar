@@ -1,8 +1,8 @@
 #!/bin/sh
 # Installs Stellarr with Docker Compose, and updates an installation it made.
 #
-#   curl -fsSL https://stellarr.online/install.sh | bash
-#   curl -fsSL https://stellarr.online/install.sh | bash -s -- --yes --domain chat.example.com
+#   curl -fsSL https://raw.githubusercontent.com/Arkazzae/Stellarr/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Arkazzae/Stellarr/main/install.sh | bash -s -- --yes --domain chat.example.com
 #   ./install.sh               in a checkout
 #   ./install.sh --build       in a checkout, building the image from it
 #

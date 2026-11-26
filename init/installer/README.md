@@ -1,10 +1,10 @@
 # Stellarr Installer (`init/installer/`)
 
-`stellarr-installer` deploys and updates Docker Compose installations of Stellarr on Linux and macOS hosts. The root [`install.sh`](../../install.sh) (`https://stellarr.online/install.sh`) downloads the matching platform binary from `stellarr.online/server-downloads/`, verifies its SHA-256 against `stellarr-installer.sha256`, and forwards all arguments.
+`stellarr-installer` deploys and updates Docker Compose installations of Stellarr on Linux and macOS hosts. The root [`install.sh`](../../install.sh) (`https://raw.githubusercontent.com/Arkazzae/Stellarr/main/install.sh`) downloads the matching platform binary from `stellarr.online/server-downloads/`, verifies its SHA-256 against `stellarr-installer.sha256`, and forwards all arguments.
 
 ```bash
 # Inspect CLI options via the hosted bootstrap script
-curl -fsSL https://stellarr.online/install.sh | bash -s -- --help
+curl -fsSL https://raw.githubusercontent.com/Arkazzae/Stellarr/main/install.sh | bash -s -- --help
 
 # Build and run directly from local Rust sources + local checkout image
 cargo run --locked --manifest-path init/installer/Cargo.toml -- --dir . --build

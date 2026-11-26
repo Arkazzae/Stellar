@@ -93,7 +93,7 @@ jobs:
           # image, so its sources count, not only its manifest. It takes the
           # recipes' outputs from the recipes job, which builds them with the
           # bake file.
-          check image '^(locales/|Dockerfile$|sdk/(dev/|host/|client\.js$|media\.js$|package\.json$)|docker-bake\.hcl$|\.dockerignore$|artifacts/|infra/|api/(Cargo\.(toml|lock)$|crates/[^/]+/(Cargo\.toml$|build\.rs$|src/|assets/))|packages/|package(-lock)?\.json$|\.npmrc$|web/|media/(Cargo\.(toml|lock)$|src/|build\.rs$)|docker-compose\.yml$|infra/compose/|init/(Cargo\.(toml|lock)$|src/)|\.github/workflows/ci\.yml$)'
+          check image '^(locales/|deploy/split/|Dockerfile$|sdk/(dev/|host/|client\.js$|media\.js$|package\.json$)|docker-bake\.hcl$|\.dockerignore$|artifacts/|infra/|api/(Cargo\.(toml|lock)$|crates/[^/]+/(Cargo\.toml$|build\.rs$|src/|assets/))|packages/|package(-lock)?\.json$|\.npmrc$|web/|media/(Cargo\.(toml|lock)$|src/|build\.rs$)|docker-compose\.yml$|infra/compose/|init/(Cargo\.(toml|lock)$|src/)|\.github/workflows/ci\.yml$)'
 
   sdk:
     needs: changes
@@ -494,6 +494,19 @@ jobs:
           tags: stellarr:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Start the split Compose deployment
+        env:
+          STELLARR_IMAGE: stellarr:ci
+          STELLARR_HTTPS_PORT: "18445"
+          STELLARR_TURN_RELAY_RANGE: 49160-49162
+        run: |
+          stack=(docker compose -p stellarr-split-ci -f deploy/split/compose.yml)
+          turn=(-f deploy/split/turn.yml)
+          trap '"${stack[@]}" "${turn[@]}" down -v' EXIT
+          "${stack[@]}" up -d --wait --wait-timeout 90
+          curl -kfSs https://localhost:18445/health/ready
+          "${stack[@]}" "${turn[@]}" up -d --wait --wait-timeout 90
+          "${stack[@]}" "${turn[@]}" exec -T --user stellarr api stellarr doctor
       # A build can succeed while a process inside cannot start, so run the
       # image and wait until its health check passes: stellarr-init reports
       # nginx, the API with its database, and the media server ready.

@@ -28,7 +28,7 @@ Keep a copy of `.env` beside the archive. You can also download live full `.zip`
 Re-run the installer to update `docker-compose.yml` and `STELLARR_VERSION` while preserving your `.env` customizations:
 
 ```bash
-curl -fsSL https://stellarr.online/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Arkazzae/Stellarr/main/install.sh | bash
 ```
 
 Pass `--version 1.2.3` (with `--yes` for unattended scripts) to pin an exact version. Avoid `--force` unless you intentionally want `.env` backed up and regenerated from defaults.

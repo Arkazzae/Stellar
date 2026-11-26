@@ -17,6 +17,8 @@ services:
   stellarr:
     image: ${STELLARR_IMAGE:-ghcr.io/arkazzae/stellarr:${STELLARR_VERSION:-latest}}
     container_name: stellarr
+    labels:
+      net.unraid.docker.icon: https://raw.githubusercontent.com/Arkazzae/Stellarr/main/deploy/unraid/tile.png
     restart: unless-stopped
     # The process manager stops the services one at a time and the API alone
     # may take 35 s; Docker's default of 10 s would kill them part-way.

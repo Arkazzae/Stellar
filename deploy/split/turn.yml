@@ -1,0 +1,60 @@
+services:
+  web:
+    environment:
+      STELLARR_TURN_ENABLED: "true"
+    volumes:
+      - turn_tls:/run/stellarr-turn
+  media:
+    ports:
+      - "${STELLARR_TURN_PORT:-3478}:3478/udp"
+      - "${STELLARR_TURN_PORT:-3478}:3478/tcp"
+      - "${STELLARR_TURNS_PORT:-5349}:5349/udp"
+      - "${STELLARR_TURNS_PORT:-5349}:5349/tcp"
+      - "${STELLARR_TURN_RELAY_RANGE:-49160-49200}:${STELLARR_TURN_RELAY_RANGE:-49160-49200}/udp"
+  turn:
+    image: ${STELLARR_IMAGE:-ghcr.io/arkazzae/stellarr:${STELLARR_VERSION:-latest}}
+    entrypoint: ["/bin/bash", "/opt/split-entrypoint", "split-turn"]
+    restart: unless-stopped
+    labels:
+      net.unraid.docker.icon: https://raw.githubusercontent.com/Arkazzae/Stellarr/main/deploy/split/icons/turn.png
+    tmpfs: [/data/stellarr]
+    network_mode: service:media
+    depends_on:
+      web: {condition: service_healthy}
+      media: {condition: service_healthy, restart: true}
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    pids_limit: 512
+    environment:
+      STELLARR_TURN_ENABLED: "true"
+      STELLARR_DOMAIN: ${STELLARR_DOMAIN:-}
+      STELLARR_PUBLIC_IP: ${STELLARR_PUBLIC_IP:-}
+      STELLARR_TURN_TCP_ENABLED: ${STELLARR_TURN_TCP_ENABLED:-false}
+      STELLARR_TURNS_ENABLED: ${STELLARR_TURNS_ENABLED:-false}
+      STELLARR_TURN_RELAY_RANGE: ${STELLARR_TURN_RELAY_RANGE:-49160-49200}
+    volumes:
+      - ../../infra/entrypoint.sh:/opt/split-entrypoint:ro
+      - turn_key:/run/credentials/turn
+      - turn_tls:/run/stellarr-turn
+    healthcheck:
+      test: ["CMD-SHELL", "turnutils_stunclient -p 3478 127.0.0.1 2>&1 | grep -q 'reflexive addr'"]
+      interval: 10s
+      start_interval: 1s
+      start_period: 30s
+      timeout: 5s
+  api:
+    depends_on:
+      turn: {condition: service_healthy}
+    environment:
+      STELLARR_TURN_ENABLED: "true"
+      STELLARR_TURN_TCP_ENABLED: ${STELLARR_TURN_TCP_ENABLED:-false}
+      STELLARR_TURNS_ENABLED: ${STELLARR_TURNS_ENABLED:-false}
+      STELLARR_TURN_PORT: ${STELLARR_TURN_PORT:-3478}
+      STELLARR_TURNS_PORT: ${STELLARR_TURNS_PORT:-5349}
+    volumes:
+      - turn_key:/run/credentials/turn:ro
+
+volumes:
+  turn_key:
+  turn_tls:
