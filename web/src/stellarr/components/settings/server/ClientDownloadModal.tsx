@@ -127,7 +127,7 @@ export function ClientDownloadModal({ open, onClose, loadReleases, onNotificatio
           <article className="client-option">
             <img src="/pwa/icon-192.png" width="44" height="44" alt="" />
             <div className="client-option-text">
-              <b>{mode === "installed" ? t("pwa.installed") : window.location.host}</b>
+              <b>{mode === "installed" ? t("pwa.installed") : "Stellarr"}</b>
               <span>{t(mode === "installed" ? "pwa.current" : promptFailed ? "pwa.menu" : `pwa.${mode}`)}</span>
             </div>
             {mode === "prompt" && (

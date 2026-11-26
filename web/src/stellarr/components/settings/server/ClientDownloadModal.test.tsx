@@ -37,6 +37,7 @@ describe("ClientDownloadModal", () => {
     );
 
     expect(await screen.findByText("Android")).toBeVisible();
+    expect(screen.getByText("Stellarr", { exact: true })).toBeVisible();
     expect(screen.getByText("Arch Linux")).toBeVisible();
     expect(screen.getByText("Przeglądarka")).toBeVisible();
     expect(screen.getAllByRole("link", { name: "Pobierz" })).toEqual([
