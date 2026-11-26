@@ -201,3 +201,5 @@ HTTP reverse proxies forward HTTPS and WebSocket signaling (`443/tcp`) only. Voi
 
 > [!IMPORTANT]
 > Always publish and router-forward `49000/udp` and `49000/tcp` directly to the Docker host (plus TURN ports if enabled). If `STELLARR_DOMAIN` sits behind an HTTP-only CDN or proxy (such as Cloudflare orange-cloud), set `STELLARR_PUBLIC_IP` to the host's real WAN IPv4 address so browsers never send WebRTC traffic to the CDN IP. See [Requirements: Ports](requirements.md#ports) and [RTC and ports](../rtc-and-ports.md#published-host-ports).
+
+Tunnels such as Cloudflare Tunnel, Tailscale Funnel and ngrok cannot stand in for port forwarding: for visitors without extra software they carry the web client but no UDP to the media port, so calls stay silent. For hosts that cannot forward ports, including the certificate a Tailscale name gets, see [Hosting without port forwarding](no-port-forwarding.md).

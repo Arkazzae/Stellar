@@ -60,6 +60,9 @@ flowchart LR
 
 See [RTC and ports: NAT and firewall configuration](../rtc-and-ports.md#nat-and-firewall-configuration) for explicit `STELLARR_MEDIA_ADVERTISE` overrides, TURN relay setup, and call diagnostics.
 
+> [!TIP]
+> If your provider puts the connection behind carrier-grade NAT, or you cannot forward ports at all, see [Hosting without port forwarding](no-port-forwarding.md): how to tell, a rented server, a private overlay network such as Tailscale, a relay in front of a home server, and the tunnels that leave calls silent.
+
 ## Domain and TLS
 
 When `STELLARR_DOMAIN` is unset, TLS certificate generation and the optional TURN realm default to `localhost`. On first start, the container generates a 365-day RSA-3072 self-signed certificate for `STELLARR_DOMAIN` and renews it automatically. For remote access, mount a CA-signed certificate or place Caddy/Nginx in front of the container as covered in [Reverse proxy and TLS](reverse-proxy-and-tls.md).
