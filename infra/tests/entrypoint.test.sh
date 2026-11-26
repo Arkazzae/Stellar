@@ -243,7 +243,7 @@ expect_export STELLARR_ACTIVITY_ORIGIN https://chat.example.com:8443
 grep -qF -- 'https://*.activities.example.com:8443' /etc/nginx/nginx.conf || fail "frame policy lacks the public port"
 expect_line /etc/nginx/stellarr-activity-server.conf '  server_name .activities.example.com;'
 expect_line /etc/nginx/stellarr-activity-server.conf '    proxy_pass http://127.0.0.1:5000/_activity-files/;'
-expect_line /etc/nginx/stellarr-activity-server.conf '  if ($redirect_to_https) { return 308 https://$host:8443$request_uri; }'
+expect_line /etc/nginx/stellarr-activity-server.conf "  if (\$redirect_to_https) { return 308 https://\$host:8443\$request_uri; }"
 
 run activity-overlap "${image_env[@]}" STELLARR_DOMAIN=chat.activities.example.com STELLARR_ACTIVITY_DOMAIN=activities.example.com
 expect_failure 'Set STELLARR_DOMAIN to an instance name outside STELLARR_ACTIVITY_DOMAIN.'
