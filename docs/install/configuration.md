@@ -164,7 +164,7 @@ Production containers run a full `.zip` backup every 24 hours by default. Schedu
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `STELLARR_LANGUAGE` | `en` \| `pl` | `en` | Default web client locale and server locale for API errors, system notices, starter names, audit rows, and emails. Other values abort startup. See [Localization](../localization.md). |
+| `STELLARR_LANGUAGE` | `en` \| `pl` \| `de` | `en` | Default web client locale and server locale for API errors, system notices, starter names, audit rows, and emails. Unshipped codes use English. See [Localization](../localization.md). |
 | `STELLARR_INSTANCE_ID` | UUID | generated | Instance UUID served at `/.well-known/stellarr/client` (persisted in `/data/stellarr/instance-id`). |
 | `STELLARR_TIME_ZONE` | IANA time zone | `UTC` | **Seed** for instance time zone in Cockpit (e.g. `Europe/Warsaw`). |
 | `STELLARR_DESKTOP_MINIMUM_VERSION` | semver | `0.1.0` | **Seed** for minimum allowed desktop client version (`X-Stellarr-Client: desktop-linux`). |

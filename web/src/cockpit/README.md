@@ -27,7 +27,7 @@ Standalone instance operator SPA served at `/cockpit` on the instance origin and
 
 ## Localization
 
-Cockpit supports English (`en`, default) and Polish (`pl`), persisted in `localStorage` (`stellarr.cockpit.locale`) independently of `STELLARR_LANGUAGE` and the chat client. Catalogs in `i18n/en.ts` and `i18n/pl.ts` enforce compile-time key parity.
+Cockpit supports English (`en`, default), Polish (`pl`) and German (`de`), persisted in `localStorage` (`stellarr.cockpit.locale`) independently of `STELLARR_LANGUAGE` and the chat client. The web build takes Cockpit strings from the `cockpit` section of each language pack and checks them against English. [Language packs](../../../docs/localization.md)
 
 ## Development and testing
 

@@ -20,7 +20,7 @@ npm run dev -w stellarr-web   # http://localhost:3000 (/) and http://localhost:3
 
 | Contract | Source | Guarantee |
 | --- | --- | --- |
-| **Pre-paint & route parity** | `documents.ts`, `documents.test.ts` | Inlines `LOCALE_SCRIPT` and `THEME_SCRIPT` in `<head>`, `modulepreload`s only the active locale chunk (`en` or `pl`), and enforces route parity with [`infra/nginx.conf`](../infra/README.md). |
+| **Pre-paint & route parity** | `documents.ts`, `documents.test.ts` | Inlines `LOCALE_SCRIPT` and `THEME_SCRIPT` in `<head>`, `modulepreload`s only the active locale chunk (`en`, `pl` or `de`), and enforces route parity with [`infra/nginx.conf`](../infra/README.md). |
 | **Entry bundle budget** | `bundleReport.ts` | Fails `npm run build` if the static JS+CSS closure of `index.html` exceeds `259,000` gzipped bytes (`UP_FRONT_BUDGET_GZIP`). Signed-in views, voice/RTC, BetterDiscord conversion, and locale catalogs load via dynamic `import()`. |
 | **AudioWorklets & asset paths** | `worklets.ts` | Emits standalone `/audio/{detector,speex,rnnoise}-worklet.js` (`no-cache`) while content-hashed app chunks live under `static/` (`immutable`, 1 year) so `/assets/` stays reserved for API file downloads. |
 | **Service Worker & PWA** | `release.ts`, `public/stellarr-worker.js` | Tracks `/release.json` for zero-stale tab reloads, handles Web Push notifications, syncs unread app badges, and receives OS-shared files (`/pwa/share`). |

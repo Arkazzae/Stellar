@@ -163,7 +163,7 @@ npx stellarr dev --dir dist
 
 ## 4. Adapt to theme, language, and device class
 
-Every player in a shared voice room may use a different Stellarr color palette, UI language (`en` or `pl`), or device (`desktop`, `tablet`, or `phone`). Subscribe to the live observables so your UI updates immediately—even if a player switches settings mid-round:
+Every player in a shared voice room may use a different Stellarr color palette, UI language (`en`, `pl` or `de`), or device (`desktop`, `tablet`, or `phone`). Subscribe to the live observables so your UI updates immediately—even if a player switches settings mid-round:
 
 ```ts
 // 1. Theme: mode ("dark" | "light") + 6 semantic hex colors

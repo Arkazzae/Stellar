@@ -54,7 +54,7 @@ System architecture, wire protocols, media server internals, theming, and locali
 | [RTC and ports](rtc-and-ports.md) | Host and loopback ports, optional TURN relay sizing, NAT/firewall rules, and WebRTC call diagnostics |
 | [Voice and RTC protocol](rtc-protocol.md) | `stellarr.v1` signaling, `voice::enforce` seat eviction, soundboard sync, Opus profiles, and Web Audio DSP chains |
 | [Stellarr Media](stellarr-media.md) | Rust `str0m` SFU, glare-free SDP negotiation, receive subscriptions, GoogCC downlink adaptation, SFrame E2EE, and control API |
-| [Localization](localization.md) | `STELLARR_LANGUAGE` (`en` and `pl`), compile-time message catalogs, offline Bergamot WASM translation, and adding locales |
+| [Localization](localization.md) | `STELLARR_LANGUAGE` (`en`, `pl` and `de`), one JSON file per language, offline Bergamot WASM translation, and adding locales |
 
 ## Development
 

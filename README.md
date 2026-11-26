@@ -17,6 +17,7 @@ Hop into voice, stream your game in 4K 60 fps without paying for Nitro, spam the
 - Run public and private channels with roles, threads, polls, and voice messages. Bring your own emojis, hit the server soundboard, or set a walk-on clip for when you join voice.
 - [Import from Discord](docs/admin/servers-and-features.md#import-from-discord) to copy selected public channels and message history into a new private Stellarr server. Copy attachments from the import report.
 - Make the app yours with dark and light themes, custom colors, and wallpapers. Share themes with friends as a file, or import a BetterDiscord theme.
+- Use the chat client and Cockpit in English, Polish or German.
 - Translate messages right inside the browser, offline and without character limits, starting with English and Polish.
 
 ### Private by design

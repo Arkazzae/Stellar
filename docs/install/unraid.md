@@ -26,7 +26,7 @@ Open **Docker → Add Container**, select **Stellarr** under **Template**, and r
    | **Voice media port (UDP and TCP)** | **Voice media host port** (`STELLARR_MEDIA_PORT`) | `49000` |
 
 3. **Router forwarding:** For internet access, forward `49000/udp` and `49000/tcp` on the same external port to Unraid, plus either `8443/tcp` or `443/tcp` to your reverse proxy.
-4. **Language:** Set **Language** (`STELLARR_LANGUAGE`) to `en` or `pl`. Unraid injects the host time zone automatically.
+4. **Language:** Set **Language** (`STELLARR_LANGUAGE`) to `en`, `pl` or `de`. Unraid injects the host time zone automatically.
 
 ## 3. Complete initial setup
 
