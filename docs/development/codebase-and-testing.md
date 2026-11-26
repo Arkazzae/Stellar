@@ -12,6 +12,7 @@
 | [`init/installer/`](../../init/installer/README.md) | Rust (`std`, `libc`, `ureq`) | `stellarr-installer`, the host installer that the root `install.sh` downloads from a release and runs. |
 | [`infra/`](../../infra/README.md) | Shell, Nginx, coturn | `entrypoint.sh`, `settings.sh`, `stellarr-cli.sh`, `tls-maintenance.sh`, `nginx.conf`, and `infra/tests/`. |
 | [`artifacts/`](../../artifacts/README.md) | BuildKit, `wasi-sdk`, Emscripten | `manifest.json`, `assemble.mjs`, source [`recipes/`](../../artifacts/recipes/README.md) (`speex`, `rnnoise`, `bergamot`), `files/`, and `NOTICES`. |
+| [`sdk/`](../../sdk/README.md) | JavaScript, Node.js CLI | Activity client, local simulator, release tooling and voice-channel preview. |
 | `docs/` | VitePress, Mermaid | Documentation site (`navigation.ts` builds the nav and sidebar from `docs/README.md`). |
 | [`website/`](../../website/README.md) | Vanilla JS, CSS, Vite | `stellarr.online` landing page and `/install.sh` build (standalone npm project). |
 | [`branding/`](../../branding/README.md) | SVG, WebP, CDP | Logos, mascot assets, avatars, backgrounds, icons, and the [`branding/film/`](../../branding/film/README.md) pipeline. |
