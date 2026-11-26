@@ -67,6 +67,18 @@ function props(overrides: Partial<VoiceControlBarProps> = {}): VoiceControlBarPr
   };
 }
 
+it("opens the activity picker from one control next to the camera in a channel call", () => {
+  const onOpenActivities = vi.fn();
+  const { rerender } = render(<VoiceControlBar {...props()} />);
+  expect(screen.queryByRole("button", { name: "Aktywności" })).toBeNull();
+  rerender(<VoiceControlBar {...props({ onOpenActivities })} />);
+  const button = screen.getByRole("button", { name: "Aktywności" });
+  expect(button.previousElementSibling?.querySelector("button")).toHaveAccessibleName("Włącz kamerę");
+  expect(button).toHaveAttribute("aria-haspopup", "dialog");
+  fireEvent.click(button);
+  expect(onOpenActivities).toHaveBeenCalledOnce();
+});
+
 const compactMenu = () => document.querySelector<HTMLElement>(".vc-mobile-menu")!;
 
 describe("VoiceControlBar full screen", () => {

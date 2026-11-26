@@ -1,4 +1,6 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
+
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { request } from "@/lib/api/transport";
@@ -37,6 +39,14 @@ function server() {
   return { take };
 }
 
+function VoiceLibrary() {
+  const [open, setOpen] = useState(false);
+  return <>
+    <button onClick={() => setOpen(true)}>Activities</button>
+    <InstalledActivities channel="voice" pickerOpen={open} onClosePicker={() => setOpen(false)} />
+  </>;
+}
+const openPicker = () => fireEvent.click(screen.getByRole("button", { name: "Activities" }));
 const start = () => fireEvent.click(screen.getByRole("button", { name: /Static game/ }));
 async function poll() {
   await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
@@ -44,7 +54,8 @@ async function poll() {
 
 async function openStatic() {
   const api = server();
-  render(<InstalledActivities channel="voice" />);
+  render(<VoiceLibrary />);
+  openPicker();
   await api.take("list").reply([{ ...entry, running: false }]);
   start();
   await api.take("list").reply([{ ...entry, running: false }]);
@@ -96,6 +107,7 @@ it("ignores an earlier lease rejection after the same game is opened again", asy
   await poll();
   const stale = api.take("list");
   fireEvent.click(screen.getByRole("button", { name: "stage.leaveActivity" }));
+  openPicker();
   await api.take("list").reply([entry]);
   start();
   const beforeLaunch = api.take("list");
@@ -122,4 +134,61 @@ it("discards a late successful launch after a list response invalidates the pend
   await api.take("list").reply([entry]);
   await stale.reply(launchReply("stale-lease"));
   expect(screen.getByTitle(entry.name)).toHaveAttribute("src", "https://game.test/new-lease");
+});
+
+it("keeps all ten games inside the voice dialog and distinguishes start, join and unsupported devices", async () => {
+  const api = server();
+  render(<VoiceLibrary />);
+  const games = Array.from({ length: 10 }, (_, i) => ({
+    ...entry, install: String(i), name: "Game " + i, running: i === 0, supported: i !== 9,
+    artwork: { cover: "/cover.png", icon: "/icon.png" }, devices: ["tablet"],
+  }));
+  expect(request).not.toHaveBeenCalled();
+  expect(screen.getAllByRole("button")).toHaveLength(1);
+  const opener = screen.getByRole("button", { name: "Activities" });
+  opener.focus();
+  openPicker();
+  await api.take("list").reply(games);
+  const dialog = within(screen.getByRole("dialog", { name: "friends.tabActivities" }));
+  expect(dialog.getAllByRole("listitem")).toHaveLength(10);
+  expect(dialog.getByRole("button", { name: "Game 0 · stage.joinActivity" })).toBeEnabled();
+  expect(dialog.getByRole("button", { name: "Game 1 · stage.startActivity" })).toBeEnabled();
+  expect(dialog.getByRole("button", { name: "Game 9 · tablet" })).toBeDisabled();
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(opener).toHaveFocus();
+});
+
+it("shows an empty voice library inside the dialog", async () => {
+  const api = server();
+  render(<VoiceLibrary />);
+  openPicker();
+  expect(screen.getByRole("status")).toHaveTextContent("common.loading");
+  await api.take("list").reply([]);
+  expect(screen.getByRole("status")).toHaveTextContent("stage.noVoiceActivities");
+});
+
+it("returns to a running frame and keeps it when a switch is dismissed or fails", async () => {
+  const api = await openStatic();
+  const frame = screen.getByTitle(entry.name);
+  openPicker();
+  fireEvent.click(screen.getByRole("button", { name: /stage.returnToActivity/ }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.getByTitle(entry.name)).toBe(frame);
+
+  const games = [entry, { ...entry, install: "other", name: "Other game" }];
+  await poll();
+  await api.take("list").reply(games);
+  openPicker();
+  fireEvent.click(screen.getByRole("button", { name: /Other game/ }));
+  const stale = api.take("launch");
+  fireEvent.click(screen.getByRole("button", { name: "common.close" }));
+  await stale.reply(launchReply("other-lease"));
+  expect(screen.getByTitle(entry.name)).toBe(frame);
+
+  openPicker();
+  fireEvent.click(screen.getByRole("button", { name: /Other game/ }));
+  await api.take("launch").reply(null, 403);
+  expect(within(screen.getByRole("dialog")).getByRole("alert")).toBeInTheDocument();
+  expect(screen.getByTitle(entry.name)).toBe(frame);
 });
