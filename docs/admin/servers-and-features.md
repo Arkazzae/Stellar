@@ -1,89 +1,113 @@
 # Servers, channels, and features
 
-One Stellarr instance can run your main server alongside extra servers for side groups (for example, a tabletop campaign or a co-op squad). The first server created during `/setup` is the instance server, and its owner also runs [Stellarr Cockpit](cockpit.md).
+A single Stellarr instance can host your primary community server alongside dedicated servers for side groups (such as a tabletop campaign or co-op squad). The first server created during `/setup` is the **instance server**, and its owner manages the deployment through [Stellarr Cockpit](cockpit.md).
 
 ## Servers, sections, and channels
 
-Create new servers from the rail on the far left. Inside a server, channels can sit at the top level or inside collapsible sections. Members with `manageChannels` reorder channels and sections by dragging them or pressing `↑` and `↓`.
+Create additional servers from the far-left server rail. Inside each server, text and voice channels sit at the top level or inside collapsible sections. Members holding `manageChannels` reorder channels and sections via drag-and-drop or `↑` / `↓` keyboard controls.
 
-Text channels support a topic line and per-user slow mode. Deleting a channel removes its messages, attachment links, reactions, link cards, pins, FTS5 search rows, and message journal in the same SQLite transaction. Unreferenced files are removed from `/data/stellarr/files/` once Cockpit's orphan retention (`retention.orphans-days`) passes.
+- **Text channels:** Support a channel topic and per-user slow mode.
+- **Cascading deletion:** Deleting a channel removes its messages, attachment links, reactions, link cards, pins, FTS5 search entries, and message journal in a single SQLite transaction. Unreferenced files in `/data/stellarr/files/` are swept once Cockpit's orphan retention (`retention.orphans-days`) expires.
 
-## Import from Discord
+## Chat, drafts, and offline translation
 
-Open **Create a server → Import from Discord** in the left rail. The wizard creates a private Stellarr server. It copies the selected public text and voice channels and their categories. You can copy channel structure only, all available message history, or history from a date. With a history range selected, you can include public threads and forum posts. Stellarr keeps the names of imported authors on local profiles. Invite members and set up roles and permissions in Stellarr after the import.
+- **Rich messaging:** Markdown, syntax-highlighted code blocks, inline replies, side threads (`ThreadPanel`), multi-option polls, voice messages, 50+ built-in astronaut stickers, and custom server emojis (`EmojiPane`). Unsent text drafts and pending file attachments are restored automatically when reopening a channel or DM.
+- **Channel sidebars:** Inspect pinned messages, shared media, posted links, and FTS5 full-text search from the channel header.
+- **GIF search:** Optional GIPHY integration (when enabled in Cockpit); users can disable browser GIPHY requests individually in **Settings → Privacy**.
+- **Offline in-browser translation:** Clicking **Translate** on an English or Polish message (or enabling automatic translation in **Settings → Language**) runs Mozilla's Bergamot WebAssembly translator inside a local Web Worker. Translation models download from your own instance, verify against SHA-256 digests, and cache in IndexedDB with zero external API calls or character limits. See [Localization](../localization.md).
 
-### Connect the bot
+## Installed web app (PWA)
 
-1. Create an application in the [Discord Developer Portal](https://discord.com/developers/applications) and enable **Guild Install** under **Installation**. Open **Bot** to get its token. For message history, enable **Message Content Intent** on that page. [Discord bot setup](https://docs.discord.com/developers/quick-start/getting-started)
-2. Paste the token into the Stellarr wizard and choose **Find servers**. If the server is missing, use **Add bot to a server**, select the Discord server, and authorize **View Channels** and **Read Message History**. Refresh the list in Stellarr.
-3. Choose the source server, channels, and history range. Review the scope and start the import. Stellarr lists channels available to all members. History also requires access to read past messages in those channels.
+When served over trusted HTTPS, users can install each Stellarr instance as a standalone desktop or mobile app (**Install Stellarr** beneath the server rail, **Share → Add to Home Screen** on iOS/iPadOS, or **File → Add to Dock** on macOS):
 
-### Copy photos, videos, and other files
+- **Unread app badge:** Syncs the OS dock/launcher badge with unread direct messages and `@mention` notifications across accessible channels.
+- **Share target:** Sharing photos, videos, or files from the OS share sheet into an installed Stellarr app opens a picker to drop them straight into a channel or direct message.
+- **Deep links & shortcuts:** System push notifications and app-icon shortcuts open the target conversation directly after verifying live server access.
 
-After Stellarr copies the history, open the import report and choose **Import missing attachments**. Enter the same bot token and choose **Start copying files**. Stellarr fetches fresh Discord file URLs and stores supported files on the server it already created. It adds them to their original messages and restores messages that consisted of files alone. [Discord attachment URLs](https://docs.discord.com/developers/reference#signed-attachment-cdn-urls)
+## Voice rooms, 4K60 streams, and soundboards
 
-The report counts attachment-only messages as skipped until their files are copied. The missing-files count includes those messages and messages whose text already came over. The default per-file limits are 10 MiB for images and 100 MiB for videos. Imported files count toward the importing account’s storage quota, which defaults to 2 GiB, and the instance quota. The operator can change the account limit in **Cockpit → Settings → File storage** before resuming. [Uploads and quotas](../install/configuration.md#uploads-and-quotas)
+Click any voice channel to join, or drag your own row (or another participant's row with `moderateMembers`) onto another voice channel to switch rooms atomically.
 
-Stellarr builds link previews as readers open the imported history. A provider must make a preview available for its page link to show an image or animation. Discord uploads are handled by **Import missing attachments**.
+| Capability | Presets & controls |
+| --- | --- |
+| **Screen sharing** | `Economy` (`720p 15 fps`), `Balanced` (`1080p 30 fps`, default), `Sharp` (`1440p 30 fps`), and `Ultra` (`2160p 60 fps`, `12 Mb/s`) plus `160 kb/s` stereo audio. Mid-stream preset switches need no window re-selection, and `stellarr-media` forwards video/audio only to active viewers. |
+| **Opus voice quality** | `Auto` (`128` down to `16 kb/s` adaptive) or fixed presets up to `256 kb/s` `Studio` (`MicMenu`). |
+| **Microphone DSP** | Manual input gain (`-12` to `+24 dB`), local WASM noise suppression (`RNNoise`, `GTCRN`, `Speex`, or `Browser`), `80 ms` lookahead voice gate, and voiced-only `-20 dBFS` auto-leveler. |
+| **Listener mix & shortcuts** | Per-participant volume (`0–200%`), receiver noise gate, 4-band playback EQ (`Off`, `Natural`, `Studio`, `Broadcast`, `Custom`), and customizable mute/deafen/camera/disconnect keybinds (**Settings → Keybinds**). |
+| **Soundboard & arrival clips** | Trimmed server clips (`0.15–15 s`, `everyoneCanPlay`, `5 s` cooldown via `rateLimited`) plus a personal `5 s` walk-on clip (`30 s` cooldown; silenced locally when join/leave sounds are muted in **Settings → Sounds**). |
 
-### Check progress or resume
+## Activities
 
-The Stellarr API runs one Discord import or attachment job at a time. You can close the wizard while it works. Reopen **Create a server → Import from Discord** to see the latest import. If history stopped, choose **Resume import**. If file copying stopped, choose **Resume copying files**. Enter the bot token again to continue the same import. Keep the bot on Discord until you finish copying files.
+Instance owners can install static multiplayer mini-apps and watch-party tools from GitHub releases in **Cockpit → Activities** (requires `STELLARR_ACTIVITY_DOMAIN` with wildcard DNS and TLS; see [Configuration](../install/configuration.md#address-and-tls) and the [Activity SDK](../../sdk/README.md)):
 
-## Chat, media, and translation
+- **Shared voice launch:** Start an activity from the voice call bar or join a live activity directly from the channel bar (one active session per installed activity in a voice room).
+- **Personal launch:** Activities supporting `personal` mode can also be opened solo outside calls via **Friends → Activities → Launch for myself**.
+- **Independent game volume:** Each participant adjusts activity music and sound effects locally (`0–100%`) via the **Game audio** slider beside call volume without affecting voice audio or other players.
 
-Messages support Markdown, code blocks, inline replies, and side threads (`ThreadPanel`). From the composer you can post multi-option polls, record a voice message, or pick from 50+ built-in astronaut stickers and custom server emojis (`EmojiPane`). When GIPHY is configured in Cockpit, members can search GIFs or turn external GIPHY requests off in their privacy settings.
-
-Channel headers open panels for pinned messages, shared media, posted links, and FTS5 full-text search. Clicking **Translate** on a Polish or English message (or turning on automatic translation in **Settings → Language**) runs Mozilla's Bergamot WebAssembly engine inside a Web Worker. Models download from your own server, verify against SHA-256 digests, and cache in IndexedDB without character limits or external API calls. See [Localization](../localization.md).
-
-## Voice rooms, 4K streams, and soundboards
-
-Click a voice channel to join, or drag your own row (or another participant, with `moderateMembers`) onto a different voice channel to move in one step.
-
-Screen sharing supports four presets: `Economy` (`720p 15 fps`), `Balanced` (`1080p 30 fps`, default), `Sharp` (`1440p 30 fps`), and `Ultra` (`2160p 60 fps`, `12 Mb/s`), plus a separate `160 kb/s` stereo audio track. Changing presets mid-stream needs no window re-selection, and `stellarr-media` forwards video and screen audio only to people watching the stream.
-
-From the microphone menu in the call dock, pick `Auto` voice quality (`128` down to `16 kb/s` as link health changes) or fixed Opus presets up to `256 kb/s` Studio. Input audio passes through manual mic gain (`-12` to `+24 dB`), local WebAssembly noise suppression (`RNNoise`, `GTCRN`, or `Speex`), an `80 ms` lookahead voice gate, and a voiced-only auto-leveler. Listeners can set `0–200%` volume per friend and pick a playback EQ curve (`Off`, `Natural`, `Studio`, `Broadcast`, or 4-band `Custom`). Keyboard shortcuts for mute, deafen, camera, and disconnect live under **Settings → Keybinds**.
-
-Server soundboards hold trimmed clips (`0.15 s` to `15 s`, non-destructive) with configurable display order, `everyoneCanPlay`, and a `5 s` per-user cooldown (`rateLimited`). Each account can also pick a `5 s` arrival clip (`30 s` cooldown) from any server they belong to; muting join/leave sounds in **Settings → Sounds** silences arrival clips locally.
+---
 
 ## Roles and the 15 permissions
 
-Every server has an immutable **Owner** role at the top and an implicit **base role** (`Member`) at the bottom. Custom roles sit between them, where lower position numbers outrank higher ones. A member's highest role sets their rank for moderation and delegation checks.
+Every server has an immutable **Owner** role at the top and an implicit **Member** base role at the bottom. Custom roles sit between them (lower position numbers outrank higher ones), and a member's highest held role defines their moderation and delegation rank.
 
-| Group | Permissions | Scope and behavior |
+| Category | Permission bits | Scope & behavior |
 | --- | --- | --- |
-| Superuser | `administrator` | Grants every permission on the server and skips overrides. Server-wide only; still bound by role rank. |
-| Visibility | `viewChannel` | Controls whether a channel exists for a member. Without it, all permissions in that channel clear to none. |
-| Member actions | `sendMessages`, `attachFiles`, `addReactions`, `connect`, `createInvite` | Posting messages, uploading files or voice messages, adding reactions, joining voice, and creating invites. Enabled on a new server's base role. |
-| Management | `manageServer`, `manageChannels`, `manageRoles`, `manageMembers`, `manageMessages`, `moderateMembers`, `manageBans`, `viewAuditLog` | Server settings/emojis/soundboard/invites, channel layout, roles and overrides, member roles/kicks, message moderation, voice kicks/moves, bans, and audit log access. |
+| **Superuser** | `administrator` | Grants all permissions server-wide and bypasses channel/section overrides. Server-wide only; still bound by role rank hierarchy. |
+| **Visibility** | `viewChannel` | Controls whether a channel exists for a member. Missing `viewChannel` clears all effective permissions at that channel to zero. |
+| **Member actions** | `sendMessages`, `attachFiles`, `addReactions`, `connect`, `createInvite` | Enabled by default on a new server's base role (`Member`). Covers posting/replying, file & voice uploads, adding reactions, joining voice seats, and creating invites. |
+| **Management** | `manageServer`, `manageChannels`, `manageRoles`, `manageMembers`, `manageMessages`, `moderateMembers`, `manageBans`, `viewAuditLog` | Controls server settings/emojis/soundboard/invites, channel layout, roles & overrides, member roles & kicks, message deletion/pins, voice kicks/moves, bans, and audit logs. |
 
-Overrides apply per role or per member on sections first and channels second:
+### Override resolution order
 
-1. Start with the union of the member's server-wide role permissions.
-2. At the section (if any), apply the base role override (`deny`, then `allow`), then all held role overrides together (union of `deny` removed, then union of `allow` added), then the member override (`deny`, then `allow`).
-3. Repeat step 2 at the channel. If `viewChannel` is missing at the end, clear all bits to zero.
+Effective channel permissions evaluate in three deterministic layers:
+
+1. **Server roles:** Union of the base role permissions and every role held by the member.
+2. **Section overrides** (when the channel sits inside a section): Base role (`deny`, then `allow`) → union of held roles (`deny` union cleared, then `allow` union added) → member override (`deny`, then `allow`).
+3. **Channel overrides:** Same three sub-steps at the channel. If `viewChannel` is not set at the end, every permission clears to zero.
 
 > [!NOTE]
-> You can only edit, assign, or override roles and members ranked below your top role, and only for permission bits you hold yourself. On the primary instance server, role and override edits require a fresh 5-minute second factor when MFA is enabled.
+> Actors can only edit, assign, or override roles and members ranked strictly below their own top role, and only for permission bits they hold themselves. On the primary instance server, role and override edits require a fresh 5-minute second factor when MFA is active.
 
 ## Private channels
 
-To restrict a channel or section to specific roles or members:
-
 1. Open **Channel settings → Permissions** (or **Section settings → Permissions**).
-2. Select the base role (`Member`) and set **View channel** (`viewChannel`) to **Deny**.
-3. Add the target role or member and set **View channel** to **Allow**.
+2. Select the base role (**Member**) and set **View channel** (`viewChannel`) to **Deny**.
+3. Add each authorized role or member and set **View channel** to **Allow**.
 
-For anyone without `viewChannel`, the channel is omitted from bootstrap payloads, the channel rail, search results, `@mention` alerts, and invite previews, and direct requests naming its ID return `404` (or `"Unknown channel."` / `"Unknown voice room."`) before any `403` check. If someone is already seated in a voice channel when a role, override, channel, or membership change removes their `viewChannel` or `connect` right, `voice::enforce` evicts their seat, closes their SFU session, and sends `VoiceChannelKicked`.
+Members without `viewChannel` never receive the channel in `/api/bootstrap`, the channel rail, FTS5 search, `@mention` alerts, or invite previews; direct API or hub calls naming its ID return `404` / `"Unknown channel."` before any `403` check. Whenever a permission or membership change removes `viewChannel` or `connect` from someone already in a voice channel, `voice::enforce` immediately evicts their seat and closes their SFU media session (`VoiceChannelKicked`).
 
-## Friends and optional 1:1 end-to-end encryption
+---
 
-Users can add friends by username, block accounts, chat in 1:1 DMs, and start private voice, camera, and screen-share calls.
+## Friends and 1:1 end-to-end encryption
+
+Users can add friends by username, block accounts, message in 1:1 DMs, and start private voice, video, and screen-share calls.
 
 > [!WARNING]
 > Optional 1:1 end-to-end encryption is experimental and has not been independently audited yet.
 
-1. Under **Settings → Encryption**, set a 6-digit PIN. The browser generates an X25519 account key pair, stores it in IndexedDB, and uploads an encrypted key backup derived from the PIN (`PBKDF2-HMAC-SHA256`, 600,000 iterations; 10 wrong PIN attempts delete the server backup).
-2. Click **Enable encryption** in a 1:1 DM. Once the other participant confirms (`off` → `requested` → `on`), both browsers wrap a 256-bit epoch key for every active session device on both accounts (up to 10 devices per account).
-3. Messages and attachment metadata are encrypted with AES-256-GCM before upload (`POST /api/uploads/encrypted`), and 1:1 calls encrypt Opus, VP8, and VP9 frames in a WebRTC Encoded Transform worker (`SFrame`).
-4. Compare the 60-digit safety code (12 groups of 5 digits) in the DM profile panel out of band to verify both account keys. New or revoked sessions rotate the epoch on the next message or call.
+1. **Key & PIN setup:** Under **Settings → Encryption**, set a 6-digit PIN. Your browser generates an X25519 account key pair in IndexedDB and uploads an encrypted backup derived from your PIN (`PBKDF2-HMAC-SHA256`, 600,000 iterations; 10 wrong PIN guesses permanently delete the server backup).
+2. **Mutual activation:** Click **Enable encryption** in a 1:1 DM. Once the peer confirms (`off` → `requested` → `on`), both clients wrap a 256-bit conversation epoch key for all active session devices on both accounts (up to 10 devices per account).
+3. **Encrypted messages, files, and calls:** DM text and file metadata are sealed with AES-256-GCM before upload (`POST /api/uploads/encrypted`), and 1:1 calls encrypt Opus, VP8, and VP9 frames inside a WebRTC Encoded Transform worker (`SFrame`).
+4. **Verification:** Compare the 60-digit safety code (12 groups of 5 digits) in the DM profile panel out of band. New or revoked sessions automatically rotate the epoch on the next message or call.
+
+---
+
+## Import from Discord
+
+Open **Create a server → Import from Discord** in the left server rail to copy selected public text/voice channels, categories, threads, forum posts, message history, and attachments into a new private Stellarr server while preserving original author display names.
+
+### 1. Connect a Discord bot
+
+1. Create an application in the [Discord Developer Portal](https://discord.com/developers/applications), enable **Guild Install** under **Installation**, copy the token under **Bot**, and enable **Message Content Intent** if importing message history.
+2. Paste the bot token into Stellarr's import wizard and click **Find servers**. If your server is not listed, click **Add bot to a server** and grant **View Channels** and **Read Message History**.
+3. Pick the source server, public channels, and history range (structure only, from a date, or full history with optional public threads/forums), then start the import.
+
+### 2. Copy attachments
+
+Once message history finishes importing, open the import report, choose **Import missing attachments**, and provide the same bot token. Stellarr refreshes [signed Discord CDN URLs](https://docs.discord.com/developers/reference#signed-attachment-cdn-urls), downloads supported attachments (`≤ 10 MiB` images, `≤ 100 MiB` videos), attaches them to their original messages, and restores attachment-only messages.
+
+Imported files count toward the importing user's storage quota (`2 GiB` default; adjustable beforehand in **Cockpit → Settings → File storage**—see [Uploads and quotas](../install/configuration.md#uploads-and-quotas)). Keep the bot in the Discord server until attachment copying completes.
+
+### 3. Monitor or resume
+
+Stellarr runs one Discord import or attachment job at a time in the background—you can close the dialog at any point. Reopen **Create a server → Import from Discord** to view progress or click **Resume import** / **Resume copying files** with your bot token if interrupted.

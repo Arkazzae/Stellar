@@ -1,10 +1,10 @@
 # Unraid
 
-Stellarr provides an Unraid template at [`deploy/unraid/stellarr.xml`](../../deploy/unraid/stellarr.xml) with the same image and resource limits as [`docker-compose.yml`](../../docker-compose.yml). Template variables use the `STELLARR_*` names listed in [Configuration](configuration.md), and any blank field falls back to the container image's built-in default. See [Running without Docker Compose](configuration.md#running-without-docker-compose) for host port variable rules and [Requirements](requirements.md) for host resources and NAT forwarding.
+Stellarr includes a ready-to-use Unraid template at [`deploy/unraid/stellarr.xml`](../../deploy/unraid/stellarr.xml) matching the image, capabilities, and resource caps of [`docker-compose.yml`](../../docker-compose.yml). Template fields map 1:1 to `STELLARR_*` variables in [Configuration](configuration.md), and blank optional fields inherit built-in image defaults.
 
 ## 1. Install the user template
 
-Stellarr is not published in Community Applications. Download the user template from the Unraid web terminal or SSH session:
+Run from the Unraid web terminal or SSH:
 
 ```bash
 wget -O /boot/config/plugins/dockerMan/templates-user/my-Stellarr.xml \
@@ -13,62 +13,46 @@ wget -O /boot/config/plugins/dockerMan/templates-user/my-Stellarr.xml \
 
 Open **Docker → Add Container**, select **Stellarr** under **Template**, and review the settings below before clicking **Apply**.
 
-If the registry rejects the pull or a stable image has yet to be published, build from a checked-out copy of the repository on Unraid:
+*(To test a local checkout build instead of GHCR, run `docker buildx build --load --tag stellarr-local:dev .` and set **Repository** to `stellarr-local:dev`.)*
 
-```bash
-docker buildx build --load --tag stellarr-local:dev .
-```
+## 2. Configure host settings and port pairs
 
-Set **Repository** to `stellarr-local:dev` in the user template.
+1. **Domain & media IP:** Set **Domain** (`STELLARR_DOMAIN`) to the hostname or IP users open. Set **Public IP** (`STELLARR_PUBLIC_IP`) to your Unraid LAN IPv4 for LAN-only use, or to your WAN IPv4 / `auto` for internet access. Set **LAN IP for voice** (`STELLARR_MEDIA_LAN_IP`) to the Unraid LAN IPv4 if local callers cannot hairpin through your router's WAN address.
+2. **Matching port pairs:** Unraid reserves `80` and `443` for its own UI, so the template maps HTTPS to `8443/tcp`. Because containers cannot inspect Unraid's host port mappings ([see why](configuration.md#running-without-docker-compose)), keep each port mapping and its matching variable identical:
 
-## 2. Configure required settings
+   | Unraid port mapping | Matching template variable | Default |
+   | --- | --- | --- |
+   | **HTTPS port** | **HTTPS host port** (`STELLARR_HTTPS_PORT`) | `8443` |
+   | **Voice media port (UDP and TCP)** | **Voice media host port** (`STELLARR_MEDIA_PORT`) | `49000` |
 
-1. **Domain and Public IP**: Set **Domain** (`STELLARR_DOMAIN`) to the address users open. If it is already the IPv4 address that browsers can reach for media, direct calls can use it. Otherwise set **Public IP** (`STELLARR_PUBLIC_IP`) to the Unraid LAN IPv4 for LAN-only calls, or a reachable public IPv4 / `auto` for internet access. Set **LAN IP for voice** to the Unraid LAN address if callers in the local network cannot reach the public media port through the router.
-2. **Ports**: Unraid uses ports `80` and `443` for its own web UI, so the template defaults to `8443/tcp` for HTTPS. Whenever you change a host port mapping in Unraid, update its matching environment variable to the same port number:
+3. **Router forwarding:** For internet access, forward `49000/udp` and `49000/tcp` on the same external port to Unraid, plus either `8443/tcp` or `443/tcp` to your reverse proxy.
+4. **Language:** Set **Language** (`STELLARR_LANGUAGE`) to `en` or `pl`. Unraid injects the host time zone automatically.
 
-   | Port mapping | Matching variable |
-   | --- | --- |
-   | **HTTPS port** (`8443`) | **HTTPS host port** (`STELLARR_HTTPS_PORT`) |
-   | **Voice media port (UDP and TCP)** (`49000`) | **Voice media host port** (`STELLARR_MEDIA_PORT`) |
+## 3. Complete initial setup
 
-   Keep the UDP and TCP media mappings on the same host port. The template uses direct media without TURN.
+Start the container, open **Logs** from its Docker menu to copy the `Setup code:` line, then click **WebUI**, accept the self-signed certificate warning, and complete the three-step `/setup` wizard ([Quick start: Step 4](quick-start.md#4-create-the-owner-account-and-first-server)).
 
-3. **Router port forwarding**: For calls from outside your LAN, forward `49000/udp` and `49000/tcp` on your router to the Unraid server on the same external port, plus either the HTTPS port or an external [reverse proxy](reverse-proxy-and-tls.md).
-4. **Language and time zone**: Set **Language** (`STELLARR_LANGUAGE`) to `en` or `pl` to configure both the default web client locale and the server language. Unraid passes its host time zone to the container automatically.
-
-## 3. First start
-
-Start the container and click **WebUI** from its menu on the Docker tab. Accept the self-signed certificate warning, then complete the three-step `/setup` wizard as described in the [Quick start](quick-start.md#4-create-the-owner-account-and-first-server). Retrieve the required setup code by clicking **Logs** in the container's menu on the Docker tab and copying the latest `Setup code:` line.
-
-For a browser-trusted TLS certificate or reverse proxy configuration, see [Reverse proxy and TLS](reverse-proxy-and-tls.md).
+---
 
 ## Nginx Proxy Manager on the same Unraid host
 
-Place both containers on a user-defined Docker bridge. Reuse Nginx Proxy Manager’s bridge if it already has one. Otherwise create one with a subnet that is available on your host:
+Attach both containers to a shared user-defined Docker bridge with a fixed IP for Nginx Proxy Manager (NPM) so `STELLARR_TRUSTED_PROXIES` survives container updates:
 
 ```bash
 docker network create --subnet 172.29.35.0/24 stellarr-proxy
 ```
 
-Set **Network Type** in both Unraid templates to the shared bridge. Save a fixed address for Nginx Proxy Manager in its template so the address survives container recreation. On a bridge such as the example above, use `--ip=172.29.35.10` in Nginx Proxy Manager’s **Extra Parameters** if there is no IP field. Preserve any other networks that its existing upstreams need.
+1. **NPM container:** Set **Network Type** to `stellarr-proxy` and pin its IP (e.g. `--ip=172.29.35.10` in **Extra Parameters**). Create a **Proxy Host** forwarding `http://Stellarr:80` with **Websockets Support** enabled, a TLS certificate on the **SSL** tab, and `client_max_body_size 128m;` under **Advanced** (see [Proxy requirements](reverse-proxy-and-tls.md#proxy-requirements)).
+2. **Stellarr container:** Set **Network Type** to `stellarr-proxy`, **Domain** to your public hostname, **Public HTTPS port** (`STELLARR_PUBLIC_PORT`) to `443`, and **Trusted proxies** (`STELLARR_TRUSTED_PROXIES`) to `172.29.35.10`.
+3. **Router:** Point external `443/tcp` to NPM and forward `49000/udp` + `49000/tcp` directly to the Unraid host.
 
-1. In the Stellarr template, set **Domain** to the public hostname, **Public HTTPS port** to `443`, and **Trusted proxies** to the fixed Nginx Proxy Manager address.
-2. In Nginx Proxy Manager, create a **Proxy Host** for the domain. Set **Scheme** to `http`, **Forward Hostname** to `Stellarr`, and **Forward Port** to `80`. Enable **Websockets Support** and select a TLS certificate on the **SSL** tab.
-3. Point the public HTTPS forwarding rule at Nginx Proxy Manager. Forward the voice port `49000` on UDP and TCP directly to the Unraid host so the browser can reach Stellarr Media. The proxy reaches port `80` over the shared bridge without a host port mapping. Use the proxy’s IP as the trusted address so Stellarr can distinguish it from other connections.
+---
 
-See [proxy requirements](reverse-proxy-and-tls.md#proxy-requirements) for upload limits and timeouts.
+## Operations, backups, and updates
 
-## Stopping, backups, and CLI
-
-- **Stop timeout**: The template's **Extra Parameters** include `--stop-timeout=75` so `stellarr-init` can complete its 60-second ordered service shutdown before Docker sends `SIGKILL`. Preserve that flag if you edit Extra Parameters.
-- **Data path**: `/mnt/user/appdata/stellarr` by default. Keep `appdata` on an SSD cache/pool drive and back up the entire directory while the container is stopped (see [Upgrading](upgrading.md)).
-- **CLI and service checks**: Because the Unraid container is named `Stellarr` (capital `S`), run [`stellarr`](../admin/cli.md) and [`stellarr-init`](../architecture.md#container-services-stellarr-init) against `Stellarr`:
-
-  ```bash
-  docker exec -it Stellarr stellarr doctor
-  docker exec -it Stellarr stellarr-init status
-  ```
-
-## Updating
-
-The template tracks `ghcr.io/arkazzae/stellarr:latest`. Clicking **Apply update** on the Unraid Docker tab pulls the newest image while preserving your template settings and `/mnt/user/appdata/stellarr` volume. To pin a specific release line, set **Repository** to a version tag such as `ghcr.io/arkazzae/stellarr:1.2`. Review [Upgrading](upgrading.md) before major upgrades.
+| Task | Unraid specifics |
+| --- | --- |
+| **Graceful stop** | Preserve `--stop-timeout=75` in **Extra Parameters** so [`stellarr-init`](../architecture.md#container-services-stellarr-init) completes its 60 s ordered shutdown before `SIGKILL`. |
+| **Data directory** | `/mnt/user/appdata/stellarr` — keep `appdata` on an SSD pool and archive it while stopped before major upgrades ([Upgrading](upgrading.md)). |
+| **Operator CLI** | Container name uses a capital `S`: run `docker exec -it Stellarr stellarr doctor` and `docker exec -it Stellarr stellarr-init status` ([Operator CLI](../admin/cli.md)). |
+| **Updating** | Click **Apply update** on the Docker tab (`ghcr.io/arkazzae/stellarr:latest` default, or pin a series tag like `ghcr.io/arkazzae/stellarr:1.2`). |

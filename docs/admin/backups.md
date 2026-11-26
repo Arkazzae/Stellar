@@ -1,25 +1,20 @@
 # Automatic backups
 
-Production containers run an automatic full backup every 24 hours by default, starting 5 minutes after startup. Configure the schedule and local retention in **Cockpit → Backups → Backup settings**. To upload offsite copies automatically, configure [Cloudflare R2](cloudflare-r2.md) under **Cockpit → Integrations**.
+Production containers create an automatic full `.zip` backup every 24 hours by default (first check 5 minutes after startup). Manage schedules and local retention in **Cockpit → Backups → Backup settings**, and optional offsite replication under **Cockpit → Integrations → [Cloudflare R2](cloudflare-r2.md)**.
 
-## What a backup includes
+## Backup formats
 
-Cockpit supports two backup formats:
-
-- **Database-only backup**: A single online SQLite snapshot (`.db`).
-- **Full backup**: A `.zip` archive containing `manifest.json` and four sections:
-  1. Online SQLite snapshot (`stellarr.db`)
-  2. Uploaded objects (`objects/`)
-  3. Keys, including the master key that seals secrets (`keys/`)
-  4. Instance files (`instance/`: `secrets/`, `tls/`, `releases/`)
+| Format | Contents | Restorable via CLI? |
+| --- | --- | --- |
+| **Full backup (`.zip`)** | `manifest.json` + (1) online SQLite snapshot `stellarr.db`, (2) `objects/` attachments, (3) `keys/` (`master.key`), and (4) `instance/` (`secrets/`, `tls/`, `releases/`) | Yes (`stellarr backup restore`) |
+| **Database snapshot (`.db`)** | Online SQLite snapshot alone | Manual offline restore only |
 
 > [!IMPORTANT]
-> Automatic scheduled backups always produce **full backups** and fail if any referenced upload is missing on disk. Because `.env` is never stored inside backup archives, maintain a separate copy of `.env` in your recovery store.
+> Scheduled backups always produce **full `.zip` archives** and fail (scheduling a retry) if any referenced attachment is missing on disk. `.env` is never packaged inside backup archives—keep a separate copy of `.env` in your offline recovery store.
 
-## Schedule and configuration
+## Schedule and runtime behavior
 
-- **Cockpit**: Changes saved under **Backups → Backup settings** take effect within one minute without a container restart. Modifying the backup policy requires a fresh second factor when MFA is enabled on the owner account. Click **Restore deployment defaults** to revert to `.env` values.
-- **Environment defaults**: Set seed defaults in `.env` and apply with `docker compose up -d`. Production containers enable automatic backups unless `STELLARR_BACKUP_ENABLED=false`; running the API binary directly, outside the container, leaves automatic backups off by default.
+Seed defaults in `.env` (changes saved in Cockpit take effect within 1 minute without restarting and override `.env`):
 
 ```dotenv
 STELLARR_BACKUP_ENABLED=true
@@ -28,73 +23,74 @@ STELLARR_BACKUP_RETRY_MINUTES=15
 STELLARR_BACKUP_INITIAL_DELAY_MINUTES=5
 ```
 
-Scheduler behavior:
+- **Completion-relative intervals:** Measured in UTC from the **last successful run**. Downtime across a scheduled window triggers a single run after `STELLARR_BACKUP_INITIAL_DELAY_MINUTES` rather than catch-up bursts.
+- **Shared lock (`BackupJobs`):** Manual and scheduled backups serialize cleanly; automatic runs log under `[automatic]` in the operator audit trail.
+- **Offsite atomicity:** When Cloudflare R2 is enabled, a run counts as complete only once the R2 upload and `HEAD` checksum check succeed. Failed uploads retry the existing local `.zip` every `STELLARR_BACKUP_RETRY_MINUTES` (`/data/stellarr/automatic-backup.json`).
+- **Monitoring:** Stellarr does not email on backup failures—monitor **Cockpit → Backups**, container logs, or backup file timestamps externally.
 
-- Intervals are measured in UTC from the **last successful completion**, not on a fixed wall-clock cron. If the container was stopped across a scheduled window, a single run triggers after startup (`STELLARR_BACKUP_INITIAL_DELAY_MINUTES`) without running multiple catch-up jobs.
-- Manual and scheduled backups share an exclusive lock (`BackupJobs`), so a manual backup defers the next scheduled cycle. Automatic backup events are recorded in the audit log under the owner account with the `[automatic]` tag.
-- When an offsite destination (Cloudflare R2) is enabled, a backup cycle counts as complete only after the offsite upload also succeeds. If the upload fails, the worker retries uploading the existing local `.zip` archive every `STELLARR_BACKUP_RETRY_MINUTES` (tracked in `/data/stellarr/automatic-backup.json`).
-- Stellarr does not send email alerts on backup failure. Monitor **Cockpit → Backups** and container logs, or check backup completion timestamps externally.
-- Run only one API container per `/data/stellarr` volume so the backup lock and SQLite WAL stay exclusive.
+---
 
 ## Restoring a backup
 
-The [operator CLI](cli.md) verifies and stages **full backups** for automated restoration on container startup. Test restores periodically on an isolated instance before relying on them in production.
+Full `.zip` archives are verified and staged via the [operator CLI](cli.md), then applied atomically by `stellarr-entrypoint` on container restart before any service boots.
 
-1. Copy the `.zip` archive into `/data/stellarr/backups/` if it is not already present locally. For archives downloaded from Cloudflare R2, verify the SHA-256 checksum against the object's stored `sha256` metadata first:
+```mermaid
+flowchart LR
+    Copy["1. Place .zip in /data/stellarr/backups/"] --> Stage["2. stellarr backup restore <file> --yes"]
+    Stage -->|"CRC-32 + SQLite check"| Staged["restore/staged.zip"]
+    Staged --> Restart["3. docker compose restart stellarr"]
+    Restart --> Apply["stellarr-entrypoint -> backup apply"]
+    Apply --> Swap["Swap live dirs & scrub replayable tokens"]
+```
+
+### Step-by-step restore
+
+1. **Copy the archive** into `/data/stellarr/backups/` if downloaded from offsite storage (verify its SHA-256 first):
 
    ```bash
    docker compose cp ./backup-20261114-030000-<id>.zip stellarr:/data/stellarr/backups/
    ```
 
-2. Stage the restore. The CLI verifies `manifest.json`, entry paths, SQLite integrity, and every entry's CRC-32 and uncompressed size, then copies the archive to `/data/stellarr/restore/staged.zip`:
+2. **Verify and stage** the archive (`manifest.json`, path safety, SQLite integrity, and every entry's CRC-32 and byte length):
 
    ```bash
    docker compose exec stellarr stellarr backup restore backup-20261114-030000-<id>.zip --yes
    ```
 
-3. Restart the container. Before starting any service or reading shared secrets, `stellarr-entrypoint` runs `stellarr backup apply --yes`, which swaps `db/`, `files/`, `keys/`, `secrets/`, `tls/`, and `releases/` into place and moves the previous directories into `/data/stellarr/restore/previous-<timestamp>/`:
+3. **Restart the container** so `stellarr-entrypoint` swaps `db/`, `files/`, `keys/`, `secrets/`, `tls/`, and `releases/` into place and moves replaced live folders to `/data/stellarr/restore/previous-<timestamp>/` (`logs/`, `backups/`, and `instance-id` stay untouched):
 
    ```bash
    docker compose restart stellarr
    ```
 
-   *(`logs/`, `backups/`, and `automatic-backup.json` are preserved across a restore.)*
+4. **Verify and clean up:** Sign in as owner, check messages, attachments, integrations, and run a fresh backup. Once confirmed, delete `/data/stellarr/restore/previous-<timestamp>/` to reclaim disk space.
 
-4. Verify owner login, message history, attachments, avatars, integrations, and creating a new backup. Once verified, delete `/data/stellarr/restore/previous-<timestamp>/` to reclaim disk space; moving those folders back while the container is stopped undoes the restore.
+### Post-restore security cleanup
 
-### What a restore resets and preserves
+Before swapping the restored database into place, `auth::restore::end_what_a_copy_may_bring_back` runs a transaction so credentials spent after the backup was taken cannot replay:
 
-Before `stellarr backup apply` swaps the restored database into place, `auth::restore::end_what_a_copy_may_bring_back` runs a single cleanup transaction on the restored SQLite snapshot so tokens spent after the backup was taken cannot be replayed:
-
-- **Ended immediately**: All active browser/desktop sessions and all remembered trusted devices (every user signs in again and completes a fresh second step), all unused email 2FA codes, password-reset links, email-change confirmation links, and operator CLI recovery credentials, plus open sign-in challenges, passkey ceremonies, desktop browser handoffs, and pending OIDC link cookies. Confirmed TOTP apps also advance their last-used time step to the restore timestamp so recently used codes cannot replay.
-- **Preserved intact**: Passwords, confirmed passkeys, TOTP seeds, unused recovery codes, OIDC identity links, client-side PIN-encrypted E2EE key backups (`AccountKeyBackups`), and the host's `/data/stellarr/instance-id` (which lives outside `instance/`).
-- **Master key requirement**: Sealed database values (Cockpit secrets in `InstanceSecrets`, backup and R2 schedules/policies, confirmed TOTP seeds, and mailed OTP codes) open only under the `keys/master.key` they were sealed with, which a full `.zip` backup carries in `keys/`. If a database is restored without its matching `keys/master.key` (or comes from a pre-Rust release that used legacy Data Protection keys), sealed rows fail to open as damaged values until you clear stored secrets (`stellarr secrets clear <name>`) and re-save policies and TOTP methods.
-
-### Restore safeguards
-
-| Behavior | Detail |
+| Reset immediately on restore | Preserved intact |
 | --- | --- |
-| Status record | `/data/stellarr/restore/last-restore.json` records the outcome of the last startup restore attempt. |
-| Cancel before restart | Run `docker compose exec stellarr stellarr backup cancel --yes` to remove `restore/staged.zip`. |
-| Corrupted staged archive | Live data remains untouched, the archive is moved to `restore/refused-<timestamp>.zip`, and the container boots normally with its existing data. |
-| Interrupted folder swap | If applying fails mid-swap and automatic rollback also fails, startup moves the archive to `restore/broken-<timestamp>.zip`, writes `restore/broken`, and refuses to boot until you repair `/data/stellarr` and remove `restore/broken`. |
-| Disk space | `/data/stellarr` must have enough free space to hold the current live data, `restore/staged.zip`, and the unpacked archive simultaneously. `previous-*` and `refused-*` folders are never auto-pruned. |
-| Sub-mounts | Automated restore refuses to run if subdirectories such as `files/` are separate mount points. Use the manual restore procedure below instead. |
-| Version match | Restore onto the same Stellarr release that created the backup archive. |
+| All browser/desktop sessions and trusted-device cookies (everyone signs in fresh) | Password hashes, confirmed passkeys, and OIDC identity links |
+| Unused email 2FA codes, password-reset links, email-change links, and CLI recovery credentials | Sealed TOTP seeds (advanced to the restore timestamp to block code replay) and unused recovery codes |
+| Open sign-in challenges, passkey ceremonies, desktop handoffs, and pending OIDC cookies | Client-encrypted E2EE key backups (`AccountKeyBackups`), sealed Cockpit secrets (`keys/master.key` included in `keys/`), and host `instance-id` |
 
-### Restoring a partial or database-only backup
+*(Restoring a database without its matching `keys/master.key` leaves sealed secrets and TOTP seeds unreadable until cleared via `stellarr secrets clear` and re-enrolled.)*
 
-A standalone `.db` snapshot or an archive missing any of the four full-backup sections must be restored manually while the container is stopped:
+### Safeguards and edge cases
 
-1. Stop the container (`docker compose stop`) and back up the current contents of `/data/stellarr`.
-2. Copy the `.db` snapshot to `/data/stellarr/db/stellarr.db` and delete any existing `db/stellarr.db-wal` and `db/stellarr.db-shm` files.
-3. Restore `keys/` alongside `db/` so encrypted TOTP seeds and Cockpit secrets remain decryptable.
-4. Copy `objects/` into `/data/stellarr/files/`, preserving relative paths.
-5. Copy `instance/` into `/data/stellarr/`, preserving relative paths and `0600` owner-only permissions on `secrets/` and `tls/privkey.pem`.
-6. Start the container (`docker compose start`) and verify health and sign-in.
+| Condition | Safeguard |
+| --- | --- |
+| **Cancel before restart** | `docker compose exec stellarr stellarr backup cancel --yes` removes `restore/staged.zip`. |
+| **Outcome audit** | `/data/stellarr/restore/last-restore.json` records the result of the latest startup restore. |
+| **Corrupted staged archive** | Moved to `restore/refused-<timestamp>.zip`; live data stays intact and the container boots normally. |
+| **Interrupted swap + failed rollback** | Writes `/data/stellarr/restore/broken` and refuses to boot until an operator repairs `/data/stellarr` and removes `restore/broken`. |
+| **Disk headroom & sub-mounts** | `/data/stellarr` must fit live data + `staged.zip` + unpacked contents on one filesystem (separate sub-mounts like `/data/stellarr/files` require manual offline restore). |
+| **Release parity** | Restore onto the same Stellarr version that produced the archive. |
 
-## Consistency and recovery expectations
+### Manual offline restore (`.db` snapshots or sub-mounted volumes)
 
-- SQLite backups use the online backup API before enumerating object storage files. Attachments uploaded while a backup is in progress are not covered by a cross-system snapshot; missing referenced objects are recorded in `manifest.json` (and cause automatic backups to fail and retry).
-- Entry CRC-32 checksums and uncompressed byte lengths are verified both during `stellarr backup restore` staging and during `stellarr backup apply` extraction at startup.
-- A 24-hour backup interval yields a maximum data-loss window (RPO) of roughly 24 hours plus backup duration. Measure your recovery time (RTO) during a test restore drill.
+1. Run `docker compose stop` and archive the current `/data/stellarr` directory.
+2. Copy `stellarr.db` to `/data/stellarr/db/stellarr.db` and delete `stellarr.db-wal` and `stellarr.db-shm`.
+3. Copy `keys/` alongside `db/`, `objects/` into `/data/stellarr/files/`, and `instance/` into `/data/stellarr/` (keeping `0600` permissions on `keys/master.key`, `secrets/*`, and `tls/privkey.pem`).
+4. Run `docker compose start` and check `stellarr doctor`.

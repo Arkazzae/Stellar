@@ -1,6 +1,10 @@
 .git
 .idea
 .vscode
+.agents
+.claude
+**/AGENTS.md
+**/CLAUDE.md
 
 **/node_modules
 **/dist

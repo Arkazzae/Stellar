@@ -1,20 +1,43 @@
 # Reverse proxy and TLS
 
-By default, the container terminates TLS itself using an auto-generated 365-day self-signed certificate. For remote deployments, you can either mount your own CA-signed certificate into the container or terminate TLS on an external reverse proxy.
+Stellarr terminates TLS out of the box with an auto-renewing 365-day self-signed certificate. For remote deployments that require browser-trusted HTTPS (mandatory for WebRTC media capture, Service Workers, passkeys, and Web Push), choose one of two setups:
+
+1. **Mount a CA-signed certificate** into `/data/stellarr/tls` and expose container port `443/tcp` directly.
+2. **Terminate TLS on an external reverse proxy** (Caddy, Nginx, Nginx Proxy Manager) forwarding HTTP to `127.0.0.1:8888`.
+
+```mermaid
+flowchart LR
+    Browser["Browser"]
+    Proxy["External Reverse Proxy (:443 TLS)"]
+
+    subgraph Container["Stellarr Container"]
+        Nginx["Container Nginx (:80 HTTP / :443 TLS)"]
+        Api["stellarr-api (:5000)"]
+        SFU["stellarr-media (:49000 UDP + TCP)"]
+        Nginx --> Api
+    end
+
+    Browser -->|"HTTPS + WebSocket"| Proxy -->|"HTTP + X-Forwarded-* (127.0.0.1:8888)"| Nginx
+    Browser <-->|"Direct WebRTC SRTP (:49000 UDP/TCP — bypasses proxy)"| SFU
+```
+
+---
 
 ## Mount a custom TLS certificate
 
-The container takes the certificate chain and private key from `/data/stellarr/tls/` and installs private runtime copies for Nginx and coturn:
+Container Nginx and `coturn` read their certificate pair from `/data/stellarr/tls/`:
 
-| Container path | Contents |
+| Container path | Format |
 | --- | --- |
 | `/data/stellarr/tls/fullchain.pem` | PEM leaf certificate followed by intermediate CA certificates |
-| `/data/stellarr/tls/privkey.pem` | PEM private key |
+| `/data/stellarr/tls/privkey.pem` | Unencrypted PEM private key |
 
-CA-signed certificates are never overwritten by the container. On startup (`stellarr-tls-maintenance prepare`) and every 12 hours (`STELLARR_TLS_RENEW_CHECK_SECONDS`), the container verifies whether the certificate on disk is self-signed (matching `subject == issuer` and a valid self-signature via `openssl verify -check_ss_sig`, tracked by `/data/stellarr/tls/.stellarr-self-signed`). Self-signed RSA-3072 certificates (`DNS:<host>` or `IP:<host>` SAN) are regenerated automatically when expiring within 30 days (`STELLARR_TLS_RENEW_BEFORE_SECONDS`) or when `STELLARR_DOMAIN` changes, triggering `stellarr-init reload nginx` and, when TURN over TLS is active, `stellarr-init restart turn`. If an operator replaces a previously generated self-signed pair with a CA-signed pair, `.stellarr-self-signed` is removed automatically.
+Operator-mounted CA certificates are never overwritten. On boot (`stellarr-tls-maintenance prepare`) and every 12 hours (`STELLARR_TLS_RENEW_CHECK_SECONDS`), Stellarr checks whether the certificate on disk is container-managed (`.stellarr-self-signed` marker + `subject == issuer`). Unreadable or mismatched CA pairs exit with code `1`; CA certificates expiring within 7 days log a startup warning.
 
-1. Place `fullchain.pem` and `privkey.pem` in a directory next to `docker-compose.yml` (for example, `./certs/`).
-2. Create `docker-compose.override.yml` in the same directory:
+### Setup steps
+
+1. Place `fullchain.pem` and `privkey.pem` as regular files inside `./certs/` next to `docker-compose.yml`.
+2. Mount the directory read-only in `docker-compose.override.yml`:
 
    ```yaml
    services:
@@ -23,72 +46,65 @@ CA-signed certificates are never overwritten by the container. On startup (`stel
          - ./certs:/data/stellarr/tls:ro
    ```
 
-3. Set `STELLARR_DOMAIN` in `.env` to match the certificate's hostname, then recreate the container:
+3. Set `STELLARR_DOMAIN` in `.env` to match the certificate hostname and recreate the container:
 
    ```bash
    docker compose up -d
    ```
 
-4. Verify the served certificate chain:
+4. Verify the served chain (`Verify return code: 0 (ok)`):
 
    ```bash
-   echo | openssl s_client -connect chat.example.com:443 -servername chat.example.com 2>/dev/null | grep -E 'issuer=|Verify return code'
+   echo | openssl s_client -connect chat.example.com:443 -servername chat.example.com 2>/dev/null \
+     | grep -E 'issuer=|Verify return code'
    ```
 
-   Confirm that `issuer=` shows your CA and the output ends with `Verify return code: 0 (ok)`.
-
-If a mounted CA-signed certificate is unreadable or does not match `privkey.pem`, the container logs an error and exits with status `1`. If a mounted CA-signed certificate expires within 7 days, startup logs a warning.
-
 > [!WARNING]
-> Mount the directory (`./certs:/data/stellarr/tls:ro`), not individual files. Single-file bind mounts retain the original file inode when host tools atomically replace certificate files, preventing renewals from reaching the container. Also ensure the directory contains regular files rather than symlinks pointing outside the mount (for Certbot `live/`, copy files with `cp -L` in a deploy hook).
+> Bind-mount the **directory** (`./certs:/data/stellarr/tls:ro`), never individual `.pem` files—single-file bind mounts pin the old inode across atomic renewals. For Certbot `live/` symlinks, copy dereferenced files (`cp -L`) into `./certs/` via a renewal deploy hook.
 
 ### Reloading after certificate renewal
 
-After updating the mounted files, install the new runtime pair and reload Nginx. If TURN is enabled, restart `turn` as well. The mounted certificate directory belongs to the operator and is excluded from instance backups and restores.
-
 ```bash
 docker compose exec stellarr stellarr-init reload nginx
-docker compose exec stellarr stellarr-init restart turn
+docker compose exec stellarr stellarr-init restart turn   # only if TURN is enabled
 ```
 
-Run `docker compose exec stellarr stellarr-init status` to confirm the enabled services report `ready`. See [Container services](../architecture.md#container-services-stellarr-init).
-
-> [!NOTE]
-> `coturn` does not reload TLS certificates on `SIGHUP`, so restarting `turn` drops active TURN relay allocations and causes relayed voice participants to briefly reconnect.
+Verify service readiness with `docker compose exec stellarr stellarr-init status` (see [Container services](../architecture.md#container-services-stellarr-init)). Note that `coturn` cannot reload TLS certificates on `SIGHUP`, so restarting `turn` briefly reconnects relayed voice callers.
 
 ### TURN over TLS (`turns:`)
 
-With optional TURN enabled, setting `STELLARR_TURNS_ENABLED=true` enables TURN over TLS/DTLS on `STELLARR_TURNS_PORT` (`5349` by default) using `/data/stellarr/tls/fullchain.pem` and `privkey.pem`. Browsers reject self-signed certificates on `turns:` connections, so enable `STELLARR_TURNS_ENABLED` only when mounting a CA-signed certificate directly into the container.
+When optional TURN is enabled, `STELLARR_TURNS_ENABLED=true` serves TURN over TLS/DTLS on `STELLARR_TURNS_PORT` (`5349` default) using `/data/stellarr/tls/{fullchain,privkey}.pem`. Enable `STELLARR_TURNS_ENABLED` **only** with a browser-trusted CA certificate; browsers silently reject self-signed certificates on `turns:` candidates.
+
+---
 
 ## Run behind a reverse proxy
 
-When an external reverse proxy terminates TLS on port `443` and forwards HTTP to the container's HTTP port (`8888` by default), configure `.env`:
+When Caddy or Nginx owns public port `443/tcp` and forwards plain HTTP to Stellarr's loopback port (`127.0.0.1:8888`), set `.env` as follows:
 
 ```dotenv
 STELLARR_DOMAIN=chat.example.com
 STELLARR_PUBLIC_PORT=443
 STELLARR_HTTPS_PORT=8443
 STELLARR_HTTP_PORT=127.0.0.1:8888
+STELLARR_TRUSTED_PROXIES=<proxy-ip-seen-by-container>
 ```
 
-The proxy owns public port `443`. Move the container’s HTTPS mapping to `8443` to avoid a bind conflict and keep it outside the router forwarding rules. The loopback HTTP binding keeps port `8888` private.
-
-Set `STELLARR_TRUSTED_PROXIES` to the proxy addresses or CIDR ranges as seen by the container. A proxy on the Docker host may appear as the bridge gateway even when it connects to the published loopback port.
+Moving `STELLARR_HTTPS_PORT` to `8443` frees host port `443` for your proxy, while `127.0.0.1:8888` keeps unencrypted HTTP off external interfaces.
 
 ### Proxy requirements
 
 | Requirement | Reason |
 | --- | --- |
-| `X-Forwarded-Proto: https` | Nginx honors it from loopback or a listed proxy and passes it to the API for secure cookies. |
-| Preserve `Host` (`$http_host`) | Used as the fallback origin when `STELLARR_PUBLIC_URL` is unset and for `/.well-known/stellarr/client` discovery. |
-| Append client IP to `X-Forwarded-For` | Lets the API resolve real client IPs once the proxy is listed in `STELLARR_TRUSTED_PROXIES`. |
-| Forward `Upgrade` and `Connection` headers | Required for `stellarr.v1` WebSocket connections under `/hubs/app` (keep `Origin` intact as well). |
-| Allow request bodies up to `128 MiB` | Video uploads can be up to `100 MiB`; container Nginx and the API allow up to `128 MiB`. |
-| Read timeout above `20 s` | The realtime hub sends keep-alives every `15 s` and WebSockets ping every `20 s`. |
+| `X-Forwarded-Proto: https` | Prevents HTTPS redirect loops in container Nginx and enables `Secure` session cookies in the API. |
+| Preserve `Host` (`$http_host`) | Supplies the fallback origin and `/.well-known/stellarr/client` discovery host. |
+| Append client IP to `X-Forwarded-For` | Lets the API extract real client IPs once the proxy is listed in `STELLARR_TRUSTED_PROXIES`. |
+| Forward `Upgrade`, `Connection`, and `Origin` | Required for `stellarr.v1` WebSocket upgrades on `/hubs/app`. |
+| Max request body `≥ 128 MiB` | Video uploads reach `100 MiB`; container Nginx and the API allow up to `128 MiB`. |
+| Read timeout `> 20 s` | The realtime hub sends keep-alives every `15 s` and WebSocket pings every `20 s`. |
 
 ### Example: Caddy
 
-Caddy provisions and renews TLS certificates automatically, forwards WebSocket upgrades and `X-Forwarded-*` headers by default, and needs only a body-size ceiling for video uploads:
+Caddy handles automatic ACME TLS, `X-Forwarded-*`, and WebSockets by default; raise only the request body ceiling:
 
 ```txt
 chat.example.com {
@@ -99,11 +115,11 @@ chat.example.com {
 }
 ```
 
-If Caddy runs in the same Docker network as Stellarr, proxy to `stellarr:80` instead of `127.0.0.1:8888`. Remember to list Caddy's connecting IP in `STELLARR_TRUSTED_PROXIES` (see [Client addresses](#client-addresses)).
+*(If Caddy shares a Docker network with Stellarr, proxy to `stellarr:80` instead.)*
 
 ### Example: Nginx
 
-Place the `map` block in the `http` context:
+Place the `map` block inside `http {}`:
 
 ```nginx
 map $http_upgrade $connection_upgrade {
@@ -113,7 +129,9 @@ map $http_upgrade $connection_upgrade {
 
 server {
     listen 443 ssl;
+    http2 on;
     server_name chat.example.com;
+
     ssl_certificate     /etc/ssl/chat.example.com/fullchain.pem;
     ssl_certificate_key /etc/ssl/chat.example.com/privkey.pem;
     client_max_body_size 128m;
@@ -131,52 +149,38 @@ server {
 }
 ```
 
-If the reverse proxy runs in the same Docker network, proxy to `http://stellarr:80` instead of `http://127.0.0.1:8888`.
+*(If Nginx shares a Docker network with Stellarr, use `proxy_pass http://stellarr:80;`.)*
 
-Verify the proxy setup by running `curl https://chat.example.com/health` (returns `{"status":"ready"}`) and confirming in browser DevTools that `/hubs/app` upgrades with HTTP `101 Switching Protocols`.
+Verify with `curl https://chat.example.com/health` (`{"status":"ready"}`) and confirm `/hubs/app` returns `101 Switching Protocols` in browser DevTools.
+
+---
 
 ### Client addresses
 
-Behind a reverse proxy, every TCP connection to the container originates from the proxy's IP address. Until you list that proxy in `STELLARR_TRUSTED_PROXIES`:
+Until your proxy's connecting IP is listed in `STELLARR_TRUSTED_PROXIES`:
 
-- Active sessions, security events, and trusted devices record the proxy's IP instead of each user's IP.
-- Every user shares a single per-IP rate-limit bucket, allowing repeated failed logins from one user to rate-limit everyone.
+- Active sessions, security events, and trusted devices log the proxy's IP instead of the user's IP.
+- Every visitor shares a single per-IP rate-limit bucket, allowing failed logins from one user to throttle the entire instance.
 
-Set `STELLARR_TRUSTED_PROXIES` to the IPv4/IPv6 addresses or CIDR networks of the proxies connecting to the container (comma- or space-separated):
+#### How IP extraction works
 
-```dotenv
-STELLARR_TRUSTED_PROXIES=172.18.0.5
-```
+Container Nginx appends the immediate TCP peer to `X-Forwarded-For`, and the API walks that list **right-to-left**, skipping addresses matched by `STELLARR_TRUSTED_PROXIES`. The first untrusted address becomes the client IP—spoofed values injected by clients on the left are ignored as long as your proxy **appends** (`$proxy_add_x_forwarded_for`) rather than overwriting or passing raw client headers. Include outer CDN/load-balancer CIDRs when chained in front of your proxy.
 
-How client IP resolution works:
+#### Finding and pinning the proxy IP
 
-- Container Nginx appends the immediate peer address to `X-Forwarded-For`, and the API walks that header from **right to left**, skipping any address matched by `STELLARR_TRUSTED_PROXIES`. The first non-trusted IP becomes the client address.
-- Your proxy must **append** the connecting client IP (as Nginx `$proxy_add_x_forwarded_for` does) rather than forwarding an untrusted `X-Forwarded-For` header unchanged. Spoofed headers sent by the client sit to the left and are ignored.
-- If an upstream CDN or outer load balancer sits in front of your reverse proxy, include its CIDR ranges in `STELLARR_TRUSTED_PROXIES` as well.
-- Invalid entries (hostnames, CIDR ranges with non-zero host bits such as `10.0.0.1/24`, or `0.0.0.0/0`) abort API startup.
-
-#### Finding and pinning the proxy address
-
-| Proxy placement | Address seen by the container |
+| Proxy placement | Connecting IP seen by Stellarr |
 | --- | --- |
-| Container on the same Docker network (`http://stellarr:80`) | The proxy container's IP on that Docker network |
-| Host process or container on another network connecting via `127.0.0.1:8888` | The gateway IP of Stellarr's Docker network |
+| Container on the same Docker network (`http://stellarr:80`) | The proxy container's Docker network IP |
+| Host process or separate bridge reaching `127.0.0.1:8888` | The gateway IP of Stellarr's Docker bridge |
 
-To inspect the gateway IP of Compose's network:
+Inspect the gateway IP of Compose's network, or sign in once through the proxy with `STELLARR_TRUSTED_PROXIES` unset and check the recorded session IP:
 
 ```bash
 docker network inspect stellarr_default --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'
-```
-
-Or check empirically: leave `STELLARR_TRUSTED_PROXIES` empty, sign in through the proxy, and run:
-
-```bash
 docker compose exec stellarr stellarr sessions list --user <your-username>
 ```
 
-The newest session lists the connecting IP (`from 172.18.0.5`). Set `STELLARR_TRUSTED_PROXIES` to that address, run `docker compose up -d`, sign in again, and confirm the new session records your real client IP.
-
-Because Docker assigns container IPs and network subnets dynamically across network recreations (`docker compose down`), assign a static `ipv4_address` to your proxy container or pin the Compose network subnet in `docker-compose.override.yml` (then run `docker compose down && docker compose up -d`):
+Because Docker bridge subnets can shift across `docker compose down`, pin either a static `ipv4_address` on a shared Docker network or a fixed subnet in `docker-compose.override.yml`:
 
 ```yaml
 networks:
@@ -187,11 +191,13 @@ networks:
 ```
 
 > [!WARNING]
-> Trust only the specific proxy IP whenever possible. Trusting the Docker bridge gateway trusts every connection arriving through Docker's host port forwarding, including other local processes or containers. On Docker Desktop (macOS and Windows), forwarded connections may arrive from the bridge gateway or `192.168.65.1`; avoid trusting broad gateway ranges on shared machines.
+> Prefer a shared Docker bridge with a pinned proxy container IP over trusting the Docker bridge gateway—trusting the bridge gateway trusts every local process or container reaching Stellarr via host port forwarding.
+
+---
 
 ## What bypasses the HTTP reverse proxy
 
-An HTTP reverse proxy forwards HTTP and WebSocket traffic. The SFU’s public media address must be reachable on `49000/udp` and `49000/tcp` directly. ICE-TCP on that port is raw WebRTC traffic. Forward relay ports separately if TURN is enabled.
+HTTP reverse proxies forward HTTPS and WebSocket signaling (`443/tcp`) only. Voice, video, and screen-share packets connect **directly** to `stellarr-media` on `49000/udp` and `49000/tcp` (raw RFC 4571 ICE-TCP, not HTTP).
 
 > [!IMPORTANT]
-> Publish both media transports on the Docker host and forward them on your router for internet access behind NAT. If `STELLARR_DOMAIN` points to an HTTP-only CDN or tunnel, use `STELLARR_PUBLIC_IP` or `STELLARR_MEDIA_ADVERTISE` to advertise an IPv4 address reachable on the media port. See the port tables in [Requirements](requirements.md#ports) and [RTC and ports](../rtc-and-ports.md#published-host-ports).
+> Always publish and router-forward `49000/udp` and `49000/tcp` directly to the Docker host (plus TURN ports if enabled). If `STELLARR_DOMAIN` sits behind an HTTP-only CDN or proxy (such as Cloudflare orange-cloud), set `STELLARR_PUBLIC_IP` to the host's real WAN IPv4 address so browsers never send WebRTC traffic to the CDN IP. See [Requirements: Ports](requirements.md#ports) and [RTC and ports](../rtc-and-ports.md#published-host-ports).

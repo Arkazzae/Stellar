@@ -1,48 +1,35 @@
 # Activity notifications
 
-Stellarr can notify users about **channel mentions** (`@username`) and **direct messages** over **email** and **Web Push** when they opt in under **Settings → Notifications**.
+Users can opt into **email** and **Web Push** notifications for **channel mentions** (`@username`) and **direct messages** under **Settings → Notifications**. Preferences are evaluated when a message is posted; opting in later never backfills alerts for older messages.
 
-Notification preferences are evaluated at the moment a message is posted. Enabling notifications later does not queue alerts for historical messages.
+## Zero-metadata privacy model
 
-## Privacy design
+External mail relays and browser push services never see conversation metadata or message contents:
 
-Notifications are designed so external email relays and browser push providers never see private conversation metadata or message content:
-
-- **Zero conversation content**: Emails and Web Push payloads omit sender names, server names, channel names, and message text (including for both unencrypted and end-to-end encrypted direct messages).
-- **Generic localized copy**: Notification text uses the instance language (`STELLARR_LANGUAGE`, `en` or `pl`) and keeps names and message text private. Email links open the instance root. A push carries an opaque delivery ID that the signed-in app resolves on the instance:
+- **Opaque payloads:** Both email and Web Push omit sender names, server/channel names, and message text (for standard and E2EE conversations alike), using fixed localized copy (`STELLARR_LANGUAGE`):
   - Mention: *"Someone mentioned you in a channel. Open Stellarr to read it."*
   - Direct message: *"You have a new direct message. Open Stellarr to read it."*
-- **Self-contained email rendering**: Outgoing HTML emails use Stellarr's dark *Midnight* template (`api/crates/mail/src/layout.rs`) with inline CID PNG attachments (`lockup.png`, `mention.png`, `direct-message.png`), making zero external image or font requests when opened in a mail client.
-- **No PII in logs**: Push endpoints, P-256DH/auth keys, recipient email addresses, and message contents are never written to application logs.
+- **Self-contained HTML mail:** Uses Stellarr's *Midnight* template (`api/crates/mail/src/layout.rs`) with inline CID PNG icons—zero external image or font fetches when opened in a mail client.
+- **Redacted logs:** Recipient emails, push endpoints, P-256DH/auth keys, and message text are never logged.
 
 ## Email notifications
 
-Email notifications require:
+Requires two conditions:
 
-- **Instance setup**: Working mail transport (SMTP configured in **Cockpit → Settings**, or Resend enabled under **Cockpit → Integrations**).
-- **User setup**: Email notifications toggled on in **Settings → Notifications**, plus a confirmed email second-factor method on the user's current email address.
+1. **Instance mail transport:** Configured via SMTP (**Cockpit → Settings**) or Resend (**Cockpit → Integrations**), independent of `mail.alerts.enabled`.
+2. **Verified user email:** Email notifications enabled in **Settings → Notifications** plus a confirmed email 2FA method on the account's current email address.
 
-> [!NOTE]
-> Activity notification emails use the instance's mail transport whenever users opt in, independently of the security-alert email switch (`mail.alerts.enabled`). Server invitations continue using in-app notifications.
+---
 
 ## Web Push
 
-Web Push delivers notifications through the browser's push service (`web/public/stellarr-worker.js`) even when all Stellarr tabs are closed. Each received push displays a system notification, including when a Stellarr window has focus. Opening it takes the signed-in recipient to the DM or channel message after the server checks current access. Deleted or inaccessible targets open the notifications inbox.
+Web Push wakes `web/public/stellarr-worker.js` to display system notifications even when Stellarr tabs are closed, updates the installed PWA's unread badge (counting unread DMs + unread inbox `@mentions` across accessible channels), and deep-links straight to the target message after checking current server access.
 
-The installed app counts unread direct messages and unread inbox mentions across the channels the account can access. Opening the app or receiving a push refreshes the count from the instance. On iOS, displaying a number on the Home Screen requires notification permission. Android launchers can show an indicator for outstanding system notifications.
-
-Web Push remains disabled until you configure a persistent VAPID key pair in `.env` and users opt in under **Settings → Notifications**.
-
-Check **Cockpit → Integrations → Web Push** for the instance's VAPID configuration status. On iPhone and iPad, first add the instance to the Home Screen, launch it from its icon, then enable push for the account and enroll the device in **Settings → Notifications**.
+Check VAPID readiness in **Cockpit → Integrations → Web Push**. On iPhone and iPad, install the site via **Share → Add to Home Screen** first, open it from the Home Screen icon, and enroll the device under **Settings → Notifications**.
 
 ### 1. Generate a persistent VAPID key pair
 
-Generate **one** P-256 VAPID key pair per installation and store it with your instance secrets.
-
-> [!WARNING]
-> Never regenerate VAPID keys across container restarts. Browsers bind push subscriptions to the application server's public key; changing the key invalidates all existing browser subscriptions until users re-subscribe.
-
-Using OpenSSL:
+Generate **one** P-256 key pair per installation (`npx web-push generate-vapid-keys`, or with OpenSSL below):
 
 ```bash
 openssl ecparam -name prime256v1 -genkey -noout -out vapid-private.pem
@@ -57,11 +44,14 @@ priv_hex="$(openssl ec -in vapid-private.pem -text -noout 2>/dev/null \
 printf '%s' "$priv_hex" | xxd -r -p | base64 -w0 | tr '+/' '-_' | tr -d '='
 ```
 
-*(On macOS BSD `base64`, omit `-w0`, or generate a key pair with `npx web-push generate-vapid-keys`.)*
+*(On macOS BSD `base64`, omit `-w0`.)*
 
-### 2. Configure environment variables
+> [!WARNING]
+> Never rotate VAPID keys across restarts unless intentionally invalidating subscriptions—browsers bind push endpoints to the server's public key and stop receiving pushes until users re-subscribe.
 
-Add the VAPID configuration to `.env` (see [Configuration: Web Push](../install/configuration.md#web-push)) and recreate the container with `docker compose up -d`:
+### 2. Enable in `.env`
+
+Add the keys to `.env` ([Configuration: Web Push](../install/configuration.md#web-push)) and run `docker compose up -d`:
 
 ```dotenv
 STELLARR_PUSH_ENABLED=true
@@ -70,51 +60,32 @@ STELLARR_PUSH_PUBLIC_KEY=YOUR_PUBLIC_KEY
 STELLARR_PUSH_PRIVATE_KEY=YOUR_PRIVATE_KEY
 ```
 
-If keys are missing, malformed, or mismatched, the container boots normally and reports Web Push as unavailable in **Settings → Notifications**.
+Missing or mismatched VAPID keys never block container startup; Web Push simply reports as unavailable in **Settings → Notifications**.
 
-> [!NOTE]
-> Browsers require a secure context (`https://` or `http://localhost`) for Service Workers and Web Push. Configure `STELLARR_DOMAIN` or `STELLARR_PUBLIC_URL` so notification links target your public instance origin.
+### Subscription security and status codes
 
-### Subscription limits and security
-
-| Property | Limit / Rule |
+| Rule / Upstream HTTP status | Behavior |
 | --- | --- |
-| Subscriptions per account | Maximum 10 active browser subscriptions (`PUT`/`DELETE /api/me/push-subscriptions`; status via `GET /api/me/notification-delivery`). |
-| Ownership and session binding | Bound to both the user account and the active sign-in session. Endpoint conflicts across accounts or active sessions return `409`; once an older session ends, the same account can re-register that endpoint from a new session. |
-| Endpoint validation | Must be an absolute `https://` URL on port `443` with no credentials or fragments. Loopback, link-local, and private IP ranges are blocked before connecting, HTTP redirects are rejected, and outbound proxies/cookies are disabled. |
-| Payload format | RFC 8291 encrypted camelCase JSON (`id`, `title`, `body`, `url`, `tag`), capped at `3072` UTF-8 bytes before encryption, `300 s` TTL. |
-
-### Push service status handling
-
-| Response | Action |
-| --- | --- |
+| **Per-account limit & binding** | Max `10` active browser subscriptions per account, bound to both the account and active sign-in session (`409` on cross-account/session conflict). |
+| **SSRF protection** | Endpoints must use `https://` on port `443` without credentials/fragments; private/loopback/link-local IPs and HTTP redirects are rejected. |
+| **Payload envelope** | RFC 8291 encrypted JSON (`id`, `title`, `body`, `url`, `tag`), `≤ 3072` UTF-8 bytes plaintext, `300 s` TTL. |
 | `2xx` | Marked delivered. |
-| `404`, `410` | Subscription deleted (`Gone`); delivery not retried. |
-| `408`, `425`, `429`, `5xx`, timeout, network error | Retried with exponential backoff (up to 5 attempts). |
-| `401`, `403` | Retried up to the attempt cap; indicates a VAPID key/subject mismatch rather than an expired browser subscription. |
-| Other `4xx` (e.g. `400`, `413`), `3xx` redirect | Retried up to the attempt cap without deleting the subscription. |
+| `404`, `410` | Subscription deleted immediately (`Gone`); not retried. |
+| `408`, `425`, `429`, `5xx`, network timeout | Retried with exponential backoff (`2 min` to `1 h`, max `5` attempts). |
+| `401`, `403`, other `4xx`, `3xx` | Retried up to `5` attempts without deleting the subscription (`401`/`403` signals a VAPID config mismatch). |
 
-## Delivery, cancellation, and retries
+---
 
-Pending deliveries are persisted in SQLite (`NotificationDeliveries`) and processed asynchronously every `30 s` by the `notification-delivery` worker (`api/crates/server/src/delivery/dispatcher.rs`) with **at-least-once** semantics: one row for the user's verified email address and one row per active Web Push subscription. Each pass leases up to `25` due rows (`10 s` timeout per push request, `15 s` per mail request) and connects exclusively to public IP addresses.
+## Dispatcher, pre-send checks, and retries
 
-### Pre-send checks
+The `notification-delivery` worker (`api/crates/server/src/delivery/dispatcher.rs`) polls `NotificationDeliveries` every `30 s` in batches of `25` (`10 s` push timeout, `15 s` mail timeout, at-least-once delivery with idempotency keys and matching notification `tag` deduplication).
 
-Immediately before calling an email or push provider, the dispatcher re-checks live database state and cancels the delivery silently if:
+Immediately before dispatching each row, the worker re-evaluates live SQLite state and cancels silently when any condition holds:
 
-- The user disabled notifications or the account was disabled
-- The triggering message was deleted, or an edit removed the `@mention`
-- Either user blocked the other, the channel was deleted, or the recipient lost channel view permissions
-- The recipient muted the channel or already read past the message
-- For direct messages: the recipient is no longer a participant or no longer accepts DMs from the sender
-- For email: the recipient's email address changed or their email second factor was revoked
-- For Web Push: the subscription's sign-in session expired, was revoked, or its `SecurityVersion` changed
+- Recipient disabled notifications, muted the channel, already read past the message, or had their account disabled.
+- Message was deleted, edited to remove `@username`, or resides in a deleted/inaccessible channel (`viewChannel` lost).
+- Either user blocked the other, or the DM conversation no longer admits messages between them.
+- **Email only:** Recipient's email changed or email 2FA method was removed (missing mail transport defers up to `1 h` without burning retry attempts).
+- **Web Push only:** Bound sign-in session expired, was revoked, or changed `SecurityVersion`.
 
-### Retry limits
-
-| Rule | Value |
-| --- | --- |
-| Retry attempts | Up to 5 attempts with exponential backoff from 2 minutes to 1 hour |
-| Missing mail transport | Email deliveries defer for up to 1 hour without consuming provider attempts |
-| Expiration and pruning | Undelivered items expire after 7 days; completed/cancelled rows are pruned after 30 days |
-| Deduplication | Emails pass a stable idempotency key (`activity-notification/<id>`). Web Push payloads carry a matching `tag` so the browser replaces any existing notification for the same event |
+Undelivered rows expire after `7` days; completed and cancelled rows are pruned after `30` days.
