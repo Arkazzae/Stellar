@@ -70,6 +70,7 @@ export interface VoiceControlBarProps {
   onToggleCamera: () => void;
   onSelectMicrophone: () => void;
   onSelectCamera: () => void;
+  onOpenActivities?: () => void;
   onToggleShare: () => void;
   /** Absent where the call has no soundboard, which is a private one. */
   onPlaySound?: (soundId: string) => void;
@@ -112,6 +113,7 @@ export function VoiceControlBar({
   onToggleCamera,
   onSelectMicrophone,
   onSelectCamera,
+  onOpenActivities,
   onToggleShare,
   onPlaySound,
   onInvite,
@@ -227,7 +229,13 @@ export function VoiceControlBar({
               )}
             />
           </div>
-          {/* A narrow bar keeps only the camera in this pill; "more" has the rest. */}
+          {onOpenActivities && (
+            <button type="button" className="vc-btn vc-activities" aria-haspopup="dialog"
+              aria-label={t("friends.tabActivities")} title={t("friends.tabActivities")} onClick={onOpenActivities}>
+              <Icon name="game" size={20} />
+              <span>{t("friends.tabActivities")}</span>
+            </button>
+          )}
           <div className="vc-ctl vc-wide-only">
             <button
               type="button"

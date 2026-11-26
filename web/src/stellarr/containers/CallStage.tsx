@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 
 import { VoiceControlBar } from "@/components/voice/VoiceControlBar";
 import { VoiceStage } from "@/components/voice/VoiceStage";
@@ -24,6 +24,7 @@ interface CallStageProps {
 /** The call's own view of the room: who is in it, what is shared, and the controls. */
 export function CallStage({ fullscreenTarget }: CallStageProps) {
   const voice = useVoice();
+  const [pickerOpen, setPickerOpen] = useState(false);
   const ui = useUi();
   const profile = useProfile();
   const { user } = useSession();
@@ -46,8 +47,15 @@ export function CallStage({ fullscreenTarget }: CallStageProps) {
   return (
     <>
       <VoiceProblemNotice />
-      {joinedChannelId && <InstalledActivities key={joinedChannelId} channel={joinedChannelId}
-        muted={voice.state.muted} cameraOn={voice.call?.cameraOn} />}
+      {joinedChannelId && (
+        <InstalledActivities
+          channel={joinedChannelId}
+          pickerOpen={pickerOpen}
+          onClosePicker={() => setPickerOpen(false)}
+          muted={voice.state.muted}
+          cameraOn={voice.call?.cameraOn}
+        />
+      )}
       {import.meta.env.DEV && typeof __ACTIVITY_PREVIEW__ !== "undefined" &&
         __ACTIVITY_PREVIEW__ && joinedChannelId &&
         <ActivityDevPreview key={"preview-" + joinedChannelId} channel={joinedChannelId} muted={voice.state.muted} cameraOn={voice.call?.cameraOn} />}
@@ -92,6 +100,7 @@ export function CallStage({ fullscreenTarget }: CallStageProps) {
         onToggleCamera={voice.toggleCamera}
         onSelectMicrophone={openDeviceSettings}
         onSelectCamera={openDeviceSettings}
+        onOpenActivities={joinedChannelId ? () => setPickerOpen(true) : undefined}
         onToggleShare={voice.toggleShare}
         onPlaySound={voice.playSound}
         onInvite={canManageServer ? () => ui.openModal("invite") : undefined}
