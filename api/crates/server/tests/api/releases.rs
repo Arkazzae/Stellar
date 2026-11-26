@@ -655,6 +655,21 @@ fn insert_operations(connection: &Connection, server: &str, minimum: Option<&str
 }
 
 #[tokio::test]
+async fn the_installed_web_app_keeps_its_product_name_on_a_named_server() {
+    let server = Server::start().await;
+    insert_server(&server, "Orbit", "2026-11-24 00:33:18", "3D82DA44-8AA5-4BDF-9EE1-2902DF99880C");
+
+    let response = server.anonymous().get("/api/client/manifest.webmanifest").await;
+
+    assert_eq!(response.status, 200);
+    assert_eq!(response.header("content-type"), Some("application/manifest+json"));
+    let manifest: Value = response.json();
+    assert_eq!(manifest["name"], "Stellarr");
+    assert_eq!(manifest["short_name"], "Stellarr");
+    assert_eq!(manifest["id"], "/");
+}
+
+#[tokio::test]
 async fn an_unconfigured_instance_introduces_itself_by_its_server_and_the_request() {
     let server = Server::start().await;
     insert_server(&server, "Orbit", "2026-11-24 00:33:18", "3D82DA44-8AA5-4BDF-9EE1-2902DF99880C");
