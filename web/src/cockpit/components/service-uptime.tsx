@@ -1,8 +1,8 @@
 import { cx } from "@stellarr/ui";
 import type { ReactNode } from "react";
 
-import { getLocale, t, type MessageKey } from "../i18n";
-import { formatNumber } from "../i18n/format";
+import { t, type MessageKey } from "../i18n";
+import { formatNumber, formatTime } from "../i18n/format";
 import { MINUTE_MS, SLOTS, uptimeShare, type SlotState } from "../lib/uptime";
 
 const SLOT_CLASS: Record<SlotState, string> = {
@@ -16,10 +16,6 @@ const SLOT_LABEL: Record<SlotState, MessageKey> = {
   down: "dashboard.uptime.slotDown",
   none: "dashboard.uptime.slotNone",
 };
-
-function clock(at: number): string {
-  return new Date(at).toLocaleTimeString(getLocale() === "pl" ? "pl-PL" : "en-GB", { hour: "2-digit", minute: "2-digit" });
-}
 
 interface ServiceUptimeProps {
   name: string;
@@ -53,7 +49,7 @@ export function ServiceUptime({ name, detail, states, end, badge }: ServiceUptim
           return (
             <span
               key={index}
-              title={t(SLOT_LABEL[state], { time: clock(at) })}
+              title={t(SLOT_LABEL[state], { time: formatTime(at) })}
               className={cx("min-w-0 flex-1 rounded-xs", SLOT_CLASS[state])}
             />
           );

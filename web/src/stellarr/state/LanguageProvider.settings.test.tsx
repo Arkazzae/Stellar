@@ -17,7 +17,7 @@ type Actions = Record<string, (language: LanguageValue) => void>;
 /** Prints the current settings and offers one button per named action. */
 function Probe({ actions = {} }: { actions?: Actions }) {
   const language = useLanguage();
-  const { text, t } = language;
+  const { t } = language;
   const settings: LanguageSettings = {
     locale: language.locale,
     chatTranslationEnabled: language.chatTranslationEnabled,
@@ -27,7 +27,6 @@ function Probe({ actions = {} }: { actions?: Actions }) {
   return (
     <div>
       <output aria-label="settings">{JSON.stringify(settings)}</output>
-      <output aria-label="text">{text("Cześć", "Hello")}</output>
       <output aria-label="message">{t("settings.language.title")}</output>
       {Object.entries(actions).map(([name, run]) => (
         <button key={name} type="button" onClick={() => run(language)}>
@@ -63,7 +62,6 @@ describe("useLanguage without a provider", () => {
 
     await user.click(screen.getByRole("button", { name: "switch" }));
 
-    expect(screen.getByLabelText("text")).toHaveTextContent("Cześć");
     expect(screen.getByLabelText("message")).toHaveTextContent("Język");
     expect(shownSettings()).toMatchObject({ locale: "pl", chatTranslationEnabled: false });
   });
@@ -89,7 +87,6 @@ describe("LanguageProvider settings", () => {
       </LanguageProvider>,
     );
 
-    expect(screen.getByLabelText("text")).toHaveTextContent("Hello");
     expect(screen.getByLabelText("message")).toHaveTextContent("Language");
     expect(document.documentElement.dataset.locale).toBe("en");
   });
@@ -143,7 +140,7 @@ describe("LanguageProvider settings", () => {
   it.each([
     ["unparseable text", "{not json"],
     ["null", "null"],
-    ["unsupported values", JSON.stringify({ locale: "de", chatTranslationTargetLanguage: "fr" })],
+    ["unsupported values", JSON.stringify({ locale: "qaa-Test", chatTranslationTargetLanguage: "fr" })],
   ])("falls back to defaults for %s in storage", async (_name, raw) => {
     window.localStorage.setItem(STORAGE_KEY, raw);
     render(

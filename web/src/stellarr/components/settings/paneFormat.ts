@@ -1,14 +1,12 @@
+import { locales, mapLocales } from "../../../i18n/locales";
 import type { InterfaceLocale, MessageKey, Translator } from "@/i18n";
 import { pluralForm } from "@/lib/format/format";
 
-const SHORT_DATE: Record<InterfaceLocale, Intl.DateTimeFormat> = {
-  pl: shortDateFormat("pl-PL"),
-  en: shortDateFormat("en-GB"),
-};
-
-function shortDateFormat(tag: string): Intl.DateTimeFormat {
-  return new Intl.DateTimeFormat(tag, { day: "numeric", month: "2-digit", year: "numeric" });
-}
+const SHORT_DATE = mapLocales((locale) => new Intl.DateTimeFormat(locales[locale].tag, {
+  day: "numeric",
+  month: "2-digit",
+  year: "numeric",
+}));
 
 /** "6.03.2026" in Polish, "6/03/2026" in English; "" for a date that does not parse. */
 export function formatShortDate(iso: string, locale: InterfaceLocale): string {

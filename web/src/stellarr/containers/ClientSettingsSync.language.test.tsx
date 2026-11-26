@@ -104,7 +104,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  vi.doUnmock("@/i18n/messages/pl");
+  vi.doUnmock("../../../.locales/web/pl.json");
 });
 
 describe("the account's language on a page without its catalog", () => {
@@ -112,9 +112,9 @@ describe("the account's language on a page without its catalog", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    vi.doMock("@/i18n/messages/pl", async () => {
+    vi.doMock("../../../.locales/web/pl.json", async () => {
       await gate;
-      return await vi.importActual<object>("@/i18n/messages/pl");
+      return await vi.importActual<object>("../../../.locales/web/pl.json");
     });
     await signInOnEnglishDevice();
 
@@ -130,7 +130,7 @@ describe("the account's language on a page without its catalog", () => {
   });
 
   it("sends nothing back when the catalog never comes", async () => {
-    vi.doMock("@/i18n/messages/pl", () => {
+    vi.doMock("../../../.locales/web/pl.json", () => {
       throw new Error("Failed to fetch dynamically imported module");
     });
     await signInOnEnglishDevice();
@@ -151,7 +151,7 @@ describe("the account's language on a page without its catalog", () => {
       },
       voiceSettings: new VoiceSettingsStore(null),
     };
-    vi.doMock("@/i18n/messages/pl", () => {
+    vi.doMock("../../../.locales/web/pl.json", () => {
       throw new Error("Failed to fetch dynamically imported module");
     });
     const { pickPolish } = await signInOnEnglishDevice();

@@ -31,7 +31,7 @@ import {
 } from "./documents";
 import { RELEASE_PATH } from "./release";
 import { THEME_SCRIPT } from "./src/stellarr/design/themeScript";
-import { SUPPORTED_LOCALES, translateMessage } from "./src/stellarr/i18n";
+import { locales, mapLocales, SUPPORTED_LOCALES } from "./src/i18n/locales";
 import { LANGUAGE_SETTINGS_KEY } from "./src/stellarr/i18n/defaultLocale";
 import {
   INSTANCE_LANGUAGE_GLOBAL,
@@ -146,7 +146,7 @@ describe("the web client's document", () => {
 
   it("puts the description before the script that translates it", () => {
     expect(head.indexOf('<meta name="description"')).toBeLessThan(head.indexOf(LOCALE_SCRIPT));
-    expect(head).toContain(`content="${translateMessage("en", "app.description")}"`);
+    expect(head).toContain(`content="${locales.en.description}"`);
   });
 
   it("refuses a document that lost its marker", () => {
@@ -165,7 +165,7 @@ describe("the web client's document", () => {
   });
 
   it("gets the preload scripts from the build, and none from the dev server", () => {
-    const plan: PreloadPlan = { catalogs: { pl: ["/static/pl-1.js"], en: ["/static/en-1.js"] } };
+    const plan: PreloadPlan = { catalogs: mapLocales((code) => [`/static/${code}-1.js`]) };
 
     const built = writePreload(html, plan);
     expect(built).toContain(`<script>${earlyPreloadScript(plan)}</script>`);
@@ -203,13 +203,12 @@ describe("what the document fetches ahead of the entry", () => {
   const build = bundleOf(
     chunk(ENTRY, "src/stellarr/main.tsx", ["static/src-1.js"]),
     chunk("static/src-1.js", null),
-    chunk("static/pl-1.js", CATALOG_MODULES.pl),
-    chunk("static/en-1.js", CATALOG_MODULES.en),
+    ...SUPPORTED_LOCALES.map((code) => chunk(`static/${code}-1.js`, CATALOG_MODULES[code])),
   );
 
   it("is each catalog's chunk", () => {
     expect(preloadPlan(build, ENTRY)).toEqual({
-      catalogs: { pl: ["/static/pl-1.js"], en: ["/static/en-1.js"] },
+      catalogs: mapLocales((code) => [`/static/${code}-1.js`]),
     });
   });
 
@@ -217,7 +216,7 @@ describe("what the document fetches ahead of the entry", () => {
     const merged = bundleOf(
       chunk(ENTRY, "src/stellarr/main.tsx", ["static/src-1.js"]),
       chunk("static/src-1.js", CATALOG_MODULES.en),
-      chunk("static/pl-1.js", CATALOG_MODULES.pl),
+      ...SUPPORTED_LOCALES.filter((code) => code !== "en").map((code) => chunk(`static/${code}-1.js`, CATALOG_MODULES[code])),
     );
 
     expect(() => preloadPlan(merged, ENTRY)).toThrow(/which the entry loads anyway/);
@@ -232,8 +231,7 @@ describe("what the document fetches ahead of the entry", () => {
   it("refuses catalogs that share a chunk, since a page would fetch both", () => {
     const shared = bundleOf(
       chunk(ENTRY, "src/stellarr/main.tsx"),
-      chunk("static/pl-1.js", CATALOG_MODULES.pl, ["static/words-1.js"]),
-      chunk("static/en-1.js", CATALOG_MODULES.en, ["static/words-1.js"]),
+      ...SUPPORTED_LOCALES.map((code) => chunk(`static/${code}-1.js`, CATALOG_MODULES[code], ["static/words-1.js"])),
       chunk("static/words-1.js", null),
     );
 
@@ -243,7 +241,7 @@ describe("what the document fetches ahead of the entry", () => {
 
 describe("the preload scripts", () => {
   const plan: PreloadPlan = {
-    catalogs: { pl: ["/static/pl-1.js"], en: ["/static/en-1.js"] },
+    catalogs: mapLocales((code) => [`/static/${code}-1.js`]),
   };
   const preloaded = () =>
     [...document.head.querySelectorAll<HTMLLinkElement>('link[rel="modulepreload"]')].map(

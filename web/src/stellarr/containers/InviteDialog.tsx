@@ -35,7 +35,7 @@ export function InviteDialog({ open, data, reload }: ServerAdmin & { open: boole
   const directory = useDirectory();
   const friends = useFriends();
   const ui = useUi();
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
 
   const people = useMemo<InvitePersonVM[]>(() => {
     const members = new Set(directory.people.map((person) => person.id));
@@ -51,9 +51,9 @@ export function InviteDialog({ open, data, reload }: ServerAdmin & { open: boole
       }))
       .sort((left, right) => {
         if (left.member !== right.member) return left.member ? 1 : -1;
-        return left.displayName.localeCompare(right.displayName, "pl-PL");
+        return left.displayName.localeCompare(right.displayName, locale);
       });
-  }, [directory.people, friends.friends, t]);
+  }, [directory.people, friends.friends, locale, t]);
 
   const invite = data.invites[0];
 

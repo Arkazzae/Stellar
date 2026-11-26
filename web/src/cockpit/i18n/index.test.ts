@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { en } from "./en";
+import catalogs from "../../../.locales/cockpit.json";
 import { detectLocale, getLocale, resolveLocale, saveLocale, setLocale, t } from "./index";
-import { pl } from "./pl";
+
+const { en } = catalogs;
 
 afterEach(() => {
   setLocale("en");
@@ -18,7 +19,7 @@ describe("resolveLocale", () => {
 
   it("starts in English when nothing was chosen or the choice is unknown", () => {
     expect(resolveLocale(null)).toBe("en");
-    expect(resolveLocale("de")).toBe("en");
+    expect(resolveLocale("qaa-Test")).toBe("en");
     expect(resolveLocale("")).toBe("en");
   });
 });
@@ -59,6 +60,10 @@ describe("setLocale", () => {
     expect(document.documentElement.lang).toBe("pl");
     expect(t("nav.users")).toBe("Użytkownicy");
 
+    setLocale("de");
+    expect(document.documentElement.lang).toBe("de");
+    expect(t("nav.users")).toBe("Benutzer");
+
     setLocale("en");
 
     expect(document.documentElement.lang).toBe("en");
@@ -92,18 +97,24 @@ const placeholders = (message: string) => [...message.matchAll(/\{([^}]+)\}/g)].
 
 describe("the catalogs", () => {
   it("carry exactly the same keys", () => {
-    expect(Object.keys(en).sort()).toEqual(Object.keys(pl).sort());
+    for (const catalog of Object.values(catalogs)) {
+      expect(Object.keys(catalog).sort()).toEqual(Object.keys(en).sort());
+    }
   });
 
   it("use the same placeholders in every message", () => {
-    for (const key of Object.keys(pl) as (keyof typeof pl)[]) {
-      expect(placeholders(en[key]), key).toEqual(placeholders(pl[key]));
+    for (const [locale, catalog] of Object.entries(catalogs)) {
+      for (const key of Object.keys(en) as (keyof typeof en)[]) {
+        expect(placeholders(catalog[key]), `${locale}.${key}`).toEqual(placeholders(en[key]));
+      }
     }
   });
 
   it("have no empty message", () => {
-    for (const [key, message] of [...Object.entries(en), ...Object.entries(pl)]) {
-      expect(message.trim(), key).not.toBe("");
+    for (const [locale, catalog] of Object.entries(catalogs)) {
+      for (const [key, message] of Object.entries(catalog)) {
+        expect(message.trim(), `${locale}.${key}`).not.toBe("");
+      }
     }
   });
 });

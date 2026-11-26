@@ -21,8 +21,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CardTitleRow } from "../components/card-title-row";
 import { Icon } from "../components/icons/icon";
 import { PageHeader } from "../components/page-header";
-import { getLocale, t, type MessageKey } from "../i18n";
-import { formatDateTime, formatNumber } from "../i18n/format";
+import { t, type MessageKey } from "../i18n";
+import { formatDateTime, formatNumber, formatTime } from "../i18n/format";
 import { cockpitApi, type CockpitLogEntry, type CockpitLogLevel } from "../lib/api";
 import { useLogFeed } from "../lib/use-log-feed";
 
@@ -50,20 +50,12 @@ function LevelBadge({ level }: { level: CockpitLogLevel }) {
   return <Badge variant="outline">{t("logs.level.info")}</Badge>;
 }
 
-function formatClock(at: string): string {
-  return new Date(at).toLocaleTimeString(getLocale() === "pl" ? "pl-PL" : "en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-}
-
 /** One line; the message is clamped to two lines until it is opened. */
 function LogRow({ entry, open, onToggle }: { entry: CockpitLogEntry; open: boolean; onToggle: () => void }) {
   return (
     <TableRow>
       <TableCell className="pt-2.5 align-top font-mono text-xs whitespace-nowrap text-muted-foreground" title={formatDateTime(entry.at)}>
-        {formatClock(entry.at)}
+        {formatTime(entry.at, { second: "2-digit" })}
       </TableCell>
       <TableCell className="align-top">
         <LevelBadge level={entry.level} />

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { locales, SUPPORTED_LOCALES } from "../../i18n/locales";
 import { LANGUAGE_SETTINGS_KEY } from "./defaultLocale";
 import {
   INSTANCE_LANGUAGE_GLOBAL,
@@ -44,11 +45,12 @@ describe("LOCALE_SCRIPT", () => {
     expect(root.dataset.locale).toBe("en");
   });
 
-  it("follows the instance default", () => {
-    load("pl");
+  it.each(SUPPORTED_LOCALES)("shows the %s instance default before first paint", (locale) => {
+    load(locale);
 
-    expect(root.lang).toBe("pl");
-    expect(root.dataset.locale).toBe("pl");
+    expect(root.lang).toBe(locale);
+    expect(root.dataset.locale).toBe(locale);
+    expect(document.querySelector('meta[name="description"]')).toHaveAttribute("content", locales[locale].description);
   });
 
   it("lets the language the person chose on this device win over the instance default", () => {
@@ -62,7 +64,7 @@ describe("LOCALE_SCRIPT", () => {
   });
 
   it("ignores a stored choice or an instance default that names an unknown language", () => {
-    choose("de");
+    choose("qaa-Test");
     load("pl");
     expect(root.lang).toBe("pl");
 
@@ -123,7 +125,7 @@ describe("LOCALE_SCRIPT", () => {
     expect(localStorage.getItem(LANGUAGE_HINT_KEY)).toBe("pl");
 
     // An operator who names no supported language leaves people in English.
-    load("de");
+    load("qaa-Test");
     expect(localStorage.getItem(LANGUAGE_HINT_KEY)).toBe("en");
   });
 
@@ -142,10 +144,11 @@ describe("the instance file", () => {
     expect(INSTANCE_LANGUAGE_PATH).toBe("/stellarr-instance.js");
   });
 
-  it("assigns a supported language, and null for anything else", () => {
+  it("passes plain locale codes to the browser and omits malformed values", () => {
     expect(instanceLanguageSource("pl")).toBe('window.stellarrInstanceLanguage="pl";\n');
     expect(instanceLanguageSource("en")).toBe('window.stellarrInstanceLanguage="en";\n');
-    for (const value of ["", "PL", "de", null, undefined]) {
+    expect(instanceLanguageSource("de")).toBe('window.stellarrInstanceLanguage="de";\n');
+    for (const value of ["", "PL", "pl\n", null, undefined]) {
       expect(instanceLanguageSource(value), String(value)).toBe("window.stellarrInstanceLanguage=null;\n");
     }
   });

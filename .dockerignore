@@ -6,6 +6,7 @@
 **/AGENTS.md
 **/CLAUDE.md
 
+web/.locales
 **/node_modules
 **/dist
 **/bin

@@ -8,6 +8,7 @@
     "build": "vite build --configLoader runner",
     "preview": "vite preview --configLoader runner",
     "lint": "eslint .",
+    "pretypecheck": "node localization.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --configLoader runner",
     "test:watch": "vitest --configLoader runner",

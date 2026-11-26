@@ -1,26 +1,20 @@
-import { en } from "./en";
-import { pl } from "./pl";
+import { FALLBACK_LOCALE, isSupportedLocale, type SupportedLocale } from "../../i18n/locales";
+import catalogs from "../../../.locales/cockpit.json";
 
-export type Locale = "pl" | "en";
-export type MessageKey = keyof typeof pl;
+export { locales, SUPPORTED_LOCALES as LOCALES } from "../../i18n/locales";
+export type Locale = SupportedLocale;
+export type MessageKey = keyof typeof catalogs.en;
 export type MessageValues = Record<string, string | number>;
 
-const catalogs: Record<Locale, Record<MessageKey, string>> = { pl, en };
 /** Where this browser keeps the panel's language. */
 const LOCALE_KEY = "stellarr.cockpit.locale";
-
-export const LOCALES: readonly Locale[] = ["en", "pl"];
-
-function asLocale(value: string | null): Locale | null {
-  return value === "pl" || value === "en" ? value : null;
-}
 
 /**
  * The panel's language: the one chosen in its settings, else English. The
  * panel does not follow the browser or the web client; the operator picks.
  */
 export function resolveLocale(stored: string | null): Locale {
-  return asLocale(stored) ?? "en";
+  return isSupportedLocale(stored) ? stored : FALLBACK_LOCALE;
 }
 
 export function detectLocale(): Locale {
@@ -28,7 +22,7 @@ export function detectLocale(): Locale {
     return resolveLocale(localStorage.getItem(LOCALE_KEY));
   } catch {
     // Storage can be off (a private window, blocked site data): English it is.
-    return "en";
+    return FALLBACK_LOCALE;
   }
 }
 
@@ -41,7 +35,7 @@ export function saveLocale(locale: Locale): void {
   }
 }
 
-let active: Locale = "en";
+let active: Locale = FALLBACK_LOCALE;
 
 /** Selects the language of every later lookup and format, and of the document. */
 export function setLocale(locale: Locale): void {

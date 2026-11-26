@@ -1,3 +1,4 @@
+import { locales } from "@/i18n";
 import {
   useId,
   useLayoutEffect,
@@ -127,7 +128,7 @@ function renderNodes(nodes: readonly InlineNode[], view: Rendering): ReactNode[]
             className="msg-edited"
             title={view.t("message.editedAt", {
               date: new Date(node.at).toLocaleString(
-                view.locale === "en" ? "en-GB" : "pl-PL",
+                locales[view.locale].tag,
               ),
             })}
           >

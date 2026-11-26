@@ -1,3 +1,4 @@
+import { locales } from "@/i18n";
 import { useEffect, useId, useMemo, useState, useSyncExternalStore } from "react";
 
 import { Button } from "@stellarr/ui";
@@ -99,7 +100,7 @@ export function ClientDownloadModal({ open, onClose, loadReleases, onNotificatio
 
   const published = useMemo(
     () =>
-      new Intl.DateTimeFormat(locale === "pl" ? "pl-PL" : "en-US", {
+      new Intl.DateTimeFormat(locale === "en" ? "en-US" : locales[locale].tag, {
         dateStyle: "long",
       }),
     [locale],

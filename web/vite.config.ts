@@ -5,9 +5,7 @@ import { defineConfig, loadEnv, type ProxyOptions } from "vite";
 
 import { previewMiddleware } from "../sdk/dev/instance.js";
 import { stellarrArtifactSizes } from "./artifactSizes";
-import { bundleReport } from "./bundleReport";
-import { BUILD_DIRECTORY, COCKPIT_DOCUMENT, stellarrDocuments, WEB_DOCUMENT } from "./documents";
-import { stellarrRelease } from "./release";
+import { compileLocales, watchLocales } from "./localization";
 import { workerBuild } from "./worklets";
 
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
@@ -66,6 +64,10 @@ function apiProxy(apiOrigin: string): Record<string, ProxyOptions> {
  *                                cross a bind mount
  *   VITE_ICE_SERVERS             written into the web client's bundle
  */
+compileLocales();
+const [{ BUILD_DIRECTORY, COCKPIT_DOCUMENT, stellarrDocuments, WEB_DOCUMENT }, { bundleReport }, { stellarrRelease }] =
+  await Promise.all([import("./documents"), import("./bundleReport"), import("./release")]);
+
 export default defineConfig(({ mode, command, isPreview }) => {
   const env = loadEnv(mode, here("."), "");
   const proxy = apiProxy(env.STELLARR_API_ORIGIN || "http://127.0.0.1:5000");
@@ -77,6 +79,7 @@ export default defineConfig(({ mode, command, isPreview }) => {
     define: { __ACTIVITY_PREVIEW__: JSON.stringify(previewEnabled) },
     plugins: [
       react(),
+      watchLocales(),
       {
         name: "stellarr-activity-preview",
         apply: "serve",

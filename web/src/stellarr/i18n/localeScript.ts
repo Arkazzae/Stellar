@@ -1,12 +1,5 @@
-// Relative imports only: the build reads this module from vite.config.ts,
-// where the app's `@/` alias does not resolve. Only the build reads it, so
-// it may hold both catalogs; the app loads one at a time.
-import { isSupportedLocale, SUPPORTED_LOCALES, type MessageCatalog, type SupportedLocale } from ".";
-import { FALLBACK_LOCALE, LANGUAGE_SETTINGS_KEY } from "./defaultLocale";
-import { en } from "./messages/en";
-import { pl } from "./messages/pl";
-
-const CATALOGS: Record<SupportedLocale, MessageCatalog> = { pl, en };
+import { FALLBACK_LOCALE, locales, mapLocales, SUPPORTED_LOCALES } from "../../i18n/locales";
+import { LANGUAGE_SETTINGS_KEY } from "./defaultLocale";
 
 /**
  * Where the instance publishes its default language. One published image
@@ -17,24 +10,22 @@ const CATALOGS: Record<SupportedLocale, MessageCatalog> = { pl, en };
  */
 export const INSTANCE_LANGUAGE_PATH = "/stellarr-instance.js";
 
-/** The global that file sets: a supported locale, or null when the operator chose none. */
+/** The global that file sets: a locale code, or null for an empty or malformed setting. */
 export const INSTANCE_LANGUAGE_GLOBAL = "stellarrInstanceLanguage";
 
 /**
  * What the file holds for `language`, the value of `STELLARR_LANGUAGE`: one
- * assignment, of the language when it is supported and of null otherwise.
+ * assignment. The pre-paint script checks this code against the shipped locales.
  *
  *   window.stellarrInstanceLanguage="pl";
  *   window.stellarrInstanceLanguage=null;
  */
 export function instanceLanguageSource(language: string | null | undefined): string {
-  const value = isSupportedLocale(language) ? language : null;
+  const value = language && /^[a-z]{2,3}(?:-[A-Za-z0-9]{1,8})*$/u.test(language) ? language : null;
   return `window.${INSTANCE_LANGUAGE_GLOBAL}=${JSON.stringify(value)};\n`;
 }
 
-const DESCRIPTIONS = Object.fromEntries(
-  SUPPORTED_LOCALES.map((locale) => [locale, CATALOGS[locale]["app.description"]]),
-);
+const DESCRIPTIONS = mapLocales((locale) => locales[locale].description);
 
 /**
  * Where this browser keeps the language a person with no choice of their own

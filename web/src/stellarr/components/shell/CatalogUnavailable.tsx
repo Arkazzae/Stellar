@@ -1,6 +1,5 @@
 import { ErrorNotice } from "@/components/primitives/ErrorNotice";
-import type { SupportedLocale } from "@/i18n";
-import { CATALOG_UNAVAILABLE } from "@/i18n/messages/unavailable";
+import { locales, type SupportedLocale } from "@/i18n";
 
 /**
  * What the page shows in place of the app when its language's catalog cannot
@@ -8,7 +7,7 @@ import { CATALOG_UNAVAILABLE } from "@/i18n/messages/unavailable";
  * current release's.
  */
 export function CatalogUnavailable({ locale, onReload }: { locale: SupportedLocale; onReload: () => void }) {
-  const text = CATALOG_UNAVAILABLE[locale];
+  const text = locales[locale].unavailable;
   return (
     <main style={{ height: "100%", display: "grid", placeItems: "center", padding: 24 }}>
       <div style={{ width: "min(420px, 100%)" }}>
