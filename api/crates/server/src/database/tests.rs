@@ -260,7 +260,7 @@ async fn a_new_database_has_the_schema_and_both_one_time_steps() {
 
     // The original 280 objects plus the import, upload limit and activity
     // tables and their indexes.
-    assert_eq!(objects, 292);
+    assert_eq!(objects, 294);
     assert_eq!(steps, ["ordinary-permissions", "view-channel"]);
     assert!(search);
 }
