@@ -9,10 +9,5 @@
 *.gif binary
 *.png binary
 
-# Third-party files the browser loads at run time, each checked against the
-# sha256 in artifacts/manifest.json. A line-ending conversion would break that
-# check, and a diff of them tells a reader nothing.
-artifacts/files/** binary linguist-vendored
-
 package-lock.json linguist-generated
 packages.lock.json linguist-generated
