@@ -27,12 +27,13 @@ function client(url: string, visible = false): TestClient {
   };
 }
 
-function loadWorker(windows: TestClient[] = []) {
+function loadWorker(windows: TestClient[] = [], badge?: { setAppBadge: ReturnType<typeof vi.fn>; clearAppBadge: ReturnType<typeof vi.fn>; fetch: ReturnType<typeof vi.fn> }) {
   const listeners = new Map<string, (event: Record<string, unknown>) => void>();
   const shown: { title: string; options: NotificationOptions }[] = [];
   const openWindow = vi.fn(async (url: string) => ({ url }));
   const matchAll = vi.fn(async () => windows);
   const self = {
+    navigator: badge,
     location: { origin: "https://chat.example" },
     addEventListener: (type: string, listener: (event: Record<string, unknown>) => void) => {
       listeners.set(type, listener);
@@ -50,7 +51,7 @@ function loadWorker(windows: TestClient[] = []) {
     },
   };
 
-  runInNewContext(SOURCE, { self, URL, JSON, Array, Object, String, Error, console, MessageChannel, setTimeout, clearTimeout });
+  runInNewContext(SOURCE, { self, fetch: badge?.fetch, URL, JSON, Array, Object, String, Error, console, MessageChannel, setTimeout, clearTimeout });
 
   const listener = (name: string) => {
     const found = listeners.get(name);
@@ -89,6 +90,21 @@ function clickEvent(url: string) {
 }
 
 describe("notification worker push handling", () => {
+  it("sets an absolute badge on repeated pushes and clears it at zero", async () => {
+    const badge = { setAppBadge: vi.fn(), clearAppBadge: vi.fn(), fetch: vi.fn() };
+    const worker = loadWorker([], badge);
+    badge.fetch.mockResolvedValue({ ok: true, json: async () => ({ unread: 3 }) });
+    await push(worker, { id: "same", title: "Mention" });
+    await push(worker, { id: "same", title: "Mention" });
+    expect(badge.setAppBadge.mock.calls).toEqual([[3], [3]]);
+    badge.fetch.mockResolvedValue({ ok: true, json: async () => ({ unread: 0 }) });
+    await push(worker, { id: "same", title: "Mention" });
+    expect(badge.clearAppBadge).toHaveBeenCalledOnce();
+    badge.fetch.mockRejectedValue(new Error("offline"));
+    await push(worker, { id: "same", title: "Mention" });
+    expect(worker.shown).toHaveLength(4);
+  });
+
   it("shows a valid payload with the app icon, safe data and its dedupe tag", async () => {
     const worker = loadWorker();
 

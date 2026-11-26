@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Message } from "@/ports";
+import { AppBadge } from "./AppBadge";
 import { LaunchTarget, type LaunchProps } from "./LaunchTarget";
 import { ConfirmProvider } from "@/components/primitives/ConfirmDialog";
 import { AppShell } from "@/components/shell/AppShell";
@@ -100,6 +101,7 @@ function Shell({ entry, onEntryHandled }: LaunchProps) {
       {/* The face and the wallpaper: what of the theme only the signed-in app
           shows. The wallpaper sits on a fixed layer behind the shell. */}
       <AppAppearance />
+      <AppBadge />
       {entry && onEntryHandled && <LaunchTarget key={entry} entry={entry} finish={onEntryHandled} reveal={setNoticeMessage} />}
       <AppShell
         serverRail={<ServerRailContainer />}
