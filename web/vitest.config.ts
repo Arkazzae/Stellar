@@ -19,6 +19,7 @@ const nodeTests = [
   "src/stellarr/lib/api/{*Parsers,clientExports,expect,parsers}.test.ts",
   "src/stellarr/lib/auth/{passwordStrength,qr,query,returnPath,username,webauthn}.test.ts",
   "src/stellarr/lib/{chatTranslation,e2ee,rtc,wallpaper}/*.test.ts",
+  "src/stellarr/lib/platform/drafts.test.ts",
   "src/stellarr/lib/media/{imagePreview,measureUpload,placeholder,placeholderUrl}.test.ts",
   "src/stellarr/lib/messages/{codeLanguages,codeLanguages.resolve,codeTokenizer,composerText,inline,messageSyntaxContract,unread}.test.ts",
   "src/stellarr/lib/realtime/{deferred,emitter,hubPayloads}.test.ts",

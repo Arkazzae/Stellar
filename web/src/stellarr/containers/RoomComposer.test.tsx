@@ -27,6 +27,7 @@ const sendGif = vi.fn();
 const voiceSettings = {};
 
 vi.mock("@/state/hooks", () => ({
+  useSession: () => ({ user: { id: "self" } }),
   useChatRoom: () => ({
     channelId: "c1",
     chips: [],
@@ -41,7 +42,7 @@ vi.mock("@/state/hooks", () => ({
     notifyTyping: vi.fn(),
     cancelReply: vi.fn(),
   }),
-  useDirectory: () => ({ members: [] }),
+  useDirectory: () => ({ members: [], server: { id: "server" } }),
   useEmoji: () => ({ emoji: [] }),
   useLanguage: () => ({ locale: "pl", t: (key: string) => key }),
   usePorts: () => ({

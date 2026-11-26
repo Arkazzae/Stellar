@@ -33,6 +33,7 @@ import {
 } from "./chat/present";
 import type { PendingIds, RestoredWindows, SyncCursors } from "./chat/shared";
 import { NO_MESSAGES } from "./chat/timeline";
+import { draftScope } from "@/lib/platform/drafts";
 import { useAttachmentQueue } from "./chat/useAttachmentQueue";
 import { useChannelPages } from "./chat/useChannelPages";
 import { useChatComposer } from "./chat/useChatComposer";
@@ -138,6 +139,7 @@ export interface ChatValue {
   sendVoice: (file: File, durationSeconds: number) => Promise<void>;
   /** Sends one canonical GIPHY page as a standalone message. */
   sendGif: (pageUrl: string) => Promise<void>;
+  restoringFiles: boolean;
   attach: (files: File[]) => void;
   retryChip: (chipId: string) => void;
   removeChip: (chipId: string) => void;
@@ -238,7 +240,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     selectTextChannel,
     closeChannelPanel,
   });
-  const queue = useAttachmentQueue(ports.chat, t);
+  const queueScope = user && channelId ? draftScope(user.id, server.id, channelId, panel.threadRootId ?? "") : undefined;
+  const queue = useAttachmentQueue(ports.chat.uploadAttachment, t, queueScope);
   const edit = useMessageEdit(ports.messageActions, data.messages, dispatch);
   const composer = useChatComposer({
     chat: ports.chat,
@@ -465,6 +468,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       send: composer.send,
       sendVoice: composer.sendVoice,
       sendGif: composer.sendGif,
+      restoringFiles: queue.restoringFiles,
       attach: queue.attach,
       retryChip: queue.retryChip,
       removeChip: queue.removeChip,

@@ -1,8 +1,9 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo } from "react";
 
+import { useScopedQueue } from "./useScopedQueue";
 import { describeError } from "@/lib/api/errors";
 import type { Translator } from "@/i18n";
-import type { ChatPort } from "@/ports";
+import type { Attachment } from "@/ports";
 
 import {
   dropChips,
@@ -12,7 +13,6 @@ import {
   moveChip,
   queueFiles,
   toComposerChips,
-  type PendingChip,
 } from "./pendingChips";
 
 /**
@@ -22,41 +22,40 @@ import {
  * until every chip has a real server id, so a message can never outrun its
  * media upload.
  */
-export function useAttachmentQueue(chat: ChatPort, t: Translator) {
-  const [pending, setPending] = useState<PendingChip[]>([]);
-  /** Local ids for chips, so two drops in a row cannot collide. */
-  const lastSeq = useRef(0);
+export function useAttachmentQueue(
+  uploadFile: (file: File) => Promise<Attachment>, t: Translator, scope: string | undefined, dm = false,
+) {
+  const [pending, setPending, restoringFiles] = useScopedQueue(scope);
 
   const upload = useCallback(
     (id: string, file: File) => {
       setPending((current) => markUploading(current, id));
-      void chat
-        .uploadAttachment(file)
+      void uploadFile(file)
         .then((attachment) => {
           setPending((current) => markUploaded(current, id, attachment));
         })
         .catch((error: unknown) => {
-          const reason = describeError(error, t("composer.attachmentUploadFailed"), t);
+          const reason = dm ? t("attachment.uploadFailed") : describeError(error, t("composer.attachmentUploadFailed"), t);
           setPending((current) => markFailed(current, id, reason));
         });
     },
-    [chat, t],
+    [uploadFile, t, setPending, dm],
   );
 
   const attach = useCallback(
     (files: File[]) => {
-      const queued = queueFiles(files, pending.length, lastSeq.current + 1);
-      lastSeq.current += queued.length;
+      if (!scope) return;
+      const queued = queueFiles(files, pending.length, () => (dm ? "dm-chip-" : "chip-") + crypto.randomUUID());
       setPending((current) => [...current, ...queued]);
       for (const chip of queued) upload(chip.id, chip.file);
     },
-    [pending.length, upload],
+    [pending.length, upload, setPending, dm, scope],
   );
 
   const retryChip = useCallback(
     (chipId: string) => {
       const failed = pending.find(
-        (chip) => chip.id === chipId && chip.status === "error",
+        (chip) => chip.id === chipId && (chip.status === "error" || chip.status === "restored"),
       );
       if (failed !== undefined) upload(failed.id, failed.file);
     },
@@ -66,7 +65,7 @@ export function useAttachmentQueue(chat: ChatPort, t: Translator) {
   /** Forgets chips whose message went out. */
   const discard = useCallback(
     (ids: ReadonlySet<string>) => setPending((current) => dropChips(current, ids)),
-    [],
+    [setPending],
   );
 
   const removeChip = useCallback(
@@ -77,13 +76,14 @@ export function useAttachmentQueue(chat: ChatPort, t: Translator) {
   const reorderChips = useCallback(
     (from: number, to: number) =>
       setPending((current) => moveChip(current, from, to)),
-    [],
+    [setPending],
   );
 
+  const reupload = useCallback(() => { for (const chip of pending) upload(chip.id, chip.file); }, [pending, upload]);
   const chips = useMemo(() => toComposerChips(pending), [pending]);
 
   return useMemo(
-    () => ({ pending, chips, attach, retryChip, removeChip, reorderChips, discard }),
-    [pending, chips, attach, retryChip, removeChip, reorderChips, discard],
+    () => ({ pending, chips, restoringFiles, attach, retryChip, removeChip, reorderChips, discard, reupload }),
+    [pending, chips, restoringFiles, attach, retryChip, removeChip, reorderChips, discard, reupload],
   );
 }

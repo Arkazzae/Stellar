@@ -1,6 +1,7 @@
+import { draftScope } from "@/lib/platform/drafts";
 import { DmChat } from "@/components/friends/DmChat";
 import { MediaViewer } from "@/components/room/attachments/MediaViewer";
-import { useEmoji, useFriends, useProfile } from "@/state/hooks";
+import { useEmoji, useFriends, useProfile, useSession } from "@/state/hooks";
 
 import { toPerson } from "./toPerson";
 import { useAttachmentViewer } from "./useAttachmentViewer";
@@ -13,6 +14,7 @@ import { useDmEncryptionView } from "./useDmEncryption";
  * never both at once.
  */
 export function DmChatContainer() {
+  const { user } = useSession();
   const friends = useFriends();
   const profile = useProfile();
   const { emoji: customEmoji } = useEmoji();
@@ -29,6 +31,7 @@ export function DmChatContainer() {
   return (
     <>
       <DmChat
+        draftScope={user ? draftScope(user.id, "dm", conversation.id) : undefined}
         peer={toPerson(conversation.peer)}
         username={conversation.peer.username}
         sections={friends.sections}
@@ -36,6 +39,7 @@ export function DmChatContainer() {
         hasOlderMessages={friends.hasOlderMessages}
         loadingOlderMessages={friends.loadingOlderMessages}
         onLoadOlderMessages={friends.loadOlderMessages}
+        restoringFiles={friends.restoringFiles}
         chips={friends.chips}
         onAttach={friends.attach}
         onRemoveChip={friends.removeChip}

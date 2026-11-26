@@ -24,11 +24,12 @@ const attachment = (id: string): Attachment => ({
   contentType: "text/plain",
   size: 1,
 });
+const sequence = (first: number) => (index: number) => "chip-" + (first + index);
 const names = (chips: readonly { name: string }[]) => chips.map((chip) => chip.name);
 
 describe("queueFiles", () => {
   it("queues each file as an uploading chip with its own id", () => {
-    const chips = queueFiles([file("a.txt"), file("b.txt")], 0, 4);
+    const chips = queueFiles([file("a.txt"), file("b.txt")], 0, sequence(4));
     expect(chips.map((chip) => [chip.id, chip.name, chip.status, chip.attachment])).toEqual([
       ["chip-4", "a.txt", "uploading", null],
       ["chip-5", "b.txt", "uploading", null],
@@ -37,14 +38,14 @@ describe("queueFiles", () => {
 
   it("takes only as many files as still fit under the cap", () => {
     const files = Array.from({ length: 6 }, (_, i) => file(`f${i}`));
-    expect(queueFiles(files, MAX_ATTACHMENTS - 2, 1)).toHaveLength(2);
-    expect(queueFiles(files, MAX_ATTACHMENTS, 1)).toEqual([]);
-    expect(queueFiles(files, MAX_ATTACHMENTS + 3, 1)).toEqual([]);
+    expect(queueFiles(files, MAX_ATTACHMENTS - 2, sequence(1))).toHaveLength(2);
+    expect(queueFiles(files, MAX_ATTACHMENTS, sequence(1))).toEqual([]);
+    expect(queueFiles(files, MAX_ATTACHMENTS + 3, sequence(1))).toEqual([]);
   });
 });
 
 describe("upload transitions", () => {
-  const queued = queueFiles([file("a"), file("b")], 0, 1);
+  const queued = queueFiles([file("a"), file("b")], 0, sequence(1));
 
   it("marks only the named chip as uploaded", () => {
     const next = markUploaded(queued, "chip-1", attachment("att-1"));
@@ -75,7 +76,7 @@ describe("upload transitions", () => {
 
 describe("sending readiness", () => {
   it("is ready only when every chip has uploaded", () => {
-    const queued = queueFiles([file("a"), file("b")], 0, 1);
+    const queued = queueFiles([file("a"), file("b")], 0, sequence(1));
     expect(allUploaded([])).toBe(true);
     expect(allUploaded(queued)).toBe(false);
     const one = markUploaded(queued, "chip-1", attachment("a1"));
@@ -86,14 +87,14 @@ describe("sending readiness", () => {
   });
 
   it("collects only the attachments that exist", () => {
-    const queued = queueFiles([file("a"), file("b")], 0, 1);
+    const queued = queueFiles([file("a"), file("b")], 0, sequence(1));
     expect(uploadedAttachments(markUploaded(queued, "chip-2", attachment("a2"))).map((a) => a.id))
       .toEqual(["a2"]);
   });
 });
 
 describe("dropChips and moveChip", () => {
-  const chips: PendingChip[] = queueFiles([file("a"), file("b"), file("c")], 0, 1);
+  const chips: PendingChip[] = queueFiles([file("a"), file("b"), file("c")], 0, sequence(1));
 
   it("drops the chips that were sent and keeps the rest", () => {
     expect(names(dropChips(chips, new Set(["chip-1", "chip-3"])))).toEqual(["b"]);
@@ -111,7 +112,7 @@ describe("dropChips and moveChip", () => {
 
 describe("toComposerChips", () => {
   it("hands the composer only what it draws", () => {
-    const chips = markFailed(queueFiles([file("a")], 0, 1), "chip-1", "nope");
+    const chips = markFailed(queueFiles([file("a")], 0, sequence(1)), "chip-1", "nope");
     expect(toComposerChips(chips)).toEqual([
       { id: "chip-1", name: "a", status: "error", error: "nope" },
     ]);

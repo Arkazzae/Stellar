@@ -470,7 +470,9 @@ export function createFriendsAdapter(
 
     async uploadAttachment(id, file) {
       const metadata = await measureUpload(file);
-      if (conversations.find((item) => item.id === id)?.encryption?.state !== "on") {
+      const conversation = conversations.find((item) => item.id === id);
+      if (!conversation) throw new Error("Conversation unavailable");
+      if (conversation.encryption?.state !== "on") {
         return api.uploadAttachment(file, metadata);
       }
       const upload = await codec.uploadFile(file, metadata);

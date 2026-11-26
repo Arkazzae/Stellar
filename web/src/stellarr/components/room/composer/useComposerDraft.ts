@@ -1,6 +1,7 @@
-import { useDeferredValue, useMemo, useState, type FormEvent } from "react";
+import { useDeferredValue, useMemo, useState, useSyncExternalStore, type FormEvent } from "react";
 
 import type { InterfaceLocale, Translator } from "@/i18n";
+import { composerDraft } from "@/lib/platform/drafts";
 import { triggerHaptic } from "@/lib/platform/haptics";
 
 import {
@@ -13,6 +14,8 @@ import { fencedCode } from "@/lib/messages/composerText";
 import { CODE_MESSAGE_MAX_LENGTH, MESSAGE_MAX_LENGTH, messageContentLimit } from "@/lib/messages/messageLimits";
 
 interface Options {
+  draftScope?: string;
+  restoringFiles?: boolean;
   chips: readonly ComposerChip[];
   /** Receives the trimmed text, fenced when the draft is a code message. */
   onSubmit(text: string): Promise<void> | void;
@@ -31,12 +34,14 @@ function guessLanguage(source: string): CodeLanguageId {
  * The text being written and what it takes to send it: the code-message mode,
  * whether a send is in flight, and why the last one failed.
  */
-export function useComposerDraft({ chips, onSubmit, onSent, locale, t }: Options) {
-  const [text, setText] = useState("");
+export function useComposerDraft({ draftScope, restoringFiles, chips, onSubmit, onSent, locale, t }: Options) {
+  const entry = useMemo(() => composerDraft(draftScope), [draftScope]);
+  const { draft: { text, manualCode, codeLanguage }, loading, failed } = useSyncExternalStore(entry.subscribe, entry.get, entry.get);
+  const setText = (text: string) => entry.change(draft => ({ ...draft, text }));
+  const setCodeMode = (manualCode: boolean) => entry.change(draft => ({ ...draft, manualCode }));
+  const setCodeLanguage = (codeLanguage: CodeLanguageChoice) => entry.change(draft => ({ ...draft, codeLanguage }));
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
-  const [manualCode, setCodeMode] = useState(false);
-  const [codeLanguage, setCodeLanguage] = useState<CodeLanguageChoice>(AUTO_LANGUAGE);
   const authored = text.trim();
   const automaticCode = useMemo(
     () => authored.length > MESSAGE_MAX_LENGTH && messageContentLimit(authored) === MESSAGE_MAX_LENGTH,
@@ -64,7 +69,7 @@ export function useComposerDraft({ chips, onSubmit, onSent, locale, t }: Options
 
   const hasPayload = authored.length > 0 || chips.length > 0;
   const attachmentsBlocked = chips.some((chip) => chip.status !== "ready");
-  const canSend = hasPayload && !attachmentsBlocked && !sending;
+  const canSend = !loading && !restoringFiles && hasPayload && !attachmentsBlocked && !sending;
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -93,10 +98,11 @@ export function useComposerDraft({ chips, onSubmit, onSent, locale, t }: Options
       // A slow request must not erase what was typed after the send started.
       // In the usual append case only the delivered prefix is consumed; if the
       // original was edited in place, the whole current draft is kept.
-      setText((current) =>
-        current.startsWith(draft) ? current.slice(draft.length).trimStart() : current,
-      );
-      setCodeMode(false);
+      entry.change(current => ({
+        ...current,
+        text: current.text.startsWith(draft) ? current.text.slice(draft.length).trimStart() : current.text,
+        manualCode: false,
+      }));
       onSent();
     } catch {
       // The text stays in the field: a failed send must not lose what was written.
@@ -110,7 +116,8 @@ export function useComposerDraft({ chips, onSubmit, onSent, locale, t }: Options
     text,
     setText,
     sending,
-    sendError,
+    loading,
+    sendError: sendError ?? (failed && (text || chips.length) ? t("pwa.draftFailed") : null),
     clearSendError: () => setSendError(null),
     codeMode,
     automaticCode,

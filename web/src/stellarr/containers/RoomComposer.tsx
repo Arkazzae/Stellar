@@ -1,5 +1,6 @@
 import { useCallback, useSyncExternalStore } from "react";
 
+import { draftScope } from "@/lib/platform/drafts";
 import { Composer } from "@/components/room/composer/Composer";
 import { useGifsEnabled, useGiphyAccess } from "@/hooks/useGifsEnabled";
 import type { Translator } from "@/i18n";
@@ -11,6 +12,7 @@ import {
   useEmoji,
   useLanguage,
   usePorts,
+  useSession,
 } from "@/state/hooks";
 
 interface RoomComposerProps {
@@ -30,7 +32,9 @@ export function RoomComposer({ channelName, threadRootId }: RoomComposerProps) {
   // in their settings; either way the composer offers no GIF button.
   const gifsOffered = useGifsEnabled();
   const giphyAccess = useGiphyAccess();
-  const { members } = useDirectory();
+  const { members, server } = useDirectory();
+  const { user } = useSession();
+  const scope = user && chat.channelId ? draftScope(user.id, server.id, chat.channelId, threadRootId ?? "") : undefined;
   const { emoji: customEmoji } = useEmoji();
   const { locale, t } = useLanguage();
   const ports = usePorts();
@@ -61,10 +65,13 @@ export function RoomComposer({ channelName, threadRootId }: RoomComposerProps) {
 
   return (
     <Composer
+      key={scope}
+      draftScope={scope}
       channelName={channelName}
       recordingScope={
         inThread ? `${chat.channelId ?? "no-channel"}:thread:${threadRootId}` : chat.channelId
       }
+      restoringFiles={chat.restoringFiles}
       chips={chat.chips}
       onSubmit={chat.send}
       openVoiceMessageMicrophone={openVoiceMessageMicrophone}
