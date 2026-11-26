@@ -8,12 +8,18 @@
       "default": "./client.js"
     }
   },
+  "bin": {
+    "stellarr": "./cli.js"
+  },
   "files": [
+    "cli.js",
     "client.js",
     "client.d.ts",
     "media.js",
     "media.d.ts",
     "CONTRACT.md",
+    "dev/",
+    "host/",
     "LICENSE"
   ],
   "scripts": {
