@@ -4,17 +4,17 @@ case_release_choices() {
   new_case release-series
   local channel="$http/stellarr.online/server-downloads/1.4"
   echo 1.4.3 >"$channel"
-  mkdir -p "$raw/v1.4.3"
-  cp "$fixtures/compose-1.4.0" "$raw/v1.4.3/docker-compose.yml"
-  cp "$fixtures/env.example" "$raw/v1.4.3/.env.example"
+  mkdir -p "$raw/server-v1.4.3"
+  cp "$fixtures/compose-1.4.0" "$raw/server-v1.4.3/docker-compose.yml"
+  cp "$fixtures/env.example" "$raw/server-v1.4.3/.env.example"
   release 1.5.0
   run --yes --version 1.4
   expect_success
   expect_line "$home/stellarr/.env" STELLARR_VERSION=1.4.3
   expect_line "$home/stellarr/.env" STELLARR_TRACK=1.4
-  expect_called "/v1.4.3/docker-compose.yml"
+  expect_called "/server-v1.4.3/docker-compose.yml"
   expect_called "image inspect ghcr.io/arkazzae/stellarr:1.4.3"
-  expect_not_called "/v1.5.0/docker-compose.yml"
+  expect_not_called "/server-v1.5.0/docker-compose.yml"
 
   # In the absence of a new choice, re-running follows the stored series.
   : >"$case_dir/calls"
