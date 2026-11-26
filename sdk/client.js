@@ -398,7 +398,7 @@ export async function connect({ initialState = {} } = {}) {
     },
   };
   try {
-    media = createMedia({ context, permissions, volume: opened.volume, youtube: opened.youtube, request, send, on, participants: participants.api });
+    media = createMedia({ context, permissions, volume: opened.volume, embedHosts: opened.embedHosts, hostedEmbeds: opened.hostedEmbeds });
     session.media = media;
   } catch (error) { await depart("close").catch(() => {}); throw error; }
   timer = setTimeout(poll, opened.roomEvents ? 0 : pollInterval);

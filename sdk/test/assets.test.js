@@ -124,11 +124,14 @@ test("a dual-mode activity still shares one room across local voice tabs", async
 test("the local CLI serves its shell and activity on different hosts and supports media seeks", async t => {
   const folder = await mkdtemp(join(tmpdir(), "activity-assets-"));
   t.after(() => rm(folder, { recursive: true, force: true }));
-  await writeFile(join(folder, "stellarr.json"), JSON.stringify(manifest));
+  await writeFile(join(folder, "stellarr.json"), JSON.stringify({ ...manifest, connects: [{ host: "player.example", why: "Watch video" }] }));
   await writeFile(join(folder, "index.html"), "<title>Test activity</title>");
   await writeFile(join(folder, "clip.mp4"), Buffer.from("0123456789"));
   const { server, origin } = await startLocal(folder, 0);
   t.after(() => new Promise(resolve => server.close(resolve)));
+  const opened = await (await localRequest(origin, randomUUID(), { op: "open", frame: randomUUID(), initialState: {} })).json();
+  assert.deepEqual(opened.embedHosts, ["player.example"]);
+  assert.equal((await fetch(origin + "/_stellarr/media.js")).status, 200);
   const { frame } = await (await fetch(origin + "/_stellarr/config")).json();
   assert.notEqual(frame, origin);
   assert.match(await (await fetch(origin)).text(), /iframe id="activity"/);

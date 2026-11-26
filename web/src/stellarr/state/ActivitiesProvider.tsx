@@ -40,8 +40,8 @@ export interface ActivitySession {
   title: string;
   icon: string | null;
   permissions: string[];
-  /** The activity plays YouTube, which the host page draws for it. */
-  youtube: boolean;
+  /** External embed domains approved in the activity manifest. */
+  embedHosts: string[];
 }
 
 /** What the picker is asked to offer, and for whom. */
@@ -311,7 +311,7 @@ export function ActivitiesProvider({ children }: { children: ReactNode }) {
           title: reply.title || summary?.name || "",
           icon: summary?.install === reply.install ? summary.icon : null,
           permissions: reply.permissions,
-          youtube: reply.youtube,
+          embedHosts: reply.embedHosts,
         });
         break;
       } catch (cause) {
@@ -390,7 +390,7 @@ export function ActivitiesProvider({ children }: { children: ReactNode }) {
         title: reply.title || picked.name,
         icon: picked.icon,
         permissions: reply.permissions,
-        youtube: reply.youtube,
+        embedHosts: reply.embedHosts,
       };
       const { selfId: me, ui: view } = latest.current;
       setPicker(null);

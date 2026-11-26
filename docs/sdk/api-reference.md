@@ -68,10 +68,12 @@ Every `Observable<T>` provides `get(): T` (returns a `structuredClone` snapshot)
 | API | Signature | Requires permission / host |
 | --- | --- | --- |
 | `media.volume` | `{ get(): number; subscribe(fn: (v: number) => void): () => void }` | None (`0..1` float) |
-| `media.youtube` *(opt)* | `{ mount(videoId: string, element: Element, events): YouTubeHandle }` | `"www.youtube-nocookie.com"` in `connects` (provided on default same-host frames; controls: `prepare`, `play`, `pause`, `seek`, `volume`, `fullscreen`, `time`, `duration`, `running`, `destroy`) |
+| `media.embed.mount` | `(url: string, element: Element, options?: EmbedOptions) => EmbedHandle` | HTTPS embed URL on a host in `connects`. |
 | `media.microphoneLevel.open` | `() => Promise<DeviceHandle & { subscribe(fn: (level: number) => void): () => void }>` | `"media.microphoneLevel"` (`60 s` prompt timeout) |
 | `media.cameraTile.open` | `() => Promise<DeviceHandle>` | `"media.cameraTile"` (`60 s` prompt timeout) |
-| `media.cameraTile.mount` | `(participantId: string, element: Element) => () => void` | `"media.cameraTile"` |
+| `media.cameraTile.mount` | `(participantId: string, element: Element) => CameraTileMount` | `"media.cameraTile"` |
+
+`EmbedOptions` accepts `title?: string`, `onLoad?(): void`, and `onMessage?(data: unknown): void`. `EmbedHandle` provides `setVisible(visible: boolean)`, `postMessage(data: unknown)`, and `destroy()`. `onMessage` receives messages from the mounted provider window and origin. `CameraTileMount` is callable to unmount the tile and has a `setVisible(visible: boolean)` method. Both visibility controls apply to the local viewer.
 
 `DeviceHandle` exposes `stop(): void` and `onEnded(listener: (reason: string) => void): () => void`.
 

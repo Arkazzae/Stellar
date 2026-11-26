@@ -753,7 +753,7 @@ pub(super) async fn launch(
             "access": token,
             "title": live.installed.manifest.name,
             "permissions": live.installed.manifest.permissions,
-            "youtube": live.installed.manifest.connects.iter().any(|c| c.host == "www.youtube-nocookie.com"),
+            "embedHosts": live.installed.manifest.connects.iter().map(|c| &c.host).collect::<Vec<_>>(),
             "host": live.host,
         }))
     });
@@ -1468,6 +1468,26 @@ pub(super) async fn sandbox_asset(
     if let Some((owner, asset)) = avatar {
         return serve_avatar(&state, credential, owner, asset, headers).await;
     }
+    // Only Stellarr scripts run in this document. Its frame-src follows the
+    // installation's grants, including on redirects to other providers.
+    if path == "_stellarr/embed.html" {
+        let hosts = manifest
+            .connects
+            .iter()
+            .map(|c| format!("https://{}", c.host))
+            .filter(|host| host != &origin)
+            .collect::<Vec<_>>()
+            .join(" ");
+        let frames = if hosts.is_empty() { "'none'" } else { &hosts };
+        return Ok(Response::builder()
+            .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+            .header(header::CONTENT_SECURITY_POLICY, format!("default-src 'none'; script-src {origin}/_stellarr/sdk/embed-frame.js {origin}/_stellarr/sdk/media.js; style-src 'unsafe-inline'; frame-src {frames}; frame-ancestors {origin}; base-uri 'none'; form-action 'none'"))
+            .header(header::REFERRER_POLICY, "strict-origin")
+            .header(header::CACHE_CONTROL, "no-store")
+            .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+            .header("Permissions-Policy", "microphone=(), camera=(), display-capture=()")
+            .body(Body::from(r#"<!doctype html><html><head><script type="module" src="/_stellarr/sdk/embed-frame.js"></script><title>Embed</title></head><body style="margin:0;height:100vh"></body></html>"#)).unwrap());
+    }
     let (mime, bytes) = read_asset(&state, install, digest, path).await?;
     let files = format!("{origin}/_activity/{key}/");
     let external = manifest
@@ -1507,6 +1527,8 @@ pub(super) async fn sandbox_sdk(Path(file): Path<String>) -> ApiResult<Response>
     let source = match file.as_str() {
         "v1.js" => SDK,
         "media.js" => MEDIA,
+        // postMessage must originate from the provider's immediate parent window.
+        "embed-frame.js" => r#"import { attachEmbed } from "./media.js"; window.mountStellarrEmbed = attachEmbed;"#,
         _ => return Err(ApiError::not_found()),
     };
     Ok(Response::builder()

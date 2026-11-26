@@ -6,7 +6,7 @@ export interface ActivityCamera {
   dispose(): void;
 }
 export function bindMediaHost(options: {
-  frame: HTMLIFrameElement; origin: string; nonce?: string; youtube?: boolean; title: string; permissions?: string[]; controls: HTMLElement;
+  frame: HTMLIFrameElement; origin: string; nonce?: string; embedHosts?: string[]; title: string; permissions?: string[]; controls: HTMLElement;
   volume: HTMLInputElement; muted?: () => boolean; fixtures?: boolean; language?: string | (() => string);
   camera?: () => ActivityCamera;
   cloneLocalCamera?: () => MediaStreamTrack | undefined;

@@ -7,7 +7,38 @@ export function connectPort(type, port) {
   else window.parent.postMessage(type, "*", [port]);
 }
 
-export function createMedia({ context, permissions = [], volume: initialVolume = 1, youtube = false }) {
+// A provider speaks its own postMessage protocol. Keep its window and origin paired.
+export function embedUrl(input, hosts) {
+  const url = new URL(input);
+  if (url.protocol !== "https:" || url.port || url.username || url.password || !hosts.includes(url.hostname))
+    throw new Error("Expected an HTTPS embed URL from a host declared in connects.");
+  return url;
+}
+
+export function attachEmbed(container, url, { title = url.hostname, onLoad, onMessage }) {
+  const doc = container.ownerDocument;
+  const win = doc.defaultView;
+  const frame = doc.createElement("iframe");
+  frame.title = title;
+  frame.allow = "autoplay; encrypted-media; fullscreen; picture-in-picture; camera 'none'; microphone 'none'; display-capture 'none'";
+  frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-presentation");
+  frame.referrerPolicy = "strict-origin";
+  frame.style.cssText = "display:block;width:100%;height:100%;border:0";
+  frame.onload = () => onLoad?.();
+  function receive(event) {
+    if (event.source === frame.contentWindow && event.origin === url.origin) onMessage?.(event.data);
+  }
+  win.addEventListener("message", receive);
+  frame.src = url.href;
+  container.append(frame);
+  return {
+    setVisible(visible) { frame.style.visibility = visible ? "visible" : "hidden"; },
+    postMessage(data) { frame.contentWindow?.postMessage(data, url.origin); },
+    destroy() { win.removeEventListener("message", receive); frame.onload = null; frame.remove(); },
+  };
+}
+
+export function createMedia({ context, permissions = [], volume: initialVolume = 1, embedHosts = [], hostedEmbeds = false }) {
   const channel = new MessageChannel();
   const port = channel.port1;
   const pending = new Map();
@@ -15,7 +46,7 @@ export function createMedia({ context, permissions = [], volume: initialVolume =
   const mounts = new Set();
   const listeners = new Set();
   let volume = initialVolume ?? 1;
-  let player;
+  const embeds = new Map();
   let closed = false;
   let sequence = 0;
   const post = data => { if (!closed) port.postMessage(data); };
@@ -25,8 +56,10 @@ export function createMedia({ context, permissions = [], volume: initialVolume =
     if (data.op === "volume" && Number.isFinite(data.value)) {
       volume = Math.max(0, Math.min(1, data.value));
       for (const fn of listeners) fn(volume);
-    } else if (data.op === "youtubeEvent" && player?.id === data.id) {
-      player.update(data);
+    } else if (data.op === "embedLoaded") {
+      embeds.get(data.id)?.onLoad?.();
+    } else if (data.op === "embedMessage") {
+      embeds.get(data.id)?.onMessage?.(data.value);
     } else if (data.op === "level") {
       devices.get("microphoneLevel")?.update(data.value);
     } else if (data.op === "ended") {
@@ -73,70 +106,67 @@ export function createMedia({ context, permissions = [], volume: initialVolume =
   }
   function trackBounds(element, report) {
     let previous, raf;
+    let visible = true, stopped = false;
     function position() {
-      const r = element.getBoundingClientRect();
-      const bounds = [r.left, r.top, r.width, r.height, innerWidth, innerHeight];
-      const key = bounds.join(",") + element.isConnected;
+      const r = visible && element.isConnected ? element.getBoundingClientRect() : null;
+      const bounds = [r?.left ?? 0, r?.top ?? 0, r?.width ?? 0, r?.height ?? 0, innerWidth, innerHeight];
+      const key = bounds.join(",");
       if (key !== previous) {
-        report(element.isConnected ? bounds : [0, 0, 0, 0, innerWidth, innerHeight]);
+        report(bounds);
         previous = key;
       }
-      raf = requestAnimationFrame(position);
+      if (visible) raf = requestAnimationFrame(position);
     }
     position();
-    return () => cancelAnimationFrame(raf);
+    return {
+      setVisible(value) {
+        if (stopped || visible === value) return;
+        visible = value;
+        cancelAnimationFrame(raf);
+        position();
+      },
+      stop() { stopped = true; cancelAnimationFrame(raf); },
+    };
   }
   function mount(participant, element) {
-    if (closed || !permissions.includes("media.cameraTile") || !(element instanceof Element)) return () => {};
+    if (closed || !permissions.includes("media.cameraTile") || !(element instanceof Element))
+      return Object.assign(() => {}, { setVisible() {} });
     const id = ++sequence;
-    const untrack = trackBounds(element, bounds => post({ op: "mount", id, participant, bounds }));
-    const remove = () => { untrack(); post({ op: "unmount", id }); mounts.delete(remove); };
+    const layout = trackBounds(element, bounds => post({ op: "mount", id, participant, bounds }));
+    const remove = () => { layout.stop(); post({ op: "unmount", id }); mounts.delete(remove); };
     mounts.add(remove);
-    return remove;
+    return Object.assign(remove, { setVisible: layout.setVisible });
   }
-  function mountYouTube(videoId, element, events) {
-    if (closed || !(element instanceof Element) || !/^[a-zA-Z0-9_-]{11}$/.test(videoId))
-      throw new Error("Invalid YouTube player.");
-    player?.destroy();
+  function mountEmbed(input, element, options = {}) {
+    if (closed || !(element instanceof Element)) throw new Error("Expected an active session and an embed slot.");
+    const url = embedUrl(input, embedHosts);
     const id = ++sequence;
-    let time = 0, duration = 0, state = -1;
-    post({ op: "youtubeOpen", id, videoId });
-    const untrack = trackBounds(element, bounds => post({ op: "youtubeLayout", id, bounds }));
-    const command = (command, value) => post({ op: "youtubeCommand", id, command, value });
-    const timeout = setTimeout(() => events.error(0), 16000);
-    function destroy() {
-      if (player?.id !== id) return;
-      clearTimeout(timeout);
-      untrack();
-      post({ op: "youtubeClose", id });
-      player = undefined;
+    let handle;
+    if (hostedEmbeds) {
+      post({ op: "embedOpen", id, url: url.href, title: options.title ?? url.hostname });
+      const layout = trackBounds(element, bounds => post({ op: "embedLayout", id, bounds }));
+      handle = {
+        setVisible: layout.setVisible,
+        postMessage: value => post({ op: "embedPost", id, value }),
+        destroy() { layout.stop(); post({ op: "embedClose", id }); },
+      };
+    } else {
+      handle = attachEmbed(element, url, options);
     }
-    player = { id, destroy, update({event, info}) {
-      if (Number.isFinite(info?.time)) time = info.time;
-      if (Number.isFinite(info?.duration)) duration = info.duration;
-      if (Number.isFinite(info?.state)) state = info.state;
-      if (event === "onReady") { clearTimeout(timeout); events.ready(); }
-      if (event === "onError") { clearTimeout(timeout); events.error(info); }
-      if (event === "onAutoplayBlocked") events.blocked();
-      if (event === "onStateChange") { state = info; events.stateChange(state); }
-    } };
-    return {
-      prepare: (position, playing) => command(playing ? "loadVideoById" : "cueVideoById", position),
-      time: () => time, duration: () => duration, running: () => state === 1 || state === 3,
-      fullscreen: () => command("fullscreen"),
-      play: () => command("playVideo"), pause: () => command("pauseVideo"),
-      seek: position => command("seekTo", position), volume: value => command("setVolume", value * 100),
-      destroy,
-    };
+    function destroy() {
+      if (embeds.delete(id)) handle.destroy();
+    }
+    embeds.set(id, { onMessage: options.onMessage, onLoad: options.onLoad, destroy });
+    return { setVisible: handle.setVisible, postMessage: handle.postMessage, destroy };
   }
   return {
     volume: { get: () => volume, subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); } },
-    youtube: youtube ? { mount: mountYouTube } : undefined,
+    embed: { mount: mountEmbed },
     microphoneLevel: { open: () => open("microphoneLevel") },
     cameraTile: { open: () => open("cameraTile"), mount },
     dispose() {
       if (closed) return;
-      player?.destroy();
+      for (const embed of embeds.values()) embed.destroy();
       for (const remove of mounts) remove();
       for (const device of devices.values()) device.handle.stop();
       for (const finish of pending.values()) finish("Session closed.");

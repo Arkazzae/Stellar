@@ -37,7 +37,7 @@ interface ActivityFrameProps {
   src: string;
   title: string;
   permissions: string[];
-  youtube?: boolean;
+  embedHosts?: string[];
   muted?: boolean;
   cameraOn?: boolean;
   room: (action: Action, signal: AbortSignal) => Promise<Record<string, unknown>>;
@@ -59,7 +59,7 @@ interface ActivityFrameProps {
   ask?: (kind: DeviceKind, signal: AbortSignal) => Promise<boolean>;
 }
 
-export function ActivityFrame({ src, title, permissions, youtube, muted = false, cameraOn, room, liveRoom, realtime, camera, cloneLocalCamera, tile, onLost, bar, ask }: ActivityFrameProps) {
+export function ActivityFrame({ src, title, permissions, embedHosts, muted = false, cameraOn, room, liveRoom, realtime, camera, cloneLocalCamera, tile, onLost, bar, ask }: ActivityFrameProps) {
   const { t, locale } = useLanguage();
   const target = useMemo(() => {
     const url = new URL(src, window.location.href);
@@ -90,7 +90,7 @@ export function ActivityFrame({ src, title, permissions, youtube, muted = false,
     const { origin, nonce } = target;
     // Local installations serve frame assets below the launch-specific directory.
     const portraitBase = nonce ? target.src : origin + "/";
-    media.current = bindMediaHost({ frame: frame.current, origin, nonce, youtube, title, permissions, controls: controls.current,
+    media.current = bindMediaHost({ frame: frame.current, origin, nonce, embedHosts, title, permissions, controls: controls.current,
       volume: volume.current, language: () => language.current ?? document.documentElement.lang, muted: () => callMuted.current,
       camera, cloneLocalCamera, tile: tile ? action => tile(action, controller.signal) : undefined, overlay: viewport.current ?? undefined,
       ask: asking.current ? (kind, signal) => asking.current?.(kind, signal) ?? Promise.resolve(false) : undefined,
@@ -143,7 +143,8 @@ export function ActivityFrame({ src, title, permissions, youtube, muted = false,
             roomEvents = Boolean(liveRoom && realtime && value.roomHub);
             value.roomEvents = roomEvents && data.input.roomEvents === true;
             value.volume = Number(volume.current?.value ?? 100) / 100;
-            value.youtube = Boolean(nonce && youtube);
+            if (embedHosts) value.embedHosts = nonce ? embedHosts.filter(host => "https://" + host !== location.origin) : embedHosts;
+            value.hostedEmbeds = Boolean(nonce);
           }
           port.postMessage({ id: data.id, value });
         } catch (error) {
@@ -172,7 +173,7 @@ export function ActivityFrame({ src, title, permissions, youtube, muted = false,
         // Already torn down as far as it can be.
       }
     };
-  }, [target, title, permissions, youtube, room, liveRoom, realtime, camera, cloneLocalCamera, tile, onLost]);
+  }, [target, title, permissions, embedHosts, room, liveRoom, realtime, camera, cloneLocalCamera, tile, onLost]);
 
   const roster = useMemo(() => framePlayers(players), [players]);
   const volumeControl = (
@@ -198,7 +199,7 @@ export function ActivityFrame({ src, title, permissions, youtube, muted = false,
     </>}
     <div className="activity-viewport" ref={viewport}>
       <iframe ref={frame} src={target.src} title={title} referrerPolicy="no-referrer"
-        sandbox={target.nonce ? "allow-scripts allow-forms allow-presentation" : "allow-scripts allow-same-origin allow-forms allow-presentation"} allow="autoplay; fullscreen" />
+        sandbox={target.nonce ? "allow-scripts allow-forms allow-presentation" : "allow-scripts allow-same-origin allow-forms allow-presentation"} allow="autoplay; encrypted-media; fullscreen; picture-in-picture" />
     </div>
   </>;
 }

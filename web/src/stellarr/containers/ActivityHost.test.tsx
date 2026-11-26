@@ -17,7 +17,7 @@ const session: ActivitySession = {
   title: "SyncTube",
   icon: null,
   permissions: [],
-  youtube: false,
+  embedHosts: [],
 };
 
 function inside(host: string) {
