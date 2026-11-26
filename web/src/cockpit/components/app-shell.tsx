@@ -60,6 +60,7 @@ const navigation: readonly NavigationGroup[] = [
   {
     labelKey: "nav.group.configuration",
     items: [
+      { labelKey: "nav.activities", href: cockpitHref("/activities"), icon: "folder" },
       { labelKey: "nav.integrations", href: cockpitHref("/integrations"), icon: "link" },
       { labelKey: "nav.settings", href: cockpitHref("/settings"), icon: "gear" },
     ],

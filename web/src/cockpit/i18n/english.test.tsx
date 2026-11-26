@@ -103,6 +103,7 @@ describe("the navigation shell", () => {
       "Runtime",
       "Logs",
       "Backups",
+      "Activities",
       "Integrations",
       "Settings",
     ]);
