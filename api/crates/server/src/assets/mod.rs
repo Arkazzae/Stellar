@@ -20,9 +20,9 @@ use rusqlite::{OptionalExtension, params};
 use stellarr_storage::validation::{UploadKind, spec_for};
 use stellarr_storage::{Error as StoreError, ObjectBody, StoredObject};
 
-use crate::encoding::percent_encode;
 use crate::auth::Caller;
 use crate::database::DbError;
+use crate::encoding::percent_encode;
 use crate::http::{ApiError, ApiResult, Endpoints, Path};
 use crate::state::AppState;
 use crate::values::Id;
@@ -61,34 +61,33 @@ async fn find_readable(state: &AppState, user: Id, id: Id) -> Result<Option<Row>
         .database()
         .read(move |db| -> Result<Option<Row>, DbError> {
             let row = db
-                .query_row(
+                .prepare_cached(
                     "SELECT \"ObjectKey\", \"FileName\", \"ContentType\", \"IsEncrypted\",
                             \"PosterObjectKey\", \"PosterContentType\", \"PosterSizeBytes\",
                             \"PreviewObjectKey\", \"PreviewContentType\", \"PreviewSizeBytes\"
                      FROM \"ImageAttachments\" WHERE \"Id\" = ?1",
-                    params![id],
-                    |row| {
-                        let still = |key: usize| -> rusqlite::Result<Option<Still>> {
-                            let found: Option<String> = row.get(key)?;
-                            Ok(match (found, row.get::<_, Option<String>>(key + 1)?) {
-                                (Some(key_text), Some(content_type)) => Some(Still {
-                                    key: key_text,
-                                    content_type,
-                                    size: row.get(key + 2)?,
-                                }),
-                                _ => None,
-                            })
-                        };
-                        Ok(Row {
-                            object_key: row.get(0)?,
-                            file_name: row.get(1)?,
-                            content_type: row.get(2)?,
-                            is_encrypted: row.get(3)?,
-                            poster: still(4)?,
-                            preview: still(7)?,
+                )?
+                .query_row(params![id], |row| {
+                    let still = |key: usize| -> rusqlite::Result<Option<Still>> {
+                        let found: Option<String> = row.get(key)?;
+                        Ok(match (found, row.get::<_, Option<String>>(key + 1)?) {
+                            (Some(key_text), Some(content_type)) => Some(Still {
+                                key: key_text,
+                                content_type,
+                                size: row.get(key + 2)?,
+                            }),
+                            _ => None,
                         })
-                    },
-                )
+                    };
+                    Ok(Row {
+                        object_key: row.get(0)?,
+                        file_name: row.get(1)?,
+                        content_type: row.get(2)?,
+                        is_encrypted: row.get(3)?,
+                        poster: still(4)?,
+                        preview: still(7)?,
+                    })
+                })
                 .optional()?;
             match row {
                 Some(row) if access::can_read(db, user, id)? => Ok(Some(row)),
