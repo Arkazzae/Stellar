@@ -27,10 +27,13 @@ export async function capture(kind, { file, muted, send, tile, ended, signal }) 
       // type can still be identified by the browser's audio/video decoder.
       const type = file.type.startsWith(mic ? "audio/" : "video/") ? file.type : "application/octet-stream";
       fileURL = URL.createObjectURL(file.slice(0, file.size, type));
-      if (!fileURL.startsWith("blob:") || new URL(fileURL).origin !== location.origin)
-        throw new Error("Expected a local media object URL.");
+      const originPrefix = `blob:${location.origin}/`;
+      if (!fileURL.startsWith(originPrefix)) throw new Error("Expected a local media object URL.");
+      // The File API gives the object a UUID in this origin's blob registry.
+      // Pass only that path segment to the decoder.
+      const objectId = fileURL.slice(originPrefix.length);
       sourceElement = document.createElement("source");
-      sourceElement.setAttribute("src", fileURL);
+      sourceElement.src = originPrefix + encodeURIComponent(objectId);
       sourceElement.addEventListener("error", () => {
         if (!closed) { player.pause(); ended(); }
       }, { once: true });
