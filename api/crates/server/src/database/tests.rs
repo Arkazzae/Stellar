@@ -22,59 +22,55 @@ fn insert_user(connection: &Connection, name: &str) -> rusqlite::Result<usize> {
 #[tokio::test]
 async fn every_connection_the_pool_hands_out_enforces_foreign_keys() {
     let (_folder, database) = new_database();
-    // Three leases that are all open at once, so that three connections are.
     let barrier = Arc::new(Barrier::new(3));
-    let mut reads = Vec::new();
+    let mut readers = Vec::new();
     for _ in 0..3 {
         let database = database.clone();
         let barrier = Arc::clone(&barrier);
-        reads.push(tokio::spawn(async move {
-            // Lent a connection directly: a read could not insert a row.
+        readers.push(tokio::spawn(async move {
             database
-                .run(move |connection| -> Result<(i64, i32), DbError> {
+                .read(move |db| -> rusqlite::Result<bool> {
                     barrier.wait();
-                    let enforced = connection.query_row("PRAGMA foreign_keys", [], |row| row.get(0))?;
-                    let refusal = connection
-                        .execute(
-                            "INSERT INTO \"ServerMembers\" (\"ServerId\", \"UserId\", \"RoleId\", \"JoinedAt\")
-                             VALUES (?1, ?2, ?3, ?4)",
-                            params![Id::random(), Id::random(), Id::random(), Timestamp::now()],
-                        )
-                        .map_err(DbError::from)
-                        .unwrap_err();
-                    Ok((enforced, refusal.extended_code().unwrap_or_default()))
+                    assert!(db.is_readonly("main")?);
+                    db.pragma_query_value(None, "foreign_keys", |row| row.get(0))
                 })
                 .await
         }));
     }
-
-    for read in reads {
-        assert_eq!(read.await.unwrap().unwrap(), (1, FOREIGN_KEY_VIOLATION));
+    for reader in readers {
+        assert!(reader.await.unwrap().unwrap());
     }
+    let refusal = database.write(|tx| -> Result<(), DbError> {
+        assert!(!tx.is_readonly("main")?);
+        tx.execute(
+            "INSERT INTO ServerMembers (ServerId, UserId, RoleId, JoinedAt) VALUES (?1, ?2, ?3, ?4)",
+            params![Id::random(), Id::random(), Id::random(), Timestamp::now()],
+        )?;
+        Ok(())
+    }).await.unwrap_err();
+    assert_eq!(refusal.extended_code(), Some(FOREIGN_KEY_VIOLATION));
 }
 
 #[tokio::test]
-async fn a_connection_that_had_foreign_keys_switched_off_has_them_back_when_lent_again() {
+async fn the_next_writer_restores_connection_settings_changed_by_the_last_lease() {
     let (_folder, database) = new_database();
-    // Outside a transaction, where the setting can be changed at all.
     database
-        .run(|connection| -> Result<(), DbError> {
+        .writer
+        .run(|connection| -> rusqlite::Result<()> {
             connection.pragma_update(None, "foreign_keys", false)?;
-            let now: i64 = connection.query_row("PRAGMA foreign_keys", [], |row| row.get(0))?;
-            assert_eq!(now, 0);
+            connection.pragma_update(None, "query_only", true)?;
             Ok(())
         })
         .await
         .unwrap();
-
-    let enforced: i64 = database
-        .read(|connection| -> Result<i64, DbError> {
-            Ok(connection.query_row("PRAGMA foreign_keys", [], |row| row.get(0))?)
+    database
+        .write(|tx| -> rusqlite::Result<()> {
+            assert!(tx.pragma_query_value(None, "foreign_keys", |row| row.get::<_, bool>(0))?);
+            insert_user(tx, "writable")?;
+            Ok(())
         })
         .await
         .unwrap();
-
-    assert_eq!(enforced, 1);
 }
 
 #[tokio::test]
@@ -129,7 +125,7 @@ async fn journal_mode(database: &Database, barrier: &Arc<Barrier>) -> String {
 
 #[tokio::test]
 async fn writers_wait_for_each_other_instead_of_failing() {
-    const WRITERS: usize = 4;
+    const WRITERS: usize = MAX_READERS + 1;
     let (folder, database) = new_database();
     let settings = database_settings(&folder);
 
@@ -157,6 +153,15 @@ async fn writers_wait_for_each_other_instead_of_failing() {
     // Each writer is waiting for the lock, not done and not failed.
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert!(writers.iter().all(|writer| !writer.is_finished()));
+    let seen = tokio::time::timeout(
+        Duration::from_secs(2),
+        database
+            .read(|db| db.query_row("SELECT count(*) FROM Users", [], |row| row.get::<_, i64>(0))),
+    )
+    .await
+    .expect("queued writers leave room to read")
+    .unwrap();
+    assert_eq!(seen, 0);
     transaction.commit().unwrap();
 
     for writer in writers {
@@ -511,13 +516,13 @@ async fn a_timed_out_write_restores_the_pooled_connections_busy_timeout() {
         .await
         .unwrap_err();
     assert_eq!(failure.extended_code(), Some(rusqlite::ffi::SQLITE_BUSY));
+    lock.commit().unwrap();
 
     let timeout: i64 = database
-        .read(|db| db.query_row("PRAGMA busy_timeout", [], |row| row.get(0)))
+        .write(|db| db.query_row("PRAGMA busy_timeout", [], |row| row.get(0)))
         .await
         .unwrap();
     assert_eq!(timeout, 25);
-    lock.commit().unwrap();
 
     database
         .write_with_lock_retry(|tx| insert_user(tx, "after-timeout").map(|_| ()))
