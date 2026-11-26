@@ -42,7 +42,7 @@ function activeLinks() {
 selectPolish();
 
 describe("AppShell navigation", () => {
-  it("lists the eight areas of the panel in order", () => {
+  it("lists the nine areas of the panel in order", () => {
     renderShell("/cockpit");
 
     const labels = within(sidebarNavigation())
@@ -55,6 +55,7 @@ describe("AppShell navigation", () => {
       "Runtime",
       "Logi",
       "Backup",
+      "Aktywności",
       "Integracje",
       "Ustawienia",
     ]);
@@ -73,6 +74,7 @@ describe("AppShell navigation", () => {
       "/cockpit/runtime",
       "/cockpit/logs",
       "/cockpit/backups",
+      "/cockpit/activities",
       "/cockpit/integrations",
       "/cockpit/settings",
     ]);
@@ -92,6 +94,7 @@ describe("AppShell navigation", () => {
     ["/cockpit/runtime", "Runtime"],
     ["/cockpit/logs", "Logi"],
     ["/cockpit/backups", "Backup"],
+    ["/cockpit/activities", "Aktywności"],
     ["/cockpit/integrations", "Integracje"],
     ["/cockpit/settings", "Ustawienia"],
   ])("marks the item for %s as the only active one and names it in the header", (path, label) => {
@@ -130,7 +133,7 @@ describe("AppShell mobile navigation", () => {
     await user.click(screen.getByRole("button", { name: "Otwórz nawigację" }));
     const sheet = await screen.findByRole("dialog");
     const sheetLinks = within(sheet).getAllByRole("link");
-    expect(sheetLinks).toHaveLength(8);
+    expect(sheetLinks).toHaveLength(9);
 
     await user.click(within(sheet).getByRole("link", { name: "Runtime" }));
 
