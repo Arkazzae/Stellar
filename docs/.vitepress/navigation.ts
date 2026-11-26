@@ -13,6 +13,7 @@ interface Section {
 const sections: Section[] = [
   { folder: 'install', label: 'Self-hosting' },
   { folder: 'admin', label: 'Administration' },
+  { folder: 'sdk', label: 'Activity SDK' },
   { folder: null, label: 'Reference' },
   { folder: 'development', label: 'Development' },
 ]

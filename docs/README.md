@@ -32,6 +32,17 @@ Day-to-day server management, security policies, backups, and external integrati
 | [Cloudflare R2 offsite backups](admin/cloudflare-r2.md) | Direct S3 multipart streaming, the Backup Relay Worker, SHA-256 verification, and retention rules |
 | [Activity notifications](admin/notifications.md) | Zero-metadata email and Web Push alerts for `@mentions` and DMs, VAPID key generation, and retry policies |
 
+## Activity SDK
+
+Build multiplayer games, watch parties, and solo mini-apps with `@stellarr/sdk`—no backend server required.
+
+| Guide | Scope |
+| --- | --- |
+| [Getting started](sdk/getting-started.md) | 2-minute zero-build activity, Vite/TypeScript setup, local multi-tab simulator, theme/locale/device sync, and live voice previews |
+| [Rooms, state, and saves](sdk/rooms-and-state.md) | Choosing data channels, conflict-free `state.set(fn)`, host commands, spectator seats, secret player hands, `now()` timers, and `progress` saves |
+| [Media, manifest, and publishing](sdk/media-and-publishing.md) | **Game audio** volume, consented `microphoneLevel` & `cameraTile` overlays, `stellarr.json`, CSP `connects`, and Cockpit releases |
+| [API and CLI reference](sdk/api-reference.md) | Full `DevSession<S>` TypeScript API, observables, `stellarr` CLI flags, allowed asset extensions, error codes, and runtime limits |
+
 ## Reference
 
 System architecture, wire protocols, media server internals, theming, and localization.
