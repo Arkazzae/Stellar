@@ -25,6 +25,8 @@ const fn row(name: &'static str, key: Option<&'static str>) -> Variable {
 
 pub const VARIABLES: &[Variable] = &[
     // Address and TLS.
+    row("STELLARR_ACTIVITY_DOMAIN", Some("Activities:Domain")),
+    row("STELLARR_ACTIVITY_ORIGIN", Some("Activities:Origin")),
     row("STELLARR_DOMAIN", Some("Rtc:PublicHost")),
     row("STELLARR_PUBLIC_PORT", None),
     row("STELLARR_PUBLIC_URL", None),
@@ -164,6 +166,8 @@ mod tests {
     /// Every variable and the key it must land on, written out here rather
     /// than read from the table.
     const EXPECTED: &[(&str, &str)] = &[
+        ("STELLARR_ACTIVITY_DOMAIN", "Activities:Domain"),
+        ("STELLARR_ACTIVITY_ORIGIN", "Activities:Origin"),
         ("STELLARR_DOMAIN", "Rtc:PublicHost"),
         ("STELLARR_TRUSTED_PROXIES", "Operations:TrustedProxies"),
         ("STELLARR_MEDIA_PORT", "Rtc:MediaPort"),

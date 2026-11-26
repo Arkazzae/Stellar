@@ -53,6 +53,7 @@ pub fn prepare(connection: &mut Connection) -> Result<(), DbError> {
     transaction.execute_batch(include_str!("../discord_import/jobs.sql"))?;
     transaction.execute_batch(include_str!("../link_previews/imported.sql"))?;
     transaction.execute_batch(include_str!("upload_limits.sql"))?;
+    transaction.execute_batch(include_str!("../activities/schema.sql"))?;
     transaction.commit()?;
     Ok(())
 }

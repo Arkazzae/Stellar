@@ -43,6 +43,8 @@ serde_json = { workspace = true, features = ["raw_value"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal", "fs", "io-util", "process"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+rquickjs = { version = "0.14.0", features = ["parallel"] }
+semver = "1.0.28"
 
 [lints]
 workspace = true

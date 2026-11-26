@@ -1,4 +1,5 @@
 mod account_security;
+mod activities;
 mod assets;
 mod backups;
 mod bootstrap;

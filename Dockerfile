@@ -237,6 +237,8 @@ for manifest in crates/*/Cargo.toml; do
 done
 EOF
 COPY api/ ./
+COPY sdk/dev/room.js /src/sdk/dev/room.js
+COPY sdk/client.js sdk/media.js /src/sdk/
 RUN cargo build --release --locked --target "$(cat /etc/rust-target)" -p stellarr-api -p stellarr-cli \
     && install -D "target/$(cat /etc/rust-target)/release/stellarr-api" /out/api/stellarr-api \
     && install -D "target/$(cat /etc/rust-target)/release/stellarr" /out/cli/stellarr
