@@ -4,7 +4,15 @@ import { DmRoom } from "@/components/friends/DmRoom";
 import { FriendsView } from "@/components/friends/FriendsView";
 import type { FriendRequestVM, FriendVM } from "@/components/view-models";
 import { formatAgo, formatDate } from "@/lib/format/format";
-import { useFriends, useLanguage, useProfile, useUi, useVoice } from "@/state/hooks";
+import {
+  useActivities,
+  useActivitySlot,
+  useFriends,
+  useLanguage,
+  useProfile,
+  useUi,
+  useVoice,
+} from "@/state/hooks";
 
 import { DmCallContainer } from "./DmCallContainer";
 import { DmChatContainer } from "./DmChatContainer";
@@ -20,8 +28,22 @@ import { CALL_BLOCKED_KEY, useCallBlock } from "./useCallBlock";
 const CAMERA_AFTER_JOIN_MS = 500;
 
 /**
- * What the room shows on the messages side of the app: one conversation, or
- * the list of people, never both. The rail already says who else is there, and
+ * The room while the activity you run for yourself has it. The activity's
+ * panel, drawn by the app's activity host, covers this place and brings its
+ * own bar, so the room is only the place.
+ */
+function PersonalActivityRoom({ title }: { title: string }) {
+  const slot = useActivitySlot("personal");
+  return (
+    <main className="room activity-room" aria-label={title}>
+      <div className="act-slot" ref={slot} />
+    </main>
+  );
+}
+
+/**
+ * What the room shows on the messages side of the app: one conversation, your
+ * own activity, or the list of people, never two of them. The rail already says who else is there, and
  * a second copy of it beside an open conversation would be a fourth column.
  */
 export function FriendsRoomContainer() {
@@ -29,6 +51,7 @@ export function FriendsRoomContainer() {
   const friends = useFriends();
   const profile = useProfile();
   const voice = useVoice();
+  const { personal } = useActivities();
   const { locale, t } = useLanguage();
   // Full screen takes the whole room, as on a channel: the bar's narrow layout
   // follows the room's width, which then is the screen's.
@@ -107,6 +130,8 @@ export function FriendsRoomContainer() {
       </DmRoom>
     );
   }
+
+  if (ui.activityOpen && personal !== null) return <PersonalActivityRoom title={personal.title} />;
 
   return (
     <FriendsView

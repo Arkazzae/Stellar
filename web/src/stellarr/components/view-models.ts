@@ -160,7 +160,7 @@ export interface DmConversationVM {
 }
 
 /** Which list the Friends view shows. "add" is a panel, not a filter. */
-export type FriendsTab = "online" | "all" | "pending" | "blocked" | "activities" | "add";
+export type FriendsTab = "online" | "all" | "pending" | "blocked" | "add";
 
 /** A person as the Friends view lists them. */
 export interface FriendVM {

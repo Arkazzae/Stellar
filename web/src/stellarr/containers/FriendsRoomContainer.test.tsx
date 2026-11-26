@@ -30,6 +30,8 @@ vi.mock("@/state/hooks", () => ({
   useFriends: () => mocks.friends,
   useUi: () => mocks.ui,
   useVoice: () => mocks.voice,
+  useActivities: () => ({ personal: null }),
+  useActivitySlot: () => () => undefined,
   useLanguage: () => mocks.language,
   useProfile: () => mocks.profile,
   useEncryption: () => ({ status: { support: "supported", deviceLimit: false } }),
