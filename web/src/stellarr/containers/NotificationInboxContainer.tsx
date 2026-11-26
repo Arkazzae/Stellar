@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 
+import { offerInstallAfterInvite } from "@/lib/platform/install";
 import { Icon } from "@stellarr/icons";
 import { NotificationInbox } from "@/components/shell/NotificationInbox";
 import {
@@ -33,6 +34,7 @@ export function NotificationInboxButton() {
 
   const joinInvite = async (inviteCode: string) => {
     const server = await directory.joinInvite(inviteCode);
+    offerInstallAfterInvite();
     directory.selectServer(server.id);
     ui.openServer();
     session.reload();

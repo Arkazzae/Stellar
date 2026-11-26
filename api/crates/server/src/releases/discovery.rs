@@ -45,6 +45,33 @@ struct DesktopVersions {
     recommended_version: String,
 }
 
+/// Public installation identity for this origin, shared by all its servers.
+pub async fn manifest(State(state): State<AppState>) -> ApiResult<axum::response::Response> {
+    use axum::http::{HeaderValue, StatusCode, header};
+    use rusqlite::OptionalExtension;
+
+    let name = state.database().read(|db| -> Result<Option<String>, DbError> {
+        Ok(db.query_row(r#"SELECT "Name" FROM "Servers" ORDER BY "CreatedAt", "Id" LIMIT 1"#,
+            [], |row| row.get(0)).optional()?)
+    }).await?;
+    let name = match name.as_deref() {
+        None | Some("") | Some("Stellarr") => "Stellarr".to_string(),
+        Some(instance) => format!("Stellarr · {instance}"),
+    };
+    let manifest = serde_json::json!({
+        "id": "/", "name": name, "short_name": name, "start_url": "/", "scope": "/",
+        "display": "standalone", "background_color": "#111111", "theme_color": "#111111",
+        "icons": [
+            {"src": "/pwa/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+            {"src": "/pwa/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+            {"src": "/pwa/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+        ]
+    });
+    let mut response = crate::http::json_response(StatusCode::OK, &manifest);
+    response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("application/manifest+json"));
+    Ok(response)
+}
+
 pub async fn describe(
     State(state): State<AppState>,
     headers: HeaderMap,

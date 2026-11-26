@@ -29,6 +29,7 @@ export type ModalKey =
   | "settings"
   | "soundboard"
   | "account"
+  | "notification-settings"
   | "profile"
   | "voice"
   | "invite"

@@ -530,6 +530,9 @@ describe("the files the apps name by address", () => {
 
   /** Whether the instance serves `address`: a file of public/ or of the artifacts, the instance file, the release file, or a source the build turns into a file of its own. */
   function served(address: string): boolean {
+    if (address === "/api/client/manifest.webmanifest") {
+      return read("../api/crates/server/src/releases/mod.rs").includes(`.get("${address}",`);
+    }
     if (address === INSTANCE_LANGUAGE_PATH || address === RELEASE_PATH) return true;
     if (address.startsWith("/src/")) return existsSync(here(`.${address}`));
     if (Object.values(WORKLETS).some((file) => address === `/${file}`)) return true;
