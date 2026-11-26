@@ -88,6 +88,51 @@ it("groups the three device controls together and opens activities beside screen
   expect(onOpenActivities).toHaveBeenCalledOnce();
 });
 
+it("joins a live voice activity directly from the bar without opening the picker modal", () => {
+  const onOpenActivities = vi.fn();
+  const onJoinActivity = vi.fn();
+  const onLeaveActivity = vi.fn();
+  const liveActivity = { install: "sketch", name: "Kalambury", icon: "/icon.png" };
+
+  const { rerender } = render(
+    <VoiceControlBar
+      {...props({
+        liveActivity,
+        onOpenActivities,
+        onJoinActivity,
+        onLeaveActivity,
+      })}
+    />,
+  );
+
+  expect(screen.queryByRole("button", { name: "Aktywności" })).toBeNull();
+  const joinButton = screen.getByRole("button", { name: "Dołącz: Kalambury" });
+  expect(joinButton).not.toHaveAttribute("aria-haspopup");
+  expect(joinButton).toHaveTextContent("Kalambury");
+  expect(joinButton).toHaveTextContent("Trwa · Dołącz");
+  fireEvent.click(joinButton);
+  expect(onJoinActivity).toHaveBeenCalledOnce();
+  expect(onOpenActivities).not.toHaveBeenCalled();
+
+  rerender(
+    <VoiceControlBar
+      {...props({
+        liveActivity,
+        activityJoined: true,
+        onOpenActivities,
+        onJoinActivity,
+        onLeaveActivity,
+      })}
+    />,
+  );
+
+  const leaveButton = screen.getByRole("button", { name: "Opuść aktywność" });
+  expect(leaveButton).toHaveAttribute("aria-pressed", "true");
+  expect(leaveButton).toHaveAttribute("title", "Opuść aktywność: Kalambury");
+  fireEvent.click(leaveButton);
+  expect(onLeaveActivity).toHaveBeenCalledOnce();
+});
+
 const compactMenu = () => document.querySelector<HTMLElement>(".vc-mobile-menu")!;
 
 describe("VoiceControlBar full screen", () => {
