@@ -390,5 +390,6 @@ pub fn routes() -> Endpoints {
         .post("/api/activities/{channel}/tile", live::tile)
         .json_body_up_to(128 * 1024)
         .authorized()
+        .get("/_activity-files", live::asset_root)
         .get("/_activity-files/{*path}", live::asset)
 }
