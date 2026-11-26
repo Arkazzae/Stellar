@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/state/hooks", () => ({
+  useSession: () => ({ user: { id: "self" } }),
   useFriends: () => mocks.friends,
   useLanguage: () => mocks.language,
   useProfile: () => mocks.profile,

@@ -80,6 +80,8 @@ const ANY_ATTACHMENT = [
 ].join(",");
 
 export interface ComposerProps {
+  draftScope?: string;
+  restoringFiles?: boolean;
   /** Bare channel name; the placeholder prefixes it with "#". */
   channelName: string;
   /**
@@ -126,6 +128,8 @@ export function Composer({
   channelName,
   placeholder,
   recordingScope = channelName,
+  draftScope,
+  restoringFiles = false,
   attachmentsSupported = true,
   chips,
   replyingTo = null,
@@ -193,6 +197,7 @@ export function Composer({
     sending,
     sendError,
     clearSendError,
+    loading: loadingDraft,
     codeMode,
     automaticCode,
     setCodeMode,
@@ -206,6 +211,8 @@ export function Composer({
     canSend,
     submit,
   } = useComposerDraft({
+    draftScope,
+    restoringFiles,
     chips,
     onSubmit,
     onSent: () => setMobileActionsOpen(false),
@@ -533,6 +540,7 @@ export function Composer({
               <ComposerCodeLayers field={field} text={text} language={codeHighlight} />
             ) : null}
             <textarea
+              readOnly={loadingDraft}
               ref={field}
               rows={1}
               value={text}

@@ -13,6 +13,7 @@ import {
 
 import type { MessageKey, Translator } from "@/i18n";
 import { dismissActivityNotifications } from "@/lib/platform/badge";
+import { clearDrafts, forgetServerDrafts } from "@/lib/platform/drafts";
 import { clearAll as clearTranslations } from "@/lib/chatTranslation/translationCache";
 import { wipeAll as wipeStoredMessages, wipeServer as wipeStoredServer } from "@/lib/messageStore/messageStore";
 import type { Account, AuthResult, ConnectionStatus, Presence, User } from "@/ports";
@@ -229,6 +230,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       runtime.realtime.on("ServerAccessRevoked", ({ serverId, kind }) => {
         // Whatever server it is, what this device kept of it is no longer theirs to read.
         void wipeStoredServer(serverId);
+        void forgetServerDrafts(serverId).catch(() => undefined);
         if (ports.directory.getServer().id !== serverId) return;
         ended.current = true;
         setBoot({
@@ -357,6 +359,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // session binding is what decides delivery; this only frees the device.
   useEffect(() => {
     if (boot.phase !== "anonymous" && boot.phase !== "revoked") return;
+    void clearDrafts().catch(() => undefined);
     void navigator.clearAppBadge?.().catch(() => undefined);
     void dismissActivityNotifications().catch(() => undefined);
     void ports.notificationDelivery.releaseDevice().catch(() => undefined);
