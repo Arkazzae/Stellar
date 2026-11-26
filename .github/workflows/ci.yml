@@ -64,9 +64,8 @@ jobs:
               echo "$1=false" >> "$GITHUB_OUTPUT"
             fi
           }
-          # The API tests also read the message-syntax cases kept in web/, so a
-          # case added there checks the renderer and the API together.
-          check api '^(api/|sdk/(client|media|dev/room)\.js$|web/src/stellarr/lib/messages/message-syntax\.json$|\.github/workflows/ci\.yml$)'
+          # Run the native tests when either shared fixture changes.
+          check api '^(api/|sdk/(client|media|dev/room)\.js$|sdk/test/fixtures/manifest-parity\.json$|web/src/stellarr/lib/messages/message-syntax\.json$|\.github/workflows/ci\.yml$)'
           # web/ holds the web client and Cockpit (web/src/cockpit/). It is a
           # workspace of one npm project with the shared packages, so a change
           # to them or to the root manifest or lockfile runs the web job too.
