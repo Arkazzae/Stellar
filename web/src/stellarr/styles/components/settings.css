@@ -829,6 +829,10 @@
   .wave-clamp:focus-visible::before{box-shadow:0 0 0 2px var(--accent)}
 
   /* ---------- WYBÓR KLIENTA ---------- */
+  .share-modal .dlg-body{overflow-y:auto;padding-bottom:24px}
+  .share-modal label{display:grid;gap:6px}
+  .share-modal select{width:100%;min-width:0;padding:10px 12px;color:var(--text);background:var(--surface-field);border:1px solid var(--line-subtle);border-radius:var(--radius-md);font:inherit}
+  .share-files{margin:0;padding-inline-start:1.25rem;overflow-wrap:anywhere}
   .client-modal .am-card{width:min(600px,100%)}
   .client-list{display:flex;flex-direction:column;gap:10px;overflow-y:auto}
   .client-option{

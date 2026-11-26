@@ -283,9 +283,65 @@ async function answer(request, url, event) {
   return fromShell(request, url, route);
 }
 
+// The share POST is a local handoff. Keep each batch under a random handle;
+// the redirect contains neither a filename nor the bytes. The page claims it
+// in the same IndexedDB transaction that checks the account and expiry.
+async function receiveShare(request) {
+  let result = "error";
+  let db;
+  try {
+    const origin = request.headers.get("Origin");
+    if (origin && origin !== "null" && origin !== self.location.origin) throw Error();
+    if (!request.headers.get("Content-Type")?.startsWith("multipart/form-data")) throw Error();
+    const limit = 256 * 1024 * 1024;
+    if (Number(request.headers.get("Content-Length")) > limit + 65536) throw Error();
+    const files = (await request.formData()).getAll("files");
+    if (!files.length || files.length > 10 || files.some(file => !(file instanceof File) || !file.name || !file.size)
+        || files.reduce((size, file) => size + file.size, 0) > limit) throw Error();
+    const id = crypto.randomUUID();
+    db = await new Promise((resolve, reject) => {
+      const open = indexedDB.open("stellarr-incoming-shares", 1);
+      open.onupgradeneeded = () => open.result.createObjectStore("shares");
+      open.onsuccess = () => resolve(open.result);
+      open.onerror = () => reject(open.error);
+    });
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction("shares", "readwrite");
+      const store = tx.objectStore("shares");
+      const now = Date.now();
+      let pending = 0;
+      let owner = null;
+      const cursor = store.openCursor();
+      cursor.onsuccess = () => {
+        const row = cursor.result;
+        if (row) {
+          if (row.key === "owner") owner = row.value;
+          else if (row.value.expires <= now) row.delete();
+          else pending++;
+          row.continue();
+        } else if (pending < 4) {
+          store.add({ owner, files, expires: now + 60 * 60 * 1000 }, id);
+        } else tx.abort();
+      };
+      tx.oncomplete = resolve;
+      tx.onabort = tx.onerror = () => reject(tx.error);
+    });
+    result = id;
+  } catch {
+    // The landing dialog offers the ordinary file picker on failure.
+  } finally {
+    db?.close();
+  }
+  return Response.redirect(new URL("/?share=" + result, self.location.origin), 303);
+}
+
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
+  if (url.origin === self.location.origin && url.pathname === "/pwa/share" && request.method === "POST" && request.mode === "navigate") {
+    event.respondWith(receiveShare(request));
+    return;
+  }
   // Until the pointer is read, the folders are not known and every folder
   // counts as a page, which only lets more requests through to `answer`.
   const directories = current === undefined ? [] : current === null ? null : current.directories;

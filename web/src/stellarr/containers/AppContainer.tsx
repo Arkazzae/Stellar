@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Message } from "@/ports";
 import { AppBadge } from "./AppBadge";
+import { ShareTarget } from "./ShareTarget";
 import { LaunchTarget, type LaunchProps } from "./LaunchTarget";
 import { ConfirmProvider } from "@/components/primitives/ConfirmDialog";
 import { AppShell } from "@/components/shell/AppShell";
@@ -102,7 +103,9 @@ function Shell({ entry, onEntryHandled }: LaunchProps) {
           shows. The wallpaper sits on a fixed layer behind the shell. */}
       <AppAppearance />
       <AppBadge />
-      {entry && onEntryHandled && <LaunchTarget key={entry} entry={entry} finish={onEntryHandled} reveal={setNoticeMessage} />}
+      {entry && onEntryHandled && (entry.startsWith("?share=")
+        ? <ShareTarget key={entry} id={entry.slice(7)} finish={onEntryHandled} />
+        : <LaunchTarget key={entry} entry={entry} finish={onEntryHandled} reveal={setNoticeMessage} />)}
       <AppShell
         serverRail={<ServerRailContainer />}
         // One column, two contents. Both rails are unmounted when the other is

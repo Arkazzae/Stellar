@@ -19,6 +19,7 @@ mod names;
 mod order;
 mod read;
 mod section;
+mod share;
 
 use serde::Serialize;
 use stellarr_messages::{MessageKey, Messages};
@@ -29,6 +30,8 @@ use crate::values::Id;
 
 pub fn routes() -> Endpoints {
     Endpoints::new()
+        .get("/api/me/share-channels", share::list)
+        .authorized()
         .post("/api/admin/channels", channel::create)
         .authorized()
         .json_body()
