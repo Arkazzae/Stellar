@@ -118,26 +118,17 @@ export interface VoiceChannelVM {
   sectionId?: string;
   /** How many people the channel seats; absent when it seats anyone who comes. */
   userLimit?: number;
-  /** The activity running on the channel, seen from the rail. */
+  /** The activity running on the channel, whose mark follows the names of the people inside it. */
   activity?: VoiceChannelActivityVM;
 }
 
-/** What runs on a voice channel, for its row in the rail. */
+/** What runs on a voice channel, as the rail marks the people inside it. */
 export interface VoiceChannelActivityVM {
   install: string;
   name: string;
   icon: string | null;
   /** Who is inside, by id. */
   participants: readonly string[];
-  seats: number | null;
-  /** This client is inside it. */
-  inside: boolean;
-  /** A one-click join into it is under way. */
-  joining: boolean;
-  /** No seat is left for you. */
-  full: boolean;
-  /** Why the last join into it failed, for a moment; null otherwise. */
-  failure: string | null;
 }
 
 /** A private thread as the rail lists it. */

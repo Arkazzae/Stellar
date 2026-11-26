@@ -100,10 +100,6 @@ export interface RailProps {
     sourceChannelId: string,
     targetChannelId: string,
   ) => Promise<void> | void;
-  /** Joins the activity running on a voice channel, joining the channel first if need be. */
-  onJoinActivity?: (channelId: string) => void;
-  /** Back to the activity you are inside, on the stage. */
-  onOpenActivity?: (channelId: string) => void;
   /** `<VoiceDock>`, composed by the container. */
   voiceDock?: ReactNode;
   /** `<AccountRow>`, composed by the container. */
@@ -175,8 +171,6 @@ export function Rail({
   channelMenu,
   voiceMemberMenu,
   onMoveVoiceMember,
-  onJoinActivity,
-  onOpenActivity,
   voiceDock,
   account,
   hidden = false,
@@ -234,8 +228,6 @@ export function Rail({
   const selectText = useStableHandler(onSelectTextChannel);
   const joinVoice = useStableHandler(onJoinVoiceChannel);
   const openThread = useStableHandler(onOpenThread);
-  const joinActivity = useStableHandler(onJoinActivity);
-  const openActivity = useStableHandler(onOpenActivity);
   const openSettings = useStableHandler(canManageChannels ? onOpenChannelSettings : undefined);
   const toggleThreads = useCallback(
     (channelId: string) => setExpandedThreads((current) => toggled(current, channelId)),
@@ -337,8 +329,6 @@ export function Rail({
       canMoveOthers={canMoveOthers}
       carry={carry}
       arrives={arrives}
-      onJoinActivity={joinActivity}
-      onOpenActivity={openActivity}
     />
   );
 
