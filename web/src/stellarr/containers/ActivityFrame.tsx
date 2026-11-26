@@ -12,9 +12,24 @@ function framePortrait(person: Participant, base: string): Participant {
     ? { ...person, avatar: new URL(person.avatar.slice(1), base).href } : person;
 }
 
+/** Somebody in the activity as its own roster says, named so two of the same name differ. */
+export interface FramePlayer {
+  id: string;
+  label: string;
+  avatarUrl?: string;
+  connected: boolean;
+}
+
+/** The frame's own controls, for a bar that places them. */
+export interface FrameParts {
+  /** The activity's own volume. */
+  volume: ReactNode;
+  /** Where the SDK host puts what stops a device the activity uses. */
+  devices: ReactNode;
+  players: readonly FramePlayer[];
+}
+
 interface ActivityFrameProps {
-  children?: ReactNode;
-  hidden?: boolean;
   src: string;
   title: string;
   permissions: string[];
@@ -24,9 +39,14 @@ interface ActivityFrameProps {
   room: (action: Action, signal: AbortSignal) => Promise<Record<string, unknown>>;
   tile: (action: Action, signal: AbortSignal) => Promise<Record<string, string | null>>;
   onLost: () => void;
+  /**
+   * Lays out the volume, the device controls and who plays. Without it they
+   * sit in a plain row above the frame, as the development preview has them.
+   */
+  bar?: (parts: FrameParts) => ReactNode;
 }
 
-export function ActivityFrame({ children, hidden = false, src, title, permissions, youtube, muted = false, cameraOn, room, tile, onLost }: ActivityFrameProps) {
+export function ActivityFrame({ src, title, permissions, youtube, muted = false, cameraOn, room, tile, onLost, bar }: ActivityFrameProps) {
   const { t, locale } = useLanguage();
   const target = useMemo(() => {
     const url = new URL(src, window.location.href);
@@ -41,6 +61,7 @@ export function ActivityFrame({ children, hidden = false, src, title, permission
   const frame = useRef<HTMLIFrameElement>(null);
   const volume = useRef<HTMLInputElement>(null);
   const controls = useRef<HTMLSpanElement>(null);
+  const viewport = useRef<HTMLDivElement>(null);
   const media = useRef<HostMediaControls | null>(null);
   const callMuted = useRef(muted);
   useEffect(() => { callMuted.current = muted; }, [muted]);
@@ -54,7 +75,7 @@ export function ActivityFrame({ children, hidden = false, src, title, permission
     const portraitBase = nonce ? target.src : origin + "/";
     media.current = bindMediaHost({ frame: frame.current, origin, nonce, youtube, title, permissions, controls: controls.current,
       volume: volume.current, language: () => language.current ?? document.documentElement.lang, muted: () => callMuted.current,
-      tile: action => tile(action, controller.signal) });
+      tile: action => tile(action, controller.signal), overlay: viewport.current ?? undefined });
     let frameId: string | undefined;
     let connected: MessagePort | undefined;
     function bind(event: MessageEvent) {
@@ -111,32 +132,47 @@ export function ActivityFrame({ children, hidden = false, src, title, permission
     };
   }, [target, title, permissions, youtube, room, tile, onLost]);
 
-  const names = new Set<string>();
-  const duplicates = new Set<string>();
-  for (const player of players) {
-    if (names.has(player.name)) duplicates.add(player.name);
-    names.add(player.name);
-  }
+  const roster = useMemo(() => framePlayers(players), [players]);
+  const volumeControl = (
+    <label className="activity-volume" title={t("activities.gameAudio")}>
+      <Icon name="speaker" size={16} />
+      <input type="range" aria-label={t("activities.gameAudio")} min="0" max="100" defaultValue="100" ref={volume} />
+    </label>
+  );
+  const devices = <span className="activity-devices" ref={controls} />;
 
   return <>
-    {!hidden && players.length > 0 && <ul className="activity-players" aria-label={t("stage.activityPlayers")}>
-      {players.map(person => <li key={person.id}>
-        <Avatar id={person.id} displayName={person.name} size="xs" offline={!person.connected}
-          avatarUrl={person.avatar?.replace(/^\/_stellarr\/avatars\/[^/]+\//, "/assets/")} />
-        <span>{person.name}{duplicates.has(person.name) && person.username && " (@" + person.username + ")"}{!person.connected && " · " + t("stage.activityDisconnected")}</span>
-      </li>)}
-    </ul>}
-    <div className="activity-frame-controls">
-      {children}
-      <label className="activity-volume" title={t("stage.gameAudio")}>
-        <Icon name="speaker" size={16} />
-        <input type="range" aria-label={t("stage.gameAudio")} min="0" max="100" defaultValue="100" ref={volume} />
-      </label>
-      <span ref={controls} />
-    </div>
-    <div className="activity-viewport" hidden={hidden}>
+    {bar ? bar({ volume: volumeControl, devices, players: roster }) : <>
+      {roster.length > 0 && <ul className="activity-players" aria-label={t("stage.activityPlayers")}>
+        {roster.map(person => <li key={person.id}>
+          <Avatar id={person.id} displayName={person.label} size="xs" offline={!person.connected} avatarUrl={person.avatarUrl} />
+          <span>{person.label}{!person.connected && " · " + t("stage.activityDisconnected")}</span>
+        </li>)}
+      </ul>}
+      <div className="activity-frame-controls">
+        {volumeControl}
+        {devices}
+      </div>
+    </>}
+    <div className="activity-viewport" ref={viewport}>
       <iframe ref={frame} src={target.src} title={title} referrerPolicy="no-referrer"
         sandbox={target.nonce ? "allow-scripts allow-forms allow-presentation" : "allow-scripts allow-same-origin allow-forms allow-presentation"} allow="autoplay; fullscreen" />
     </div>
   </>;
+}
+
+/** The roster as the app draws it: a name that two people share carries their username. */
+function framePlayers(players: readonly Participant[]): FramePlayer[] {
+  const seen = new Set<string>();
+  const shared = new Set<string>();
+  for (const player of players) {
+    if (seen.has(player.name)) shared.add(player.name);
+    seen.add(player.name);
+  }
+  return players.map((person) => ({
+    id: person.id,
+    label: shared.has(person.name) && person.username ? `${person.name} (@${person.username})` : person.name,
+    ...(person.avatar ? { avatarUrl: person.avatar.replace(/^\/_stellarr\/avatars\/[^/]+\//, "/assets/") } : {}),
+    connected: person.connected,
+  }));
 }

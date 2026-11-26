@@ -3,7 +3,7 @@ import { capture } from "./devices.js";
 import { createYouTubeHost } from "./youtube.js";
 
 const kinds = ["microphoneLevel", "cameraTile"];
-export function bindMediaHost({ frame, origin, nonce, youtube, title, permissions = [], controls, tile, volume, muted = () => false, fixtures = false, language = "en" }) {
+export function bindMediaHost({ frame, origin, nonce, youtube, title, permissions = [], controls, tile, volume, muted = () => false, fixtures = false, language = "en", overlay }) {
   const words = (en, polish) => (typeof language === "function" ? language() : language).startsWith("pl") ? polish : en;
   const deviceName = kind => kind === "microphoneLevel" ? words("Microphone", "Mikrofon") : words("Camera", "Kamera");
   const deviceFiles = new Map(), active = new Map(), mounts = new Map();
@@ -81,13 +81,16 @@ export function bindMediaHost({ frame, origin, nonce, youtube, title, permission
     dialog.showModal();
   }
   function removeMount(id) { mounts.get(id)?.image.remove(); mounts.delete(id); }
+  // Camera images are drawn over the frame. Inside `overlay`, when given, they
+  // stay with the frame wherever it goes, full screen included.
   function layout({ image, bounds }) {
     const r = frame.getBoundingClientRect();
+    const base = overlay ? overlay.getBoundingClientRect() : { left: 0, top: 0 };
     const [x,y,w,h,vw,vh] = bounds;
     const sx = r.width / vw, sy = r.height / vh;
     const left = Math.max(0, x), top = Math.max(0, y);
     const width = Math.max(0, Math.min(vw, x+w)-left), height = Math.max(0, Math.min(vh, y+h)-top);
-    Object.assign(image.style, { left: r.left + left*sx + "px", top: r.top + top*sy + "px",
+    Object.assign(image.style, { left: r.left - base.left + left*sx + "px", top: r.top - base.top + top*sy + "px",
       width: width*sx + "px", height: height*sy + "px" });
   }
   function mount(data) {
@@ -99,9 +102,9 @@ export function bindMediaHost({ frame, origin, nonce, youtube, title, permission
       if (mounts.size >= 16) return;
       const image = document.createElement("img");
       image.alt = words("Activity camera", "Kamera w aktywności");
-      image.style.cssText = "position:fixed;pointer-events:none;object-fit:cover;z-index:5;border-radius:8px";
+      image.style.cssText = (overlay ? "position:absolute" : "position:fixed") + ";pointer-events:none;object-fit:cover;z-index:5;border-radius:8px";
       image.hidden = true;
-      document.body.append(image);
+      (overlay ?? document.body).append(image);
       mounts.set(data.id, item = { image });
     }
     Object.assign(item, { participant: data.participant, bounds: data.bounds });

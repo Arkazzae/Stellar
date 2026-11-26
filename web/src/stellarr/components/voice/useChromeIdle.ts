@@ -9,15 +9,15 @@ export const CHROME_IDLE_MS = 2500;
  * back; a focused control keeps them up through CSS (`:focus-within`), so a
  * keyboard user never loses the button they are on.
  */
-export function useChromeIdle() {
+export function useChromeIdle(restMs: number = CHROME_IDLE_MS) {
   const [idle, setIdle] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const wake = useCallback(() => {
     setIdle(false);
     if (timer.current !== null) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setIdle(true), CHROME_IDLE_MS);
-  }, []);
+    timer.current = setTimeout(() => setIdle(true), restMs);
+  }, [restMs]);
 
   useEffect(
     () => () => {
