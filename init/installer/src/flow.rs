@@ -17,7 +17,7 @@ use crate::checks::{
 };
 use crate::cli::{KEYS, Key, Options, env};
 use crate::envfile;
-use crate::http::{Answer, Http};
+use crate::http::Http;
 use crate::install_plan::{self, InstallPlan};
 use crate::ports::{Tool, port_numbers};
 use crate::sys;
@@ -28,6 +28,7 @@ mod deploy;
 type Step<T = ()> = Result<T, Stop>;
 
 const REPO_URL: &str = "https://github.com/Arkazzae/Stellarr";
+const SERVER_DOWNLOADS: &str = "https://stellarr.online/server-downloads";
 const RAW_URL: &str = "https://raw.githubusercontent.com/Arkazzae/Stellarr";
 const IMAGE: &str = "ghcr.io/arkazzae/stellarr";
 const CHECKOUT_TURN: &str = "infra/compose/turn.yml";
@@ -1082,95 +1083,42 @@ impl Run {
 
     // ---- Which release ----
 
-    fn latest_release(&mut self) -> Step<String> {
-        let url = format!("{REPO_URL}/releases/latest");
-        let target = self.http.redirect(&url);
-        if let Some(Answer::Redirect(to)) = &target
-            && let Some(version) = to
-                .trim_end_matches('/')
-                .rsplit_once("/releases/tag/v")
-                .map(|(_, v)| v)
-            && is_exact_version(version)
+    fn resolve_track(&mut self, track: &str) -> Step<String> {
+        let url = format!("{SERVER_DOWNLOADS}/{track}");
+        let body = self.http.get_optional(&url).map_err(|error| {
+            self.die(
+                format!("Could not resolve the Stellarr {track} release"),
+                &[error],
+            )
+        })?;
+        let Some(body) = body else {
+            if track == "latest" {
+                return Err(self.die(
+                    "Stellarr has no published release yet, so there is no image to pull.",
+                    &[
+                        "To build it from a checkout instead:",
+                        "  ./install.sh --build",
+                    ],
+                ));
+            }
+            return Err(self.die(
+                format!("Stellarr has no stable release in the {track} series"),
+                NONE,
+            ));
+        };
+        let parsed = std::str::from_utf8(&body)
+            .ok()
+            .and_then(|text| exact_version(text.trim()));
+        if let Some(version) = parsed
+            && version.pre.is_empty()
+            && (track == "latest" || release_series(track) == Some((version.major, version.minor)))
         {
             return Ok(version.to_string());
         }
-        let missing = match target {
-            Some(Answer::Status(404)) => true,
-            Some(Answer::Redirect(to)) => to.trim_end_matches('/').ends_with("/releases"),
-            _ => false,
-        };
-        if missing {
-            return Err(self.die(
-                "Stellarr has no published release yet, so there is no image to pull.",
-                &[
-                    "To build it from a checkout instead:",
-                    "  ./install.sh --build",
-                ],
-            ));
-        }
         Err(self.die(
-            "GitHub did not answer, so the latest release is unknown",
-            &[
-                "Check that this machine reaches github.com and run the installer again,",
-                "or name the release with --version.",
-            ],
+            format!("Invalid server version for the {track} track"),
+            NONE,
         ))
-    }
-
-    fn latest_in_series(&mut self, series: &str, major: u64, minor: u64) -> Step<String> {
-        let mut newest: Option<semver::Version> = None;
-        for page in 1.. {
-            let url = format!(
-                "https://api.github.com/repos/Arkazzae/Stellarr/releases?per_page=100&page={page}"
-            );
-            let releases = self
-                .http
-                .get(&url)
-                .and_then(|body| {
-                    serde_json::from_slice::<Vec<serde_json::Value>>(&body)
-                        .map_err(|error| error.to_string())
-                })
-                .map_err(|error| {
-                    self.die(
-                        format!("Could not resolve the Stellarr {series} release series"),
-                        &[error],
-                    )
-                })?;
-            for release in &releases {
-                if release["draft"].as_bool() != Some(false)
-                    || release["prerelease"].as_bool() != Some(false)
-                {
-                    continue;
-                }
-                let Some(tag) = release["tag_name"]
-                    .as_str()
-                    .and_then(|tag| tag.strip_prefix('v'))
-                else {
-                    continue;
-                };
-                let Some(version) = exact_version(tag) else {
-                    continue;
-                };
-                if version.major == major
-                    && version.minor == minor
-                    && version.pre.is_empty()
-                    && newest
-                        .as_ref()
-                        .is_none_or(|old| version.cmp_precedence(old).is_gt())
-                {
-                    newest = Some(version);
-                }
-            }
-            if releases.len() < 100 {
-                break;
-            }
-        }
-        newest.map(|version| version.to_string()).ok_or_else(|| {
-            self.die(
-                format!("Stellarr has no stable release in the {series} series"),
-                NONE,
-            )
-        })
     }
 
     /// Resolve moving tags before reading release files or comparing versions.
@@ -1219,7 +1167,7 @@ impl Run {
         let mut retained_newer = false;
         self.target_tag = if requested.is_empty() || requested == "latest" {
             self.target_track = requested.clone();
-            let latest = self.latest_release()?;
+            let latest = self.resolve_track("latest")?;
             if requested.is_empty() && version_older(&latest, &existing_tag) {
                 retained_newer = true;
                 self.ui.ok(
@@ -1230,9 +1178,9 @@ impl Run {
             } else {
                 latest
             }
-        } else if let Some((major, minor)) = release_series(&requested) {
+        } else if release_series(&requested).is_some() {
             self.target_track = requested.clone();
-            self.latest_in_series(&requested, major, minor)?
+            self.resolve_track(&requested)?
         } else if is_exact_version(&requested) {
             requested.clone()
         } else {
@@ -2143,8 +2091,14 @@ impl Run {
             "Check that this machine reaches ghcr.io and that {} is a release:",
             self.target_tag
         );
-        self.ui
-            .text(Fd::Err, &["", &check, &format!("{REPO_URL}/releases")]);
+        self.ui.text(
+            Fd::Err,
+            &[
+                "",
+                &check,
+                &format!("{SERVER_DOWNLOADS}/{}", self.target_tag),
+            ],
+        );
         Err(Stop(1))
     }
 
