@@ -12,12 +12,11 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use super::Realtime;
-use super::registry::LiveConnection;
-use crate::auth::session::{self, Authentication, Ticket};
+use crate::auth::session;
 use crate::background::Worker;
 use crate::database::DbError;
 use crate::state::AppState;
-use crate::values::{Id, Timestamp};
+use crate::values::Timestamp;
 
 /// How often the sessions are looked at.
 const INTERVAL: Duration = Duration::from_secs(1);
@@ -47,51 +46,18 @@ pub async fn sweep(state: &AppState, realtime: &Realtime) -> Result<usize, DbErr
     if connections.is_empty() {
         return Ok(0);
     }
-    let rejected = rejected_sessions(state, &connections).await?;
+    let ids: HashSet<_> = connections.iter().map(|entry| entry.session).collect();
+    let ids: Vec<_> = ids.into_iter().collect();
+    let active = state
+        .database()
+        .read(move |db| session::active_sessions(db, &ids, Timestamp::now()))
+        .await?;
     let mut closed = 0;
     for connection in connections {
-        if rejected.contains(&(connection.user, connection.session, connection.version)) {
+        if !active.contains(&(connection.user, connection.session, connection.version)) {
             realtime.end_connection(&connection.connection_id);
             closed += 1;
         }
     }
     Ok(closed)
-}
-
-/// The sessions, each with the account and version a connection was let in
-/// with, that the database no longer accepts. One read for all of them, and
-/// one check for each, however many connections share it.
-async fn rejected_sessions(
-    state: &AppState,
-    connections: &[LiveConnection],
-) -> Result<HashSet<(Id, Id, i64)>, DbError> {
-    let sessions: HashSet<(Id, Id, i64)> = connections
-        .iter()
-        .map(|connection| (connection.user, connection.session, connection.version))
-        .collect();
-    let checked = state.clone();
-    state
-        .database()
-        .read(move |db| -> Result<HashSet<(Id, Id, i64)>, DbError> {
-            let now = Timestamp::now();
-            let mut rejected = HashSet::new();
-            for (user, session, version) in sessions {
-                let ticket = Ticket::of_connection(user, version, session);
-                // What the check would write back (the time the session was
-                // seen, a cookie to renew) is left alone: this is a look.
-                let outcome = session::authenticate(
-                    db,
-                    checked.sealer(),
-                    &checked.settings().environment,
-                    false,
-                    ticket,
-                    now,
-                )?;
-                if !matches!(outcome, Authentication::SignedIn { .. }) {
-                    rejected.insert((user, session, version));
-                }
-            }
-            Ok(rejected)
-        })
-        .await
 }

@@ -588,16 +588,18 @@ async fn a_policy_that_starts_demanding_a_second_step_ends_the_connections_that_
 }
 
 #[tokio::test]
-async fn a_policy_that_does_not_reach_the_account_leaves_its_connections_alone() {
+async fn an_admin_only_policy_closes_the_unverified_owner_and_keeps_an_ordinary_member() {
     let server = Server::start_with(&WATCHER).await;
-    let _owner = server.found("owner").await;
+    let owner = server.found("owner").await;
     let maya = server.register("maya").await;
     let mut connection = connect(&server, &maya).await;
     settle(&mut connection, &maya).await;
 
+    let mut owner_connection = connect(&server, &owner).await;
+    settle(&mut owner_connection, &owner).await;
     require_second_step(&server, "admins");
+    assert_eq!(closed_within_two_seconds(&mut owner_connection).await, Some(4401));
 
-    assert!(connection.quiet_for(Duration::from_millis(2500)).await.is_empty());
     assert_eq!(connection.invoke("GetRtcClock", json!([])).await["type"], "result");
 }
 

@@ -99,6 +99,22 @@ impl fmt::Debug for Id {
     }
 }
 
+/// The database spellings of a set of ids for SQLite's json_each.
+pub(crate) fn json_ids(ids: &[Id]) -> String {
+    let mut text = String::with_capacity(ids.len() * 39 + 2);
+    text.push('[');
+    for (index, id) in ids.iter().enumerate() {
+        if index > 0 {
+            text.push(',');
+        }
+        text.push('"');
+        text.push_str(&id.to_db_text());
+        text.push('"');
+    }
+    text.push(']');
+    text
+}
+
 impl ToSql for Id {
     fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
         Ok(ToSqlOutput::from(self.to_db_text()))
