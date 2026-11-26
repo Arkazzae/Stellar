@@ -28,6 +28,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       api: ${{ steps.filter.outputs.api }}
+      sdk: ${{ steps.filter.outputs.sdk }}
       web: ${{ steps.filter.outputs.web }}
       media: ${{ steps.filter.outputs.media }}
       init: ${{ steps.filter.outputs.init }}
@@ -65,7 +66,7 @@ jobs:
           }
           # The API tests also read the message-syntax cases kept in web/, so a
           # case added there checks the renderer and the API together.
-          check api '^(api/|web/src/stellarr/lib/messages/message-syntax\.json$|\.github/workflows/ci\.yml$)'
+          check api '^(api/|sdk/(client|media|dev/room)\.js$|web/src/stellarr/lib/messages/message-syntax\.json$|\.github/workflows/ci\.yml$)'
           # web/ holds the web client and Cockpit (web/src/cockpit/). It is a
           # workspace of one npm project with the shared packages, so a change
           # to them or to the root manifest or lockfile runs the web job too.
@@ -74,7 +75,8 @@ jobs:
           # file as web/ does. It checks the recipes' outputs against the
           # manifest, so the Dockerfile stages and the bake file that build
           # them count too.
-          check web '^(web/|artifacts/|packages/|package(-lock)?\.json$|branding/icons/|infra/(nginx\.conf|entrypoint\.sh)$|Dockerfile$|docker-bake\.hcl$|\.github/workflows/ci\.yml$)'
+          check sdk '^(sdk/|package(-lock)?\.json$|\.github/workflows/ci\.yml$)'
+          check web '^(web/|sdk/(dev/|host/|package\.json$)|artifacts/|packages/|package(-lock)?\.json$|branding/icons/|infra/(nginx\.conf|entrypoint\.sh)$|Dockerfile$|docker-bake\.hcl$|\.github/workflows/ci\.yml$)'
           check media '^(media/|\.github/workflows/ci\.yml$)'
           check init '^(init/|\.github/workflows/ci\.yml$)'
           # website/ is the project site, its own npm project outside the root
@@ -93,7 +95,21 @@ jobs:
           # image, so its sources count, not only its manifest. It takes the
           # recipes' outputs from the recipes job, which builds them with the
           # bake file.
-          check image '^(Dockerfile$|docker-bake\.hcl$|\.dockerignore$|artifacts/|infra/|api/(Cargo\.(toml|lock)$|crates/[^/]+/(Cargo\.toml$|build\.rs$|src/|assets/))|packages/|package(-lock)?\.json$|\.npmrc$|web/|media/(Cargo\.(toml|lock)$|src/|build\.rs$)|docker-compose\.yml$|infra/compose/|init/(Cargo\.(toml|lock)$|src/)|\.github/workflows/ci\.yml$)'
+          check image '^(Dockerfile$|sdk/(dev/|host/|client\.js$|media\.js$|package\.json$)|docker-bake\.hcl$|\.dockerignore$|artifacts/|infra/|api/(Cargo\.(toml|lock)$|crates/[^/]+/(Cargo\.toml$|build\.rs$|src/|assets/))|packages/|package(-lock)?\.json$|\.npmrc$|web/|media/(Cargo\.(toml|lock)$|src/|build\.rs$)|docker-compose\.yml$|infra/compose/|init/(Cargo\.(toml|lock)$|src/)|\.github/workflows/ci\.yml$)'
+
+  sdk:
+    needs: changes
+    if: needs.changes.outputs.sdk == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 22
+      - run: npm run test:sdk
 
   # The API and the operator's tool, one Cargo workspace. --locked fails when
   # Cargo.lock no longer matches the manifests, as the image build would.
