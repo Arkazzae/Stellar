@@ -1,0 +1,26 @@
+{
+  "name": "@stellarr/sdk",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./client.d.ts",
+      "default": "./client.js"
+    }
+  },
+  "files": [
+    "client.js",
+    "client.d.ts",
+    "media.js",
+    "media.d.ts",
+    "CONTRACT.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT"
+}
