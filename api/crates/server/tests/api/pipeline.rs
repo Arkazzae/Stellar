@@ -502,10 +502,20 @@ async fn the_turn_secret_is_required_when_turn_is_enabled_in_production() {
 }
 
 #[tokio::test]
-async fn an_unknown_language_stops_the_start() {
-    let said = Server::refused_to_start(&[("STELLARR_LANGUAGE", "de")]).await;
+async fn the_instance_language_selects_api_messages_and_falls_back_to_english() {
+    for (code, title) in [
+        ("de", "Benutzername oder Passwort ist falsch."),
+        ("qaa-Test", "Invalid username or password."),
+    ] {
+        let server = server_with(&[("STELLARR_LANGUAGE", code)]).await;
+        let response = server
+            .client()
+            .send(Request::new(Method::POST, "/api/auth/login").json(&json!({})))
+            .await;
 
-    assert!(said.contains("Stellarr:Language"), "{said}");
+        assert_eq!(response.status, 401);
+        assert_eq!(response.json::<Value>()["title"], title);
+    }
 }
 
 #[tokio::test]

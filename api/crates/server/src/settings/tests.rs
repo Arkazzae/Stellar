@@ -116,7 +116,7 @@ fn development_runs_on_localhost() {
 }
 
 #[test]
-fn the_language_is_read_from_the_variable_and_refused_when_unknown() {
+fn the_language_uses_the_configured_catalog_or_english() {
     assert_eq!(
         production(&[("STELLARR_LANGUAGE", "pl")]).unwrap().language,
         Language::Polish
@@ -132,10 +132,8 @@ fn the_language_is_read_from_the_variable_and_refused_when_unknown() {
         Language::English
     );
     assert_eq!(
-        production(&[("STELLARR_LANGUAGE", "de")])
-            .unwrap_err()
-            .to_string(),
-        "Stellarr:Language is \"de\" but must be \"en\" or \"pl\"."
+        production(&[("STELLARR_LANGUAGE", "qaa-Test")]).unwrap().language,
+        Language::English
     );
 }
 

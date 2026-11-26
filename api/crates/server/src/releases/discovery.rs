@@ -49,10 +49,7 @@ struct DesktopVersions {
 pub async fn manifest(State(state): State<AppState>) -> axum::response::Response {
     use axum::http::{HeaderValue, StatusCode, header};
 
-    let (inbox, messages) = match state.messages().language() {
-        stellarr_messages::Language::Polish => ("Powiadomienia", "Wiadomości"),
-        _ => ("Notifications", "Messages"),
-    };
+    let messages = state.messages();
     let manifest = serde_json::json!({
         "id": "/", "name": PRODUCT_NAME, "short_name": PRODUCT_NAME, "start_url": "/", "scope": "/",
         "display": "standalone", "background_color": "#111111", "theme_color": "#111111",
@@ -67,8 +64,8 @@ pub async fn manifest(State(state): State<AppState>) -> axum::response::Response
             ] }] }
         },
         "shortcuts": [
-            {"name": messages, "url": "/?view=messages"},
-            {"name": inbox, "url": "/?view=inbox"}
+            {"name": messages.template(stellarr_messages::MessageKey::ManifestMessages), "url": "/?view=messages"},
+            {"name": messages.template(stellarr_messages::MessageKey::ManifestNotifications), "url": "/?view=inbox"}
         ],
         "icons": [
             {"src": "/pwa/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},

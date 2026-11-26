@@ -4,53 +4,24 @@
 //! instance, not of a person or a request. Texts are plain strings with named
 //! placeholders such as `{limit}`.
 
-mod english;
-mod key;
-mod polish;
-
 use std::fmt;
 
-pub use key::MessageKey;
-
-/// A language the catalogue has texts for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Language {
-    English,
-    Polish,
-}
+include!(concat!(env!("OUT_DIR"), "/catalogs.rs"));
 
 impl Language {
-    /// The code used in settings and in the page's `lang` attribute.
     pub fn code(self) -> &'static str {
-        match self {
-            Language::English => "en",
-            Language::Polish => "pl",
-        }
+        CATALOGS[self as usize].0
     }
 
-    /// Reads a setting value. A blank value means English: that is how a
-    /// variable that a deployment file passes on without setting it arrives.
-    pub fn parse(value: &str) -> Result<Language, UnsupportedLanguage> {
-        match value {
-            "en" => Ok(Language::English),
-            "pl" => Ok(Language::Polish),
-            blank if blank.trim().is_empty() => Ok(Language::English),
-            other => Err(UnsupportedLanguage(other.to_string())),
-        }
+    /// Unset and unshipped instance languages use the English source catalog.
+    pub fn resolve(code: &str) -> Self {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|language| language.code() == code)
+            .unwrap_or(Self::English)
     }
 }
-
-/// The setting names a language the catalogue has no texts for.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnsupportedLanguage(pub String);
-
-impl fmt::Display for UnsupportedLanguage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "language is \"{}\" but must be \"en\" or \"pl\"", self.0)
-    }
-}
-
-impl std::error::Error for UnsupportedLanguage {}
 
 /// A value for a placeholder: anything that can be written as text. It is
 /// `Sync` so that a list of values can be held across an `.await`.
@@ -132,18 +103,13 @@ impl Messages {
 
     /// The text with its placeholders still in place.
     pub fn template(&self, key: MessageKey) -> &'static str {
-        match self.language {
-            Language::English => english::text(key),
-            Language::Polish => polish::text(key),
-        }
+        CATALOGS[self.language as usize].1[key as usize]
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    const LANGUAGES: [Language; 2] = [Language::English, Language::Polish];
 
     fn placeholders_of(template: &str) -> Vec<String> {
         let mut found = Vec::new();
@@ -163,7 +129,7 @@ mod tests {
 
     #[test]
     fn the_instance_speaks_english_when_no_language_is_set() {
-        let language = Language::parse("").unwrap();
+        let language = Language::resolve("");
 
         assert_eq!(language.code(), "en");
         assert_eq!(
@@ -176,17 +142,18 @@ mod tests {
 
     #[test]
     fn a_blank_language_is_the_same_as_none_at_all() {
-        assert_eq!(Language::parse("  ").unwrap(), Language::English);
-        assert_eq!(Language::parse("\t").unwrap(), Language::English);
+        assert_eq!(Language::resolve("  "), Language::English);
+        assert_eq!(Language::resolve("\t"), Language::English);
     }
 
     #[test]
     fn a_language_selects_its_own_texts() {
         for (code, expected) in [
             ("pl", "Nieprawidłowy login lub hasło."),
+            ("de", "Benutzername oder Passwort ist falsch."),
             ("en", "Invalid username or password."),
         ] {
-            let catalogue = Messages::new(Language::parse(code).unwrap());
+            let catalogue = Messages::new(Language::resolve(code));
             assert_eq!(
                 catalogue.get(MessageKey::SignInFailed, &[]).unwrap(),
                 expected
@@ -195,47 +162,30 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_language_is_refused() {
-        let refusal = Language::parse("de").unwrap_err();
-
-        assert_eq!(
-            refusal.to_string(),
-            "language is \"de\" but must be \"en\" or \"pl\""
-        );
-        assert!(Language::parse("EN").is_err());
-        assert!(Language::parse(" en").is_err());
+    fn an_unshipped_language_uses_the_english_catalog() {
+        assert_eq!(Language::resolve("qaa-Test"), Language::English);
     }
 
     #[test]
-    fn both_languages_tell_the_same_thing() {
+    fn all_catalogs_cover_the_english_keys_and_placeholders() {
         let english = Messages::new(Language::English);
-        let polish = Messages::new(Language::Polish);
-
-        for &key in MessageKey::ALL {
-            assert!(
-                !english.template(key).trim().is_empty(),
-                "{key:?} has no English text"
-            );
-            assert!(
-                !polish.template(key).trim().is_empty(),
-                "{key:?} has no Polish text"
-            );
-            assert_eq!(
-                placeholders_of(english.template(key)),
-                placeholders_of(polish.template(key)),
-                "{key:?} has different placeholders in English and in Polish"
-            );
+        for &language in Language::ALL {
+            let catalog = Messages::new(language);
+            for &key in MessageKey::ALL {
+                let text = catalog.template(key);
+                assert!(!text.trim().is_empty(), "{language:?}.{key:?} is empty");
+                assert_eq!(
+                    placeholders_of(text),
+                    placeholders_of(english.template(key)),
+                    "{language:?}.{key:?} has different placeholders from English"
+                );
+            }
         }
     }
 
     #[test]
-    fn the_catalogue_holds_every_key_the_server_uses() {
-        assert_eq!(MessageKey::ALL.len(), 368);
-    }
-
-    #[test]
     fn a_placeholder_takes_the_value_of_its_name() {
-        for language in LANGUAGES {
+        for &language in Language::ALL {
             let text = Messages::new(language)
                 .get(
                     MessageKey::ClientOutdated,
@@ -251,7 +201,7 @@ mod tests {
 
     #[test]
     fn a_text_whose_placeholder_has_no_value_is_refused() {
-        for language in LANGUAGES {
+        for &language in Language::ALL {
             let refusal = Messages::new(language)
                 .get(MessageKey::ClientOutdated, &[("reported", &"1.2.3")])
                 .unwrap_err();
@@ -263,7 +213,7 @@ mod tests {
 
     #[test]
     fn every_text_can_be_filled_with_values_for_its_placeholders() {
-        for language in LANGUAGES {
+        for &language in Language::ALL {
             let catalogue = Messages::new(language);
             for &key in MessageKey::ALL {
                 let names = placeholders_of(catalogue.template(key));

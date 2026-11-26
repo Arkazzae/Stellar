@@ -1,6 +1,6 @@
 //! The messages the instance sends about an account or about itself.
 
-use stellarr_messages::{Language, MessageKey, Messages};
+use stellarr_messages::{MessageKey, Messages, MissingValue};
 use stellarr_timezone::TimeZone;
 
 use crate::device::describe_device;
@@ -282,7 +282,7 @@ pub fn security_alert(
         &[("name", &display_name), ("instance", &instance_name)],
     )?;
     let activity = describe_event(event.kind, messages)?;
-    let time = format_time(event.created_at, time_zone, messages);
+    let time = format_time(event.created_at, time_zone, messages)?;
     let ignore = messages.get(MessageKey::SecurityAlertIgnore, &[])?;
 
     let mut facts = vec![
@@ -375,51 +375,35 @@ pub fn describe_event(kind: &str, messages: &Messages) -> Result<String, Error> 
     Ok(messages.get(key, &[])?)
 }
 
-const POLISH_MONTHS: [&str; 12] = [
-    "stycznia",
-    "lutego",
-    "marca",
-    "kwietnia",
-    "maja",
-    "czerwca",
-    "lipca",
-    "sierpnia",
-    "września",
-    "października",
-    "listopada",
-    "grudnia",
-];
-const ENGLISH_MONTHS: [&str; 12] = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
+const MONTHS: [MessageKey; 12] = [
+    MessageKey::MailMonthJanuary,
+    MessageKey::MailMonthFebruary,
+    MessageKey::MailMonthMarch,
+    MessageKey::MailMonthApril,
+    MessageKey::MailMonthMay,
+    MessageKey::MailMonthJune,
+    MessageKey::MailMonthJuly,
+    MessageKey::MailMonthAugust,
+    MessageKey::MailMonthSeptember,
+    MessageKey::MailMonthOctober,
+    MessageKey::MailMonthNovember,
+    MessageKey::MailMonthDecember,
 ];
 
 /// "20 listopada 2026, 14:03 (Europe/Warsaw)": the date in the instance's
 /// language, the zone named.
-fn format_time(moment: i64, zone: &TimeZone, messages: &Messages) -> String {
+fn format_time(moment: i64, zone: &TimeZone, messages: &Messages) -> Result<String, MissingValue> {
     let local = zone.local_time(moment);
-    let months = match messages.language() {
-        Language::Polish => &POLISH_MONTHS,
-        Language::English => &ENGLISH_MONTHS,
-    };
-    format!(
-        "{} {} {:04}, {:02}:{:02} ({})",
-        local.day,
-        months[(local.month - 1) as usize],
-        local.year,
-        local.hour,
-        local.minute,
-        zone.id()
+    let month = messages.template(MONTHS[(local.month - 1) as usize]);
+    messages.get(
+        MessageKey::MailEventTime,
+        &[
+            ("day", &local.day),
+            ("month", &month),
+            ("year", &format!("{:04}", local.year)),
+            ("time", &format!("{:02}:{:02}", local.hour, local.minute)),
+            ("zone", &zone.id()),
+        ],
     )
 }
 

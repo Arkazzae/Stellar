@@ -1466,7 +1466,7 @@ case_ports() {
 case_invalid_options() {
   local options n=0 words
   for options in "--domain bad_host" "--domain 1.2.3.999" "--domain -x.example.com" "--public-ip 300.1.1.1" \
-    "--https-port 0" "--https-port 70000" "--media-port abc" "--turns-port=08443" "--language de" \
+    "--https-port 0" "--https-port 70000" "--media-port abc" "--turns-port=08443" "--language bad/code" \
     "--version bad!tag" "--ref ../main" "--ref main/" "--dir"; do
     n=$((n + 1))
     new_case "invalid-$n"

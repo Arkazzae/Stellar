@@ -515,7 +515,7 @@ Settings, kept in .env (a terminal asks for the first three):
   --domain NAME        Domain or IPv4 address people open (default localhost)
   --public-ip IP       IPv4 address voice calls use, or \"auto\" to resolve
                        --domain (default: none, voice on this machine only)
-  --language LANG      Interface language, en or pl (default en)
+  --language LANG      Interface language code (default and fallback en)
   --https-port PORT    HTTPS port on this machine (default 443)
   --public-port PORT   HTTPS port in links, 443 behind a proxy (default: the
                        HTTPS port)
