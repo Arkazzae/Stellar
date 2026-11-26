@@ -93,7 +93,6 @@ function props(overrides: Partial<UserSettingsProps> = {}): UserSettingsProps {
         accent: "#756cf7",
         custom: null,
         wallpaper: null,
-        font: "outfit",
         scheme: "system",
         contrast: "normal",
         size: "md",

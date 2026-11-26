@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { renderInConfirm as render } from "@/test/confirm";
-import { DEFAULT_THEME, FONTS, normaliseTheme, type ThemePreference } from "@/design/themes";
+import { DEFAULT_THEME, normaliseTheme, type ThemePreference } from "@/design/themes";
 
 import { AppearancePane, type AppearancePaneProps } from "./AppearancePane";
 
@@ -59,7 +59,7 @@ describe("AppearancePane controls", () => {
     expect(screen.getByRole("textbox", { name: "CSS motywu" })).toHaveValue(css);
   });
 
-  it("reports brightness, contrast, face and text size as separate patches", async () => {
+  it("reports brightness, contrast and text size as separate patches", async () => {
     const user = userEvent.setup();
     const p = props();
     render(<AppearancePane {...p} />);
@@ -70,12 +70,7 @@ describe("AppearancePane controls", () => {
     await user.click(screen.getByRole("switch", { name: "Wysoki kontrast" }));
     expect(p.onChange).toHaveBeenLastCalledWith({ contrast: "high" });
 
-    const face = screen.getByRole("combobox", { name: /Krój pisma/ });
-    expect(face).toHaveValue("outfit");
-    expect(within(face).getAllByRole("option")).toHaveLength(FONTS.length);
-    expect(within(face).getByRole("option", { name: "OpenDyslexic" })).toHaveValue("opendyslexic");
-    await user.selectOptions(face, "Figtree");
-    expect(p.onChange).toHaveBeenLastCalledWith({ font: "figtree" });
+    expect(screen.queryByRole("combobox", { name: /Krój pisma/ })).toBeNull();
 
     await user.click(within(screen.getByRole("radiogroup", { name: "Rozmiar tekstu" })).getByRole("radio", { name: /Większy/ }));
     expect(p.onChange).toHaveBeenLastCalledWith({ size: "lg" });

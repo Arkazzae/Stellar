@@ -1,7 +1,6 @@
 import { makeCustomTheme } from "./customTheme";
 import {
   CUSTOM_PALETTE,
-  FONTS,
   getPalette,
   normaliseColours,
   normaliseCustomTheme,
@@ -9,7 +8,6 @@ import {
   normaliseWallpaper,
   resolvePalette,
   type CustomTheme,
-  type FontId,
   type PaletteColors,
   type PaletteId,
   type ThemePreference,
@@ -21,7 +19,6 @@ import {
  *
  *   { "stellarrTheme": 1, "name": …, "author"?: …, "source"?: …,
  *     "colors": { backgrounds, text, borders, semantic }, "accent": …,
- *     "font"?: …,
  *     "wallpaper"?: { "image": "data:image/webp;base64,…", "shade": …, "blur": … } }
  *
  * `stellarrTheme` only says the file is ours. A file carries what a theme
@@ -49,13 +46,11 @@ export interface ThemeFile {
   source?: string;
   colors: Omit<PaletteColors, "accent">;
   accent: string;
-  /** One of `FONTS`; a face this build does not have is left out on reading. */
-  font?: FontId;
   wallpaper?: { image: string; shade: number; blur: number };
 }
 
 /**
- * The palette, accent and face in use, as a file, with the wallpaper when its
+ * The palette and accent in use, as a file, with the wallpaper when its
  * picture is given as a data address. A preset is written under its own name.
  */
 export function themeFileOf(theme: ThemePreference, wallpaperImage?: string): ThemeFile {
@@ -68,7 +63,6 @@ export function themeFileOf(theme: ThemePreference, wallpaperImage?: string): Th
     ...(custom?.source === undefined ? {} : { source: custom.source }),
     colors: { backgrounds, text, borders, semantic },
     accent: theme.accent,
-    font: theme.font,
     ...(wallpaperImage === undefined || theme.wallpaper === null
       ? {}
       : { wallpaper: { image: wallpaperImage, shade: theme.wallpaper.shade, blur: theme.wallpaper.blur } }),
@@ -150,13 +144,12 @@ export function readThemeFile(text: string): ThemeFileRead {
     }),
   );
   if (custom === null) return { ok: false, problem: "colours" };
-  const font = FONTS.find((face) => face === field(parsed, "font"));
   const image = imageFromDataAddress(field(field(parsed, "wallpaper"), "image"));
   const settings = normaliseWallpaper(field(parsed, "wallpaper"));
   return {
     ok: true,
     custom,
-    patch: { palette: CUSTOM_PALETTE, custom, accent, scheme: "dark", ...(font === undefined ? {} : { font }) },
+    patch: { palette: CUSTOM_PALETTE, custom, accent, scheme: "dark" },
     ...(image === null || settings === null ? {} : { wallpaper: { image, shade: settings.shade, blur: settings.blur } }),
   };
 }

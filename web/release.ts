@@ -92,9 +92,6 @@ export function chunkLinks(bundle: Rollup.OutputBundle): Map<string, ChunkLinks>
 
 /**
  * An address in the build's own folders, in the text of a file that names one.
- * Not /typefaces/: the faces a person may choose instead of Outfit are named
- * by the app's stylesheet, but only the chosen one is ever used, and keeping
- * all of them would fetch two megabytes for everyone.
  */
 const BUILD_ADDRESS = new RegExp(`/(?:${BUILD_DIRECTORY}|fonts)/[\\w.-]+`, "g");
 

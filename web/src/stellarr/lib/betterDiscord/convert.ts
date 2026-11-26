@@ -1,5 +1,4 @@
-import { matchFont } from "@/design/fontLabels";
-import type { FontId, PaletteColors } from "@/design/themes";
+import type { PaletteColors } from "@/design/themes";
 
 import type { DiscordVariant, Evaluator } from "./evaluate";
 import { DISCORD_VARIABLES, SHADING_VARIABLES, mapDiscordTheme, type MappedTheme, type RoleSource } from "./roles";
@@ -28,8 +27,8 @@ export interface Conversion {
   missingCore: string[];
   /** The backgrounds are the theme's shading over its picture, not colours it set. */
   backgroundsFromShading?: boolean;
-  /** The face the theme asks for, and ours when we have it. */
-  font?: { family: string; id: FontId | null };
+  /** A typeface requested by the source theme that cannot be imported. */
+  skippedFont?: string;
   /** A picture the theme puts behind Discord, which is fetched only if the person agrees. */
   wallpaper?: { url: string; host?: string; shade?: number };
   /** How the engine dealt with container style queries. */
@@ -105,8 +104,7 @@ export async function convertTheme(text: string, from: string | null, options: C
   const { evaluation, picture, mapped, styleQueries, undecided } = result;
   const stack = FONT_VARIABLES.map((name) => evaluation.values.get(name))
     .find((value) => value !== undefined && firstFamily(value) !== "");
-  const families = stack === undefined ? inlined.googleFonts : stack.split(",").map(firstFamily);
-  const family = families.find((name) => matchFont(name) !== null) ?? families[0];
+  const family = stack === undefined ? inlined.googleFonts[0] : firstFamily(stack);
   const shading = SHADING_VARIABLES.map((name) => evaluation.colours.get(name)).find((value) => value !== undefined);
 
   return {
@@ -116,7 +114,7 @@ export async function convertTheme(text: string, from: string | null, options: C
     roles: mapped.roles,
     missingCore: mapped.missingCore,
     ...(mapped.backgroundsFromShading === true ? { backgroundsFromShading: true } : {}),
-    ...(family === undefined ? {} : { font: { family, id: matchFont(family) } }),
+    ...(family && family.toLowerCase() !== "outfit" ? { skippedFont: family } : {}),
     ...(picture === null
       ? {}
       : {

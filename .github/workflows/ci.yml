@@ -79,8 +79,8 @@ jobs:
           check media '^(media/|\.github/workflows/ci\.yml$)'
           check init '^(init/|\.github/workflows/ci\.yml$)'
           # website/ is the project site, its own npm project outside the root
-          # workspaces. It shares the Cockpit fonts and serves install.sh.
-          check website '^(website/|web/src/cockpit/assets/fonts/|install\.sh$|\.github/workflows/ci\.yml$)'
+          # workspaces. It shares the shared Outfit files and serves install.sh.
+          check website '^(website/|web/public/fonts/|install\.sh$|\.github/workflows/ci\.yml$)'
           # The installer, init/installer/ and the install.sh that fetches it,
           # downloads docker-compose.yml and .env.example and writes .env from
           # them, and its tests read both. The same job checks that the

@@ -1,6 +1,6 @@
 import { defineComponent, h, onMounted, ref, watch } from 'vue'
 import { useData } from 'vitepress'
-import DefaultTheme from 'vitepress/theme'
+import DefaultTheme from 'vitepress/theme-without-fonts'
 import './custom.css'
 
 let mermaidId = 0

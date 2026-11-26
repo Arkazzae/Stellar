@@ -24,7 +24,7 @@ Boot scripts, service configuration templates, Compose overlays, and shell contr
 
 ## Nginx cache and routing rules (`nginx.conf`)
 
-- `/static/`, `/fonts/`, `/typefaces/` (`200`/`206`/`304`): `public, max-age=31536000, immutable` (`gzip_static on`).
+- `/static/`, `/fonts/` (`200`/`206`/`304`): `public, max-age=31536000, immutable` (`gzip_static on`).
 - `/stellarr-instance.js` (`/run/stellarr/stellarr-instance.js`): `public, max-age=3600, must-revalidate`.
 - All other static files under `/opt/stellarr/web/` (`index.html`, `cockpit/index.html`, `release.json`, `stellarr-worker.js`, `/audio/*`, `/codecs/*`, `/bergamot-models/*`, `/identity/*`, `/mascot/*`, `/pwa/*`, `/sounds/*`): `no-cache`. Missing paths inside file directories or ending with `.ext` return plain `404` (verified by `web/documents.test.ts`); `/pwa/share` redirects `303 /?share=error` when hit without an active Service Worker.
 - `/api/`, `/assets/`, `/health`, `/.well-known/stellarr/`, and `/hubs/` (`Upgrade`/`Connection`, `128m` body ceiling): proxied to `http://127.0.0.1:5000`.

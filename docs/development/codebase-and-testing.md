@@ -21,7 +21,7 @@
 | --- | --- |
 | **Union-merged API registries** | Register endpoint groups, workers, hub methods, and integration tests by adding one line to `groups.list.rs`, `workers.list.rs`, `realtime/methods.list.rs`, or `tests/api/modules.list.rs` (`merge=union` in `.gitattributes`; see [`api/README.md`](../../api/README.md#adding-a-group-of-endpoints)). |
 | **Strict app isolation (`web/`)** | `web/eslint.config.mjs` forbids imports between `src/stellarr/` and `src/cockpit/`. Shared primitives belong in `packages/*`. |
-| **`259,000`-byte gzip entry budget** | `web/bundleReport.ts` fails `npm run build:web` if `index.html`'s static import closure exceeds `UP_FRONT_BUDGET_GZIP`. Keep signed-in UI, WebRTC/voice, custom fonts, BetterDiscord conversion, and locale chunks behind dynamic `import()`. |
+| **`259,000`-byte gzip entry budget** | `web/bundleReport.ts` fails `npm run build:web` if `index.html`'s static import closure exceeds `UP_FRONT_BUDGET_GZIP`. Keep signed-in UI, WebRTC/voice, BetterDiscord conversion, and locale chunks behind dynamic `import()`. |
 | **Compile-time bilingual parity** | `api/crates/messages` (`en`/`pl` exhaustive `match`) and `web/` (`pl.ts`/`en.ts` key parity) refuse to compile when any key is missing in either language. |
 
 ---

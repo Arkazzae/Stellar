@@ -1,6 +1,6 @@
 # Themes and appearance
 
-The web client (`web/src/stellarr/`) lets each user customize palettes, light/dark schemes, contrast, self-hosted fonts, text scale, message spacing, personal wallpapers, `.stellarr-theme.json` files, and BetterDiscord `.theme.css` stylesheets.
+The web client (`web/src/stellarr/`) lets each user customize palettes, light/dark schemes, contrast, text scale, message spacing, personal wallpapers, `.stellarr-theme.json` files, and BetterDiscord `.theme.css` stylesheets.
 
 ## Rendering pipeline
 
@@ -23,7 +23,7 @@ flowchart LR
 
 ## Theme preference model
 
-A `ThemePreference` (`web/src/stellarr/design/themes.ts`) tracks seven independent axes plus an optional wallpaper state:
+A `ThemePreference` (`web/src/stellarr/design/themes.ts`) tracks six independent axes plus an optional wallpaper state:
 
 | Axis | Values | DOM target & effect |
 | --- | --- | --- |
@@ -31,10 +31,11 @@ A `ThemePreference` (`web/src/stellarr/design/themes.ts`) tracks seven independe
 | `accent` | `#rrggbb` (`#6f65d1` default) | `--palette-accent` (selecting a preset resets `accent` to that preset's default) |
 | `scheme` | `dark` (default), `light`, `system` | `data-scheme` (`system` tracks `prefers-color-scheme`) |
 | `contrast` | `normal` (default), `high` | `data-contrast` |
-| `font` | 29 self-hosted families (`outfit` default) | `data-font` (fetched on demand; unauthenticated `/login` and `/setup` stay in `Outfit`) |
 | `size` | `sm`, `md` (default), `lg` | `data-size` message text scale |
 | `density` | `cozy` (default), `compact` | `data-density` message row spacing |
 | `wallpaper` | `{ shade, blur, placeholder? }` or `null` | App-wide background treatment (`wallpaperUrl` lives on the user profile) |
+
+The interface uses the bundled Outfit family. Code uses the system monospace font. Older theme files and saved preferences keep their colors, spacing and wallpaper when their font setting is ignored.
 
 ## Built-in presets and custom palettes
 
@@ -100,7 +101,6 @@ Themes export and import as portable `.stellarr-theme.json` files (`≤ 12 MiB`,
   "author": "Maya",
   "colors": { "backgrounds": {}, "text": {}, "borders": {}, "semantic": {} },
   "accent": "#1a9fff",
-  "font": "outfit",
   "wallpaper": {
     "image": "data:image/webp;base64,...",
     "shade": 80,
@@ -109,7 +109,7 @@ Themes export and import as portable `.stellarr-theme.json` files (`≤ 12 MiB`,
 }
 ```
 
-Importing applies `colors`, `accent`, `font`, and any embedded raster `wallpaper` (decoded and re-encoded before upload) while leaving the recipient's personal readability settings (`size`, `density`, `contrast`, `scheme`) untouched.
+Importing applies `colors`, `accent`, and any embedded raster `wallpaper` (decoded and re-encoded before upload) while leaving the recipient's personal readability settings (`size`, `density`, `contrast`, `scheme`) untouched.
 
 ### BetterDiscord `.theme.css` converter
 
@@ -117,4 +117,4 @@ Importing applies `colors`, `accent`, `font`, and any embedded raster `wallpaper
 
 1. **Server-assisted fetch:** Resolves `@import` chains (rewriting legacy RawGit URLs and retrying missing GitHub Pages stylesheets against source commits) via authenticated API requests bounded in size and duration.
 2. **Isolated evaluation:** Evaluates sanitized CSS inside a detached document to extract modern and legacy Discord color variables, surface colors (deriving solid tones from gradients where needed), fonts, and wallpaper URLs.
-3. **Preview & re-encode:** Previews the mapped palette, matching installed Stellarr font, optional wallpaper, and any skipped imports before applying. Chosen wallpapers are decoded and re-encoded cleanly before upload.
+3. **Preview & re-encode:** Previews the mapped palette, optional wallpaper, and any skipped imports before applying. Chosen wallpapers are decoded and re-encoded cleanly before upload.

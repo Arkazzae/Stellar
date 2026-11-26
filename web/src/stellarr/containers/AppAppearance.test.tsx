@@ -21,7 +21,7 @@ afterEach(() => {
 });
 
 describe("AppAppearance", () => {
-  it("sets the face and lets a wallpaper through only while the signed-in app is mounted", () => {
+  it("ignores a legacy font and shows the saved wallpaper only in the signed-in app", () => {
     localStorage.setItem(
       THEME_STORAGE_KEY,
       JSON.stringify({ ...DEFAULT_THEME, font: "figtree", wallpaper: { shade: 80, blur: 0 } }),
@@ -38,7 +38,7 @@ describe("AppAppearance", () => {
         <AppAppearance />
       </ThemeProvider>,
     );
-    expect(root.dataset["font"]).toBe("figtree");
+    expect(root.dataset["font"]).toBeUndefined();
     expect(root.dataset["wallpaper"]).toBe("on");
 
     // Signing out leaves the sign-in page as it was.
