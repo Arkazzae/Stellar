@@ -35,6 +35,7 @@ struct Inner {
     events: Arc<dyn EventPublisher>,
     metrics: Metrics,
     mutation_gate: MutationGate,
+    post_queue: crate::messages::post::batch::PostQueue,
     pin_attempts: AttemptLimiter,
     sealer: Sealer,
     key_backup_sealer: Sealer,
@@ -88,6 +89,7 @@ impl AppState {
                 activities: crate::activities::Sessions::default(),
                 metrics: Metrics::default(),
                 mutation_gate: MutationGate::default(),
+                post_queue: Default::default(),
             }),
         }
     }
@@ -108,6 +110,10 @@ impl AppState {
     /// Where handlers announce what they changed; see [`crate::events`].
     pub fn events(&self) -> &dyn EventPublisher {
         &*self.inner.events
+    }
+
+    pub(crate) fn post_queue(&self) -> &crate::messages::post::batch::PostQueue {
+        &self.inner.post_queue
     }
 
     pub fn metrics(&self) -> &Metrics {
