@@ -1,12 +1,10 @@
-name: Release
+name: Release server
 
 on:
   push:
-    tags: ["v*.*.*"]
+    tags: ["server-v*.*.*"]
 
-# Only this workflow may write: the release with its installers, the image in
-# the registry and the attestations. It signs in with the token GitHub gives
-# the run, no secret is set.
+# Server images and native installer bundles are published in GHCR.
 permissions:
   contents: read
 
@@ -33,17 +31,19 @@ jobs:
     env:
       IMAGE: ghcr.io/arkazzae/stellarr
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - id: release
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
           python3 - <<'PYTHON'
           import os
           import re
 
-          tag = os.environ["TAG"]
+          tag = os.environ["TAG"].removeprefix("server-")
           match = re.fullmatch(
               r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?", tag
           )
@@ -53,36 +53,42 @@ jobs:
               if identifier.isdecimal() and len(identifier) > 1 and identifier.startswith("0"):
                   raise SystemExit(f"Invalid numeric prerelease identifier: {identifier}")
           PYTHON
-          draft=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" |
-            jq -r --arg tag "$TAG" '.[][] | select(.tag_name == $tag) | .draft')
-          if [[ $draft == false ]]; then
-            echo 'published=true' >> "$GITHUB_OUTPUT"
-          fi
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-        if: steps.release.outputs.published != 'true'
+          version=${TAG#server-v}
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          token=$(curl -fsS --retry 3 'https://ghcr.io/token?service=ghcr.io&scope=repository:arkazzae/stellarr:pull' | jq -er .token)
+          bundle=$(python3 scripts/release/server-release.py tag "$version")
+          # A completed bundle is published only after its signed server image.
+          # A retry before that point can rebuild and attest the candidate.
+          status() {
+            curl -sS --retry 3 -o /dev/null -w '%{http_code}' \
+              -H "Authorization: Bearer $token" -H 'Accept: application/vnd.oci.image.manifest.v1+json, application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json' \
+              "https://ghcr.io/v2/arkazzae/stellarr/manifests/$1"
+          }
+          case "$(status "$bundle")" in
+            200) [[ $(status "$version") == 200 ]]; echo 'published=true' >> "$GITHUB_OUTPUT" ;;
+            404) ;;
+            *) echo "Could not check the installer registry" >&2; exit 1 ;;
+          esac
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-        if: steps.release.outputs.published != 'true'
+        if: ${{ steps.release.outputs.published != 'true' }}
         with:
           platforms: arm64
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-        if: steps.release.outputs.published != 'true'
+        if: ${{ steps.release.outputs.published != 'true' }}
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
-        if: steps.release.outputs.published != 'true'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: meta
-        if: steps.release.outputs.published != 'true'
+        if: ${{ steps.release.outputs.published != 'true' }}
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.IMAGE }}
           flavor: latest=false
-          tags: type=semver,pattern={{version}}
+          tags: type=semver,pattern={{version}},value=${{ steps.release.outputs.version }}
       - id: build
-        if: steps.release.outputs.published != 'true'
+        if: ${{ steps.release.outputs.published != 'true' }}
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -118,7 +124,7 @@ jobs:
         run: |
           registry_config=$(mktemp -d)
           trap 'rm -rf -- "$registry_config"' EXIT
-          if ! docker --config "$registry_config" pull "$IMAGE:${TAG#v}"; then
+          if ! docker --config "$registry_config" pull "$IMAGE:${TAG#server-v}"; then
             echo "::error::The versioned image could not be pulled anonymously. Check the GHCR package visibility and rerun this job."
             exit 1
           fi
@@ -133,14 +139,13 @@ jobs:
       group: release-promotion
       queue: max
     permissions:
-      contents: write
+      contents: read
       packages: write
       id-token: write
       attestations: write
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      GH_TOKEN: ${{ github.token }}
       TAG: ${{ github.ref_name }}
       IMAGE: ghcr.io/arkazzae/stellarr
     steps:
@@ -159,30 +164,16 @@ jobs:
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: assets/stellarr-installer-*
-      - name: Publish GitHub release with installer assets
-        shell: bash
-        run: |
-          draft=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" |
-            jq -r --arg tag "$TAG" '.[][] | select(.tag_name == $tag) | .draft')
-          if [[ $draft == false ]]; then
-            exit 0
-          fi
-
-          args=(--generate-notes --verify-tag --draft --latest=false)
-          if [[ $TAG == *-* ]]; then
-            args+=(--prerelease)
-          fi
-          if [[ -z $draft ]]; then
-            gh release create "$TAG" "${args[@]}"
-          fi
-          gh release upload "$TAG" assets/stellarr-installer-* assets/stellarr-installer.sha256 --clobber
-          gh release edit "$TAG" --draft=false --latest=false
-      - name: Verify the published installer assets
-        run: |
-          assets=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.assets[].name')
-          for name in stellarr-installer-{aarch64,x86_64}-{apple-darwin,unknown-linux-musl} stellarr-installer.sha256; do
-            grep -Fx "$name" <<< "$assets"
-          done
+      - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1
+        with:
+          version: 1.3.0
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Publish and verify the native installer bundle
+        run: python3 scripts/release/server-release.py publish "${TAG#server-v}" assets
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 26
@@ -190,56 +181,14 @@ jobs:
       - name: Install and exercise the public release on a fresh host
         run: |
           export STELLARR_CHROMIUM=$(command -v google-chrome)
-          bash scripts/release/test-install.sh "${TAG#v}"
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-        if: ${{ !contains(github.ref_name, '-') }}
-      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
-        if: ${{ !contains(github.ref_name, '-') }}
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Promote the stable image
+          bash scripts/release/test-install.sh "${TAG#server-v}"
+      - name: Promote the tested server image and installer channels
         id: promote
-        if: ${{ !contains(github.ref_name, '-') }}
         run: |
-          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" > releases.json
-          python3 - <<'PYTHON' > promotions.txt
-          import json
-          import os
-          import re
-
-          def parse(tag):
-              match = re.fullmatch(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", tag)
-              return tuple(map(int, match.groups())) if match else None
-
-          with open("releases.json") as source:
-              published = {
-                  version
-                  for page in json.load(source)
-                  for release in page
-                  if not release["draft"] and not release["prerelease"]
-                  if (version := parse(release["tag_name"])) is not None
-              }
-          version = parse(os.environ["TAG"])
-          if version not in published:
-              raise SystemExit("The new release did not appear in the GitHub release list.")
-          series = version[:2]
-          if version == max(candidate for candidate in published if candidate[:2] == series):
-              print(f"{series[0]}.{series[1]}")
-          if version == max(published):
-              print("latest")
-          PYTHON
-          registry_config=$(mktemp -d)
-          trap 'rm -rf -- "$registry_config"' EXIT
-          while IFS= read -r alias; do
-            docker buildx imagetools create --tag "$IMAGE:$alias" "$IMAGE:${TAG#v}"
-            docker --config "$registry_config" manifest inspect "$IMAGE:$alias" > /dev/null
-            if [[ $alias == latest ]]; then
-              gh release edit "$TAG" --latest
-              echo latest=true >> "$GITHUB_OUTPUT"
-            fi
-          done < promotions.txt
+          version=${TAG#server-v}
+          if [[ $version != *-* ]]; then
+            python3 scripts/release/server-release.py promote "$version"
+          fi
 
   verify-stable-install:
     needs: release
@@ -250,10 +199,8 @@ jobs:
     env:
       TAG: ${{ github.ref_name }}
     steps:
-      - name: Install the default version from the project website
-        run: |
-          cd "$RUNNER_TEMP"
-          curl -fsSL --retry 3 https://stellarr.online/install.sh -o install.sh
-          bash install.sh --yes --dir "$RUNNER_TEMP/instance" --domain localhost --public-ip 127.0.0.1 --disable-turn
-          test "$(docker inspect --format '{{.Config.Image}}' stellarr)" = "ghcr.io/arkazzae/stellarr:${TAG#v}"
-          curl -kfsS https://localhost/health/ready >/dev/null
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install and update from the project website
+        run: bash scripts/release/test-stable-install.sh "${TAG#server-v}"

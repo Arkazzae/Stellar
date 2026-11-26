@@ -83,9 +83,11 @@ def promote(version):
 
 if __name__ == "__main__":
     action, version, *args = sys.argv[1:]
-    if action == "publish":
+    if action == "tag":
+        print(installer_tag(version))
+    elif action == "publish":
         publish(version, Path(args[0]).resolve())
     elif action == "promote":
         promote(version)
     else:
-        sys.exit("Expected publish or promote")
+        sys.exit("Expected tag, publish or promote")

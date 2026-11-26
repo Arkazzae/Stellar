@@ -32,7 +32,7 @@ The archive contains the SQLite database, uploaded files, master key (`keys/mast
 
 ## 2. Pull and start the new version
 
-Release notes are published at <https://github.com/Arkazzae/Stellarr/releases>.
+The installer follows the stable server channel at `https://stellarr.online/server-downloads/latest`. Each server version has a matching Git tag, such as `server-v0.1.0`, with its Compose configuration.
 
 ### With the installer (`install.sh`)
 
