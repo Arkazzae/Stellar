@@ -16,7 +16,7 @@
   <ReadMe>https://github.com/Arkazzae/Stellarr/blob/main/docs/install/unraid.md</ReadMe>
   <Overview>Self-hosted text, voice and video chat for a group of friends. One container runs the web client, the API, object storage and the media server that carries every call.
 
-Open the Web UI and create the first account: it becomes the instance owner and gets a server of its own. Later accounts join through invite links. The owner's panel, Cockpit, is at /cockpit/.
+On the Docker tab, open Logs from the container menu and copy the latest setup code. Choose WebUI from the same menu and enter the code to create the owner account and first server. Later accounts join through invite links. The owner's panel, Cockpit, is at /cockpit/.
 
 On first start the container creates a self-signed certificate, so the browser shows a warning once. For a trusted certificate or a reverse proxy, see the documentation.</Overview>
   <Requires>Voice from other devices requires a reachable IPv4 address. Set Domain to that IPv4 address or set Public IP. For calls from outside your network, forward UDP and TCP port 49000 to the server on the same external port.</Requires>
