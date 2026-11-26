@@ -28,6 +28,7 @@ import type {
   MediaSignal,
   RealtimeEventMap,
   RealtimeEventName,
+  VoiceActivitySummary,
   VoiceSignal,
 } from "./types";
 
@@ -245,19 +246,31 @@ export function parseSoundboardPlayed(
   }
 }
 
+/**
+ * A running activity's summary, as the hub's events and the activities API
+ * both send it; null for anything that is not one.
+ */
+export function parseActivitySummary(value: unknown): VoiceActivitySummary | null {
+  if (!isRecord(value)) return null;
+  const { install, name, icon = null, host = "", participants = [], seats = null } = value;
+  if (typeof install !== "string" || install.length === 0 || typeof name !== "string") return null;
+  if (icon !== null && typeof icon !== "string") return null;
+  if (typeof host !== "string" || !Array.isArray(participants)) return null;
+  const people = participants.filter((person): person is string => typeof person === "string");
+  if (people.length !== participants.length) return null;
+  if (seats !== null && (typeof seats !== "number" || !Number.isFinite(seats))) return null;
+  return { install, name, icon, host, participants: people, seats };
+}
+
 export function parseVoiceActivityChanged(
   payload: unknown,
 ): RealtimeEventMap["VoiceActivityChanged"] | null {
   if (!isRecord(payload) || typeof payload.channelId !== "string" || payload.channelId.length === 0) {
     return null;
   }
-  const { activity } = payload;
-  if (activity === null) return { channelId: payload.channelId, activity: null };
-  if (!isRecord(activity)) return null;
-  const { install, name, icon = null } = activity;
-  if (typeof install !== "string" || install.length === 0 || typeof name !== "string") return null;
-  if (icon !== null && typeof icon !== "string") return null;
-  return { channelId: payload.channelId, activity: { install, name, icon } };
+  if (payload.activity === null) return { channelId: payload.channelId, activity: null };
+  const activity = parseActivitySummary(payload.activity);
+  return activity === null ? null : { channelId: payload.channelId, activity };
 }
 
 /**

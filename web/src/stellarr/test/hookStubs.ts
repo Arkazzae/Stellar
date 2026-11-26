@@ -4,6 +4,7 @@ import { IDLE_SOUNDBOARD } from "@/components/voice/soundboardLive";
 import type { Ports } from "@/ports";
 import type {
   AccountValue,
+  ActivitiesValue,
   ChatValue,
   DirectoryValue,
   EmojiValue,
@@ -29,6 +30,7 @@ import { useLanguage } from "@/state/LanguageProvider";
  */
 export interface HookStubs {
   account: AccountValue;
+  activities: ActivitiesValue;
   chat: ChatValue;
   directory: DirectoryValue;
   emoji: EmojiValue;
@@ -63,6 +65,24 @@ function defaults(): HookStubs {
       },
       update: vi.fn(async () => {}),
       setPreferences: vi.fn(async () => {}),
+    }),
+    activities: stub<ActivitiesValue>({
+      live: new Map(),
+      voice: null,
+      personal: null,
+      joining: null,
+      joinFailure: null,
+      ended: null,
+      picker: null,
+      openPicker: vi.fn(),
+      closePicker: vi.fn(),
+      join: vi.fn(),
+      launch: vi.fn(async () => {}),
+      leave: vi.fn(),
+      end: vi.fn(async () => {}),
+      lose: vi.fn(),
+      slots: { voice: null, personal: null },
+      slotRef: { voice: vi.fn(), personal: vi.fn() },
     }),
     chat: stub<ChatValue>({
       thread: null,
@@ -193,6 +213,8 @@ function defaults(): HookStubs {
       toggleCallChat: vi.fn(),
       inConversationCall: false,
       openDm: vi.fn(),
+      activityOpen: false,
+      openActivity: vi.fn(),
       openServer: vi.fn(),
       setFriendsTab: vi.fn(),
       selectTextChannel: vi.fn(),
@@ -258,6 +280,7 @@ export function setStubs(patch: {
 
 export const hooksModule = {
   useAccount: () => stubs.account,
+  useActivities: () => stubs.activities,
   useChat: () => stubs.chat,
   // Each slice of the chat is a part of its whole value.
   useChatRail: () => stubs.chat,

@@ -18,6 +18,12 @@ export {
   type AccountValue,
 } from "./AccountProvider";
 export {
+  useActivitiesContext as useActivities,
+  type ActivitiesValue,
+  type ActivitySession,
+  type PickerRequest,
+} from "./ActivitiesProvider";
+export {
   useChatContext as useChat,
   useChatRailContext as useChatRail,
   useChatRoomContext as useChatRoom,

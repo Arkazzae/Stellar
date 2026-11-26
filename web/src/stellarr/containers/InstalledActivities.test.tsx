@@ -215,7 +215,7 @@ it("joins a channel activity directly from the voice bar control and notifies th
   await api.take("list").reply([entry]);
 
   expect(state.bar?.joined).toBe(true);
-  expect(state.bar?.live).toEqual({ install: "game", name: entry.name, icon: null });
+  expect(state.bar?.live).toEqual({ install: "game", name: entry.name, icon: null, host: "", participants: [], seats: null });
   expect(screen.getByTitle(entry.name)).toHaveAttribute("src", "https://game.test/bar-lease");
 
   await act(async () => { state.bar?.leave(); });
