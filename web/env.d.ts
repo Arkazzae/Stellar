@@ -15,3 +15,5 @@ declare module "virtual:artifact-sizes" {
   const sizes: Readonly<Record<string, number>>;
   export default sizes;
 }
+
+declare const __ACTIVITY_PREVIEW__: boolean;

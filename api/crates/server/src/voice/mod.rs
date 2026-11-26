@@ -21,6 +21,7 @@
 pub mod access;
 pub mod closer;
 pub mod control;
+mod dev_seat;
 mod document;
 pub mod gate;
 pub mod hub;
@@ -81,10 +82,13 @@ pub fn workers() -> Vec<Worker> {
     ]
 }
 
-/// The routes of voice: removing a member from a voice channel and moving them
-/// to another, which are the moderator's.
+/// Voice moderation routes and the current seat used by a development activity.
 pub fn routes() -> crate::http::Endpoints {
     crate::http::Endpoints::new()
+        .get("/api/dev/activity-seat/{channelId}", dev_seat::participant)
+        .authorized()
+        .get("/api/dev/activity-author", dev_seat::authorize_author)
+        .authorized()
         .delete(
             "/api/admin/channels/{channelId}/members/{userId}",
             moderation::kick_from_voice,
