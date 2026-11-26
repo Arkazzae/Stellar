@@ -273,7 +273,7 @@ The library entry shows the installed version and whether the activity is enable
 
 The proposed installer pins the selected release to its exact source revision and a checksum of the files approved by the owner. If the download or verification fails, Cockpit reports the failure. A first install creates a library entry only after success. A failed update preserves the installed version and its enabled or disabled state.
 
-Each installation has a dedicated origin. A different source claiming the same `id` gets a distinct origin, including after uninstall, so it cannot inherit another activity's browser storage.
+Each installed release has a dedicated HTTPS origin derived from the installation and its approved ZIP checksum. The ZIP root is the origin root. For example, `/assets/game.js` loads the pinned build’s `assets/game.js`, including when an older session loads a module after an update. Relative URLs resolve normally, and `/_stellarr/` is reserved for the host and SDK. Starting a different release or reinstalling an activity gives it a distinct origin and browser storage. Access to the page and its files requires a live launch on that origin.
 
 **Decided.** Before offering to start or join, Stellarr checks device support for the release the participant would actually open. On an unsupported device a running activity can still appear with a short inline label such as “Available on desktop”. Its page and assets are loaded only on a supported device after launch.
 
