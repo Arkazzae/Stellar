@@ -12,16 +12,16 @@ export interface PendingChip extends ComposerChip {
 
 /**
  * Chips for the files that still fit under the cap, each already uploading.
- * Ids count up from `firstSeq` so two drops in a row cannot collide.
+ * Persistent queues supply their own stable id for each selected file.
  */
 export function queueFiles(
   files: readonly File[],
   alreadyQueued: number,
-  firstSeq: number,
+  idAt: (index: number) => string,
 ): PendingChip[] {
   const room = Math.max(0, MAX_ATTACHMENTS - alreadyQueued);
   return files.slice(0, room).map((file, index) => ({
-    id: `chip-${firstSeq + index}`,
+    id: idAt(index),
     name: file.name,
     file,
     status: "uploading",

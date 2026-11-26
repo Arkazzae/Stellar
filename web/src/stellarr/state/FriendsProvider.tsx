@@ -1,3 +1,5 @@
+import { draftScope } from "@/lib/platform/drafts";
+import { useAttachmentQueue } from "./chat/useAttachmentQueue";
 import {
   createContext,
   useCallback,
@@ -5,7 +7,6 @@ import {
   useEffect,
   useMemo,
   useRef,
-  useState,
   useSyncExternalStore,
   type ReactNode,
 } from "react";
@@ -17,7 +18,6 @@ import { ApiError } from "@/lib/api/errors";
 import { buildTranscript, initials } from "@/lib/format/format";
 import type {
   AddFriendResult,
-  Attachment,
   DmConversation,
   Friend,
   FriendRequest,
@@ -78,6 +78,7 @@ export interface FriendsValue {
   loadingOlderMessages: boolean;
   loadOlderMessages: () => void;
   chips: ComposerChip[];
+  restoringFiles: boolean;
   attach: (files: File[]) => void;
   retryChip: (chipId: string) => void;
   removeChip: (chipId: string) => void;
@@ -99,105 +100,10 @@ const NO_SECTIONS: TranscriptSectionVM[] = [];
 const NO_LINES: EncryptionLineFacts = { liveRequestId: null, declinedIds: new Set() };
 const NO_MENTIONS: PresentationContext["mentions"] = new Map();
 const NO_PINS: PresentationContext["pinnedIds"] = new Set();
-const MAX_ATTACHMENTS = 10;
-
-interface PendingChip extends ComposerChip {
-  file: File;
-  /** Uploads are made for one conversation: encrypted there or not. */
-  conversationId: string;
-  attachment: Attachment | null;
-}
 
 /** Reads a value the port owns. The port hands back a stable reference until it changes. */
 function useSocial<T>(port: FriendsPort, read: () => T): T {
   return useSyncExternalStore(port.onChanged, read, read);
-}
-
-/** The attachments waiting to go out with the next message. */
-function useAttachments(port: FriendsPort, conversationId: string | null) {
-  const { t } = useLanguage();
-  const [chips, setChips] = useState<PendingChip[]>([]);
-
-  const patch = useCallback((id: string, change: Partial<PendingChip>) => {
-    setChips((current) =>
-      current.map((chip) => (chip.id === id ? { ...chip, ...change } : chip)),
-    );
-  }, []);
-
-  const upload = useCallback(
-    (chip: PendingChip) => {
-      patch(chip.id, { status: "uploading", error: undefined });
-      void port.uploadAttachment(chip.conversationId, chip.file).then(
-        (attachment) =>
-          patch(chip.id, { status: "ready", attachment, error: undefined }),
-        () => patch(chip.id, { status: "error", error: t("attachment.uploadFailed") }),
-      );
-    },
-    [port, patch, t],
-  );
-
-  const attach = useCallback(
-    (files: File[]) => {
-      if (conversationId === null) return;
-      for (const file of files.slice(0, Math.max(0, MAX_ATTACHMENTS - chips.length))) {
-        const chip: PendingChip = {
-          id: `dm-chip-${crypto.randomUUID()}`,
-          name: file.name,
-          status: "uploading",
-          file,
-          conversationId,
-          attachment: null,
-        };
-        setChips((current) => [...current, chip]);
-        upload(chip);
-      }
-    },
-    [chips.length, upload, conversationId],
-  );
-
-  const retry = useCallback(
-    (chipId: string) => {
-      const chip = chips.find((item) => item.id === chipId);
-      if (chip !== undefined) upload(chip);
-    },
-    [chips, upload],
-  );
-
-  const remove = useCallback((chipId: string) => {
-    setChips((current) => current.filter((chip) => chip.id !== chipId));
-  }, []);
-
-  const reorder = useCallback((from: number, to: number) => {
-    setChips((current) => {
-      const next = [...current];
-      const [moved] = next.splice(from, 1);
-      if (moved === undefined) return current;
-      next.splice(to, 0, moved);
-      return next;
-    });
-  }, []);
-
-  const discard = useCallback((ids: ReadonlySet<string>) => {
-    setChips((current) => current.filter((chip) => !ids.has(chip.id)));
-  }, []);
-
-  /** The conversation's switch moved since they were attached: upload them again as it is now. */
-  const reupload = useCallback(() => {
-    for (const chip of chips) upload(chip);
-  }, [chips, upload]);
-
-  const view = useMemo<ComposerChip[]>(
-    () =>
-      chips.map(({ id, name, status, error }) => ({
-        id,
-        name,
-        status,
-        ...(error === undefined ? {} : { error }),
-      })),
-    [chips],
-  );
-
-  return { chips, view, attach, retry, remove, reorder, discard, reupload };
 }
 
 /**
@@ -221,16 +127,18 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
     channelId: voiceRoomId,
   } = useVoiceContext();
 
+  const uploadFile = useCallback((file: File) => port.uploadAttachment(activeDmId!, file), [port, activeDmId]);
   const {
-    chips,
-    view: chipViews,
+    pending: chips,
+    restoringFiles,
+    chips: chipViews,
     attach,
-    retry: retryChip,
-    remove: removeChip,
-    reorder: reorderChips,
+    retryChip,
+    removeChip,
+    reorderChips,
     discard: discardChips,
     reupload: reuploadChips,
-  } = useAttachments(port, activeDmId);
+  } = useAttachmentQueue(uploadFile, t, activeDmId && user ? draftScope(user.id, "dm", activeDmId) : undefined, true);
   const failedSend = useRef<{ fingerprint: string; clientMessageId: string } | null>(
     null,
   );
@@ -498,6 +406,7 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
       loadingOlderMessages,
       loadOlderMessages,
       chips: chipViews,
+      restoringFiles,
       attach,
       retryChip,
       removeChip,
@@ -523,6 +432,7 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
       loadingOlderMessages,
       loadOlderMessages,
       chipViews,
+      restoringFiles,
       attach,
       retryChip,
       removeChip,

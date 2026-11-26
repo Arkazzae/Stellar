@@ -8,7 +8,7 @@ import { fileExt } from "@/lib/messages/parts";
 export interface ComposerChip {
   id: string;
   name: string;
-  status: "uploading" | "ready" | "error";
+  status: "uploading" | "ready" | "error" | "restored";
   /** Shown instead of the generic failure sentence when the upload failed. */
   error?: string;
 }
@@ -91,14 +91,14 @@ export function ComposerChips({ chips, onRemove, onRetry, onReorder }: ComposerC
                 </span>
               ) : null}
             </span>
-            {chip.status === "error" ? (
+            {chip.status === "error" || chip.status === "restored" ? (
               <button
                 type="button"
                 className="retry"
-                aria-label={t("attachment.retryUpload", { name: chip.name })}
+                aria-label={t(chip.status === "restored" ? "pwa.prepareFile" : "attachment.retryUpload", { name: chip.name })}
                 onClick={() => onRetry(chip.id)}
               >
-                {t("attachment.retry")}
+                {t(chip.status === "restored" ? "pwa.prepare" : "attachment.retry")}
               </button>
             ) : null}
             <button

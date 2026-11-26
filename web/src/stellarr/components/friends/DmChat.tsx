@@ -13,6 +13,8 @@ import type { AttachmentCallbacks } from "@/lib/messages/parts";
 import type { CustomEmoji } from "@/ports";
 
 export interface DmChatProps {
+  draftScope?: string;
+  restoringFiles?: boolean;
   peer: PersonVM;
   /** Without the "@"; the intro prints it under the name. */
   username: string;
@@ -52,6 +54,8 @@ export interface DmChatProps {
  * beside the call. It is one piece so the two can never differ.
  */
 export function DmChat({
+  draftScope,
+  restoringFiles,
   peer,
   username,
   sections,
@@ -112,6 +116,9 @@ export function DmChat({
       />
       {composerBlocked === undefined ? (
         <Composer
+          key={draftScope ?? peer.id}
+          draftScope={draftScope}
+          restoringFiles={restoringFiles}
           channelName={name}
           placeholder={t("dm.writeTo", { name })}
           chips={chips}
