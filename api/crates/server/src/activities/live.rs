@@ -168,8 +168,14 @@ fn prune(rooms: &mut HashMap<Place, Live>, state: &AppState) {
     })
 }
 #[derive(Deserialize)]
+struct ActiveLaunch {
+    install: Id,
+    access: Id,
+}
+#[derive(Deserialize)]
 pub(super) struct Device {
     device: String,
+    lease: Option<ActiveLaunch>,
 }
 pub(super) async fn available(
     State(state): State<AppState>,
@@ -188,6 +194,20 @@ pub(super) async fn available(
     let all = library(&state).await?;
     let mut rooms = state.activities().rooms.lock().unwrap();
     prune(&mut rooms, &state);
+    if let Some(active) = input.lease {
+        // A static page may never open an SDK connection. Its parent keeps
+        // this specific launch alive for as long as the frame is displayed.
+        let gone = || ApiError::status(StatusCode::GONE);
+        let live = rooms.get_mut(&(active.install, channel)).ok_or_else(gone)?;
+        let lease = live
+            .leases
+            .get_mut(&caller.user)
+            .filter(|lease| lease.account_session == caller.session && lease.token == active.access)
+            .ok_or_else(gone)?;
+        let now = Instant::now();
+        lease.touched = now;
+        live.used = now;
+    }
     let list:Vec<_>=all.into_iter().filter(|entry|entry.enabled).filter_map(|entry|{
         let live=rooms.get(&(entry.install,channel));
         let current=live.map_or(&entry,|room|&room.installed);

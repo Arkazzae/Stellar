@@ -346,3 +346,47 @@ async fn root_relative_assets_follow_the_origin_of_each_pinned_build() {
         200
     );
 }
+
+#[tokio::test]
+async fn a_static_activity_checks_its_own_launch_even_after_the_installation_is_enabled_again() {
+    let server = Server::start_with(&[
+        ("STELLARR_ACTIVITY_DOMAIN", "games.test"),
+        ("STELLARR_ACTIVITY_ORIGIN", ORIGIN),
+    ])
+    .await;
+    let owner = server.found("owner").await;
+    let other = server.register("viewer").await;
+    seed(&server, INSTALL, true);
+    let list = "/api/activities/personal/list";
+    let manage = format!("/api/cockpit/activities/{INSTALL}/manage");
+    let heartbeat = |token: &Value| json!({"device": "desktop", "lease": {"install": INSTALL, "access": token}});
+
+    // This page never opens the SDK; only the surrounding picker makes requests.
+    let first = launch(&owner, INSTALL).await.json::<Value>();
+    let original = heartbeat(&first["access"]);
+    assert_eq!(post(&owner, list, original.clone()).await.status, 200);
+    assert_eq!(post(&other, list, original.clone()).await.status, 410);
+    assert_eq!(
+        post(&owner, &manage, json!({"action":"disable"}))
+            .await
+            .status,
+        200
+    );
+    assert_eq!(
+        post(&owner, &manage, json!({"action":"enable"}))
+            .await
+            .status,
+        200
+    );
+
+    let next = launch(&owner, INSTALL).await.json::<Value>();
+    let listed = post(&owner, list, json!({"device":"desktop"}))
+        .await
+        .json::<Value>();
+    assert_eq!(listed[0]["running"], true);
+    assert_eq!(post(&owner, list, original).await.status, 410);
+    assert_eq!(
+        post(&owner, list, heartbeat(&next["access"])).await.status,
+        200
+    );
+}

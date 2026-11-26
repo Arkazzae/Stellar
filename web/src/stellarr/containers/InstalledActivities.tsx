@@ -7,6 +7,10 @@ import { ActivityFrame } from "./ActivityFrame";
 interface Entry { description: string; artwork?: { icon: string | null; cover: string | null }; install: string; name: string; version: string; running: boolean; supported: boolean; devices: string[] | null }
 interface Launch { install: string; access: string; src: string; permissions: string[]; title: string }
 
+interface ActivityScope { channel?: string; muted?: boolean; cameraOn?: boolean }
+type Selection = { install: string; request: AbortController; session?: undefined }
+  | { install: string; session: Launch; request?: undefined };
+
 function deviceClass() {
   if (!window.matchMedia?.("(pointer: coarse)").matches) return "desktop";
   return Math.min(screen.width, screen.height) >= 600 ? "tablet" : "phone";
@@ -20,39 +24,74 @@ async function call<T>(channel: string | undefined, path: string, input: object,
   return response.json() as Promise<T>;
 }
 
-export function InstalledActivities({ channel, muted, cameraOn }: { channel?: string; muted?: boolean; cameraOn?: boolean }) {
+export function InstalledActivities(props: ActivityScope) {
+  return <ActivitiesForScope key={props.channel ?? "personal"} {...props} />;
+}
+
+function ActivitiesForScope({ channel, muted, cameraOn }: ActivityScope) {
   const { t } = useLanguage();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [session, setSession] = useState<Launch | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [selection, setSelection] = useState<Selection | null>(null);
   const [problem, setProblem] = useState(false);
+  const current = useRef<Selection | null>(null);
   const activeFrame = useRef<string | null>(null);
+  const session = selection?.session;
+  const busy = Boolean(selection?.request);
+
+  const select = useCallback((next: Selection | null) => {
+    current.current?.request?.abort();
+    current.current = next;
+    activeFrame.current = null;
+    setSelection(next);
+  }, []);
+
+  useEffect(() => () => {
+    current.current?.request?.abort();
+    current.current = null;
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     let retry = 500;
+    // Each query belongs to the launch/lease that triggered this effect.
+    const relevant = () => !controller.signal.aborted && current.current === selection;
+    function endSelection() {
+      if (selection) { select(null); setProblem(true); }
+    }
     async function refresh() {
       let next = 10000;
       try {
-        const list = await call<Entry[]>(channel, "list", { device: deviceClass() }, controller.signal);
-        if (!controller.signal.aborted) { setEntries(list); setLoadFailed(false); }
+        const lease = selection?.session && { install: selection.install, access: selection.session.access };
+        const list = await call<Entry[]>(channel, "list", { device: deviceClass(), lease }, controller.signal);
+        if (!relevant()) return;
+        setEntries(list);
+        setLoadFailed(false);
+        const entry = list.find(item => item.install === selection?.install);
+        if (!entry || (selection?.session && !entry.running)) endSelection();
         retry = 500;
       } catch (error) {
-        if (!controller.signal.aborted) setLoadFailed(true);
-        if (error instanceof Error && "status" in error && error.status === 403) {
+        if (!relevant()) return;
+        const status = error instanceof Error && "status" in error ? error.status : undefined;
+        setLoadFailed(true);
+        if (status === 401 || status === 403 || status === 404 || status === 410) {
+          setEntries([]);
+          endSelection();
+        }
+        if (status === 403) {
           // The voice stage can mount before the server confirms its seat.
           next = retry;
           retry = Math.min(10000, retry * 2);
         }
+      } finally {
+        if (relevant()) { setLoading(false); timer = setTimeout(refresh, next); }
       }
-      if (!controller.signal.aborted) { setLoading(false); timer = setTimeout(refresh, next); }
     }
     void refresh();
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [channel]);
+  }, [channel, select, selection]);
 
   const action = useCallback(<T,>(path: string, input: object, signal: AbortSignal) => {
     if (!session) throw new Error("Activity closed.");
@@ -60,25 +99,33 @@ export function InstalledActivities({ channel, muted, cameraOn }: { channel?: st
   }, [session, channel]);
   const room = useCallback(async (input: Record<string, unknown>, signal: AbortSignal) => {
     const value = await action<Record<string, unknown>>("room", input, signal);
-    if (input.op === "open" && typeof input.frame === "string") activeFrame.current = input.frame;
+    if (current.current?.session === session && !signal.aborted && input.op === "open" && typeof input.frame === "string")
+      activeFrame.current = input.frame;
     return value;
-  }, [action]);
+  }, [action, session]);
   const tile = useCallback((input: Record<string, unknown>, signal: AbortSignal) => action<Record<string, string | null>>("tile", input, signal), [action]);
-  const lost = useCallback(() => { setSession(null); setProblem(true); }, []);
+  const lost = useCallback(() => {
+    if (current.current?.session !== session) return;
+    select(null);
+    setProblem(true);
+  }, [select, session]);
 
   function leave() {
     const frame = activeFrame.current;
-    activeFrame.current = null;
     if (frame) void room({ op: "close", frame }, new AbortController().signal).catch(() => {});
-    setSession(null);
+    select(null);
   }
   async function launch(install: string) {
-    setBusy(true); setProblem(false);
+    const request = new AbortController();
+    const pending = { install, request };
+    select(pending);
+    setProblem(false);
     try {
-      const opened = await call<Omit<Launch,"install">>(channel, "launch", { install, device: deviceClass() });
-      setSession({ ...opened, install });
-    } catch { setProblem(true); }
-    finally { setBusy(false); }
+      const opened = await call<Omit<Launch,"install">>(channel, "launch", { install, device: deviceClass() }, request.signal);
+      if (current.current === pending) select({ install, session: { ...opened, install } });
+    } catch {
+      if (current.current === pending) { select(null); setProblem(true); }
+    }
   }
   if (!entries.length && !session && !problem) {
     if (channel) return null;
