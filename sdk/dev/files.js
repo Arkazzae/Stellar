@@ -103,7 +103,7 @@ export async function serveAsset(res, path, bytes, manifest, parent, request) {
     "Content-Type": isSdkPath(path) ? "text/javascript" : assetType(path),
     "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "strict-origin-when-cross-origin",
     "Content-Security-Policy": [
-      "default-src 'self' " + external, "script-src 'self' 'unsafe-inline' " + external,
+      "default-src 'self' " + external, "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' " + external,
       "style-src 'self' 'unsafe-inline' " + external, "object-src 'none'", "base-uri 'self'",
       "form-action 'self'", "frame-ancestors " + (parent || "'none'"),
     ].join("; "),
