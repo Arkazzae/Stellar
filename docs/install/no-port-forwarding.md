@@ -2,7 +2,7 @@
 
 The setups in [Requirements: Behind NAT](requirements.md#behind-nat) assume a router you can forward ports on and a public IPv4 address on its internet side. This page is for a host who has neither, typically because the provider puts the connection behind carrier-grade NAT (CGNAT), and for anyone whose friends can open the page but hear nothing in calls.
 
-A call works only when every participant's browser can reach **two** addresses, and the page must be served over browser-trusted HTTPS before the browser hands out the microphone:
+A call works only when every participant's browser can reach **two** addresses. The web address must also be served over HTTPS, because browsers restrict the microphone, camera and screen capture to secure contexts ([Browser requirements](requirements.md#browser-requirements)):
 
 | Address | Transport | Carries | Set by |
 | --- | --- | --- | --- |
@@ -59,7 +59,7 @@ STELLARR_PUBLIC_IP is empty, so the media server advertises only this container'
 | No IPv4 address, only IPv6 | Calls still need an IPv4 media address; see [IPv6](#ipv6). |
 
 > [!NOTE]
-> Tailscale and similar overlay networks also hand out addresses from `100.64.0.0/10` ([Tailscale: IP addresses](https://tailscale.com/kb/1015/100.x-addresses)). A `100.x` address on your computer's own network interface says nothing about your provider. Check the router's WAN address.
+> Tailscale also hands out addresses from `100.64.0.0/10` ([Tailscale: IP addresses](https://tailscale.com/kb/1015/100.x-addresses)). A `100.x` address on your computer's own network interface says nothing about your provider. Check the router's WAN address.
 
 To be sure, ask the provider two questions: is the connection behind carrier-grade NAT, and can it get a public IPv4 address? If it can, the port-forwarding setup in [Requirements](requirements.md#behind-nat) applies.
 
@@ -239,7 +239,7 @@ This page gives no configuration for a particular tunnel; set it up from the too
 | The web address has a trusted certificate | Either Stellarr's own TLS with a [mounted CA certificate](reverse-proxy-and-tls.md#mount-a-custom-tls-certificate) and `443/tcp` forwarded as is, or a [reverse proxy](reverse-proxy-and-tls.md#run-behind-a-reverse-proxy) on the relay that forwards HTTP through the tunnel to `STELLARR_HTTP_PORT` bound to the home server's tunnel address. |
 
 > [!WARNING]
-> When the relay forwards `443/tcp` at the network level and replaces the source address, Stellarr sees the relay's address for every visitor, and everyone shares one per-IP rate-limit bucket ([Client addresses](reverse-proxy-and-tls.md#client-addresses)). A reverse proxy on the relay adds `X-Forwarded-For`; list its tunnel address in `STELLARR_TRUSTED_PROXIES`.
+> When the relay forwards `443/tcp` at the network level and replaces the source address, Stellarr sees the relay's address for every visitor, and everyone shares one per-IP rate-limit bucket ([Client addresses](reverse-proxy-and-tls.md#client-addresses)). A reverse proxy on the relay adds `X-Forwarded-For`; list the address the container sees it connect from in `STELLARR_TRUSTED_PROXIES` ([Finding and pinning the proxy IP](reverse-proxy-and-tls.md#finding-and-pinning-the-proxy-ip)).
 
 Confirm as in [path A](#confirm): the `candidates=` line must start with the relay's address, and the [two-device check](#check-it-from-outside) must pass.
 
@@ -251,7 +251,7 @@ A tunnel or proxy that carries only HTTP(S) gives the web address a public name,
 
 | Product | What it carries | Why calls fail |
 | --- | --- | --- |
-| **Cloudflare Tunnel** (published application) | HTTP and HTTPS; TCP, SSH, RDP and SMB only with `cloudflared` installed on the visitor's device; no UDP service type ([protocols](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/routing-to-tunnel/protocols/)) | Browsers cannot reach a media address through it. For UDP applications such as VoIP, Cloudflare points to Cloudflare Mesh, where every participant runs the Cloudflare One Client ([connectivity options](https://developers.cloudflare.com/cloudflare-one/networks/connectivity-options/)): an overlay like path B, not covered here. |
+| **Cloudflare Tunnel** (published application) | HTTP and HTTPS; TCP, SSH, RDP and SMB only with `cloudflared` installed on the visitor's device; no UDP service type ([protocols](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/routing-to-tunnel/protocols/)) | Browsers cannot reach a media address through it. For private applications that use UDP, such as VoIP, Cloudflare recommends Cloudflare Mesh instead ([connectivity options](https://developers.cloudflare.com/cloudflare-one/networks/connectivity-options/)), which this page does not cover. |
 | **Cloudflare proxied DNS** (orange cloud) | HTTP(S) | The host still needs its own reachable IPv4 for media ([Reverse proxy and TLS](reverse-proxy-and-tls.md#what-bypasses-the-http-reverse-proxy)). UDP through Cloudflare Spectrum is a paid add-on on Enterprise only, not on Free, Pro or Business ([Spectrum protocols per plan](https://developers.cloudflare.com/spectrum/protocols-per-plan/)). |
 | **Tailscale Funnel** | HTTPS, a TCP forwarder and a TLS-terminated TCP forwarder, on public ports `443`, `8443` and `10000` only; no UDP option; non-configurable bandwidth limits ([Funnel](https://tailscale.com/kb/1223/funnel), [`tailscale funnel`](https://tailscale.com/kb/1311/tailscale-funnel)) | No UDP, and the media port cannot be published as `49000`. Inside a tailnet, use path B instead. |
 | **ngrok** | HTTP, HTTPS, TCP and TLS endpoints; ngrok states it does not support UDP ([ngrok vs. Tailscale](https://ngrok.com/compare/tailscale)) | No UDP. A TCP address is a host and port that ngrok assigns, and free accounts can open TCP endpoints only on random addresses after adding a payment method ([TCP addresses](https://ngrok.com/docs/gateway/domains/tcp-addresses)). |
@@ -283,7 +283,7 @@ Join the same voice channel from two devices: a phone on mobile data, with Wi-Fi
 | What you see | What it means | Where to look |
 | --- | --- | --- |
 | **The page does not load on the phone** | The web address is not reachable from outside. | DNS record, `443/tcp` firewall or relay forward; for path B, the phone's Tailscale client. |
-| **The browser warns about the certificate** | The web address has no browser-trusted certificate, and browsers restrict the microphone to secure contexts ([Browser requirements](requirements.md#browser-requirements)). | [Reverse proxy and TLS](reverse-proxy-and-tls.md) or the [Tailscale certificate](#b-a-private-overlay-network-tailscale). |
+| **The browser warns about the certificate** | The web address has no browser-trusted certificate. Fix it before testing calls. | [Reverse proxy and TLS](reverse-proxy-and-tls.md) or the [Tailscale certificate](#b-a-private-overlay-network-tailscale). |
 | **Voice calls are unavailable**: "This browser does not support voice calls." | The browser offers no microphone API, which happens on a page that is not a secure context, such as `http://` from another device. | Open the `https://` address. |
 | **Microphone is not working** | Permission or device problem on that device, not the network. | The site permissions beside the address bar. |
 | **Call audio problem**: "Lost the connection to the media server. Reconnect to continue." | The page works but the media address is unreachable; the client replaced the failed connection three times and gave up. | The `candidates=` log line, then `49000/udp` and `49000/tcp` along the path. |
