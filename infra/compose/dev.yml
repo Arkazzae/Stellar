@@ -51,6 +51,9 @@ services:
       # Where the dev server proxies /api, /assets, /health, /hubs and
       # /.well-known/stellarr/client, as Nginx does in production.
       STELLARR_API_ORIGIN: http://api:5000
+      STELLARR_ACTIVITY_DEV_ENABLED:
+      STELLARR_ACTIVITY_DEV_ORIGIN: ${STELLARR_ACTIVITY_DEV_ORIGIN:-http://localhost:${STELLARR_DEV_WEB_PORT:-3000}}
+      STELLARR_ACTIVITY_DEV_DOMAIN:
       STELLARR_DEV_ALLOWED_HOSTS:
       # Answered at /stellarr-instance.js, which the entrypoint writes in
       # production.

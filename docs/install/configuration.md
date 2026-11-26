@@ -268,6 +268,9 @@ Advanced internal subsystems that rarely need tuning can be configured in `.env`
 | `STELLARR_DEV_MAILPIT_SMTP_PORT` | `1025` | Host TCP port for Mailpit's SMTP listener on `127.0.0.1`. |
 | `STELLARR_DEV_ALLOWED_HOSTS` | empty | Comma-separated additional hostnames accepted by Vite's dev server (`localhost` and IP addresses are always allowed). |
 | `STELLARR_DEV_POLLING` | `true` | Enables file-watcher polling for Vite inside Docker bind mounts (macOS/Windows). |
+| `STELLARR_ACTIVITY_DEV_ENABLED` | `false` | Opt in to private activity pairing and previews on the Vite development server. The API must run in Development. |
+| `STELLARR_ACTIVITY_DEV_ORIGIN` | `http://localhost:3000` | Exact origin of the test instance. The Compose stack uses `STELLARR_DEV_WEB_PORT` when set. |
+| `STELLARR_ACTIVITY_DEV_DOMAIN` | `activity.localhost` | Separate DNS suffix for the test server's activity frames. For remote testers, configure HTTPS and route the wildcard to the Vite server. |
 
 Use a separate Compose project to start the dev stack with its own empty database volume. The default ports must be free.
 

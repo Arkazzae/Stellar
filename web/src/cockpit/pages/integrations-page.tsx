@@ -1,6 +1,7 @@
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, Label, Spinner, Switch } from "@stellarr/ui";
 import { useState } from "react";
 
+import { ActivityPreviewPairing } from "../components/activity-preview-pairing";
 import { CardTitleRow } from "../components/card-title-row";
 import { CloudflareSettings } from "../components/cloudflare-settings";
 import { PageHeader } from "../components/page-header";
@@ -309,6 +310,7 @@ export function IntegrationsPage() {
             />
             <SignInProvidersCard />
             <CloudflareSettings secrets={secrets.data ?? []} onSecretChanged={secretChanged} />
+            {typeof __ACTIVITY_PREVIEW__ !== "undefined" && __ACTIVITY_PREVIEW__ ? <ActivityPreviewPairing /> : null}
           </div>
         </div>
       ) : null}
