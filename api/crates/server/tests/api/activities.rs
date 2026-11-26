@@ -1,32 +1,44 @@
 //! Personal sessions are account-scoped even when both users launch one release.
+//! A voice channel runs one activity at a time, hosted by whoever launched it.
 use crate::support::{Person, Request, Response, Server};
+use crate::voice::{Peer, Rig, VIEW_CHANNEL};
 use http::Method;
 use rusqlite::params;
 use serde_json::{Value, json};
+use stellarr_api::values::Id;
 
 const ORIGIN: &str = "https://chat.test";
+const ACTIVITIES: &[(&str, &str)] = &[
+    ("STELLARR_ACTIVITY_DOMAIN", "games.test"),
+    ("STELLARR_ACTIVITY_ORIGIN", ORIGIN),
+];
 const INSTALL: &str = "9f77e982-01b8-4934-ada0-1fb14cc3dd71";
 const VOICE_ONLY: &str = "18f8c6a1-26ea-471b-a6db-eb11c353095c";
 const FRAME: &str = "05245c20-5a7a-4464-a422-595ff87e9e84";
 
+/// A call from the web client, which names its origin.
+fn request(path: &str) -> Request {
+    Request::new(Method::POST, path)
+        .header("Origin", ORIGIN)
+        .header("X-Forwarded-Host", "chat.test")
+        .header("X-Forwarded-Proto", "https")
+}
 async fn post(person: &Person, path: &str, data: Value) -> Response {
-    person
-        .client
-        .send(
-            Request::new(Method::POST, path)
-                .header("Origin", ORIGIN)
-                .header("X-Forwarded-Host", "chat.test")
-                .header("X-Forwarded-Proto", "https")
-                .json(&data),
-        )
-        .await
+    person.client.send(request(path).json(&data)).await
+}
+async fn get(person: &Person, path: &str) -> Response {
+    person.client.send(Request::new(Method::GET, path)).await
 }
 fn seed(server: &Server, id: &str, personal: bool) {
-    let db = server.database();
-    let mut manifest = json!({"id":if personal{"personal-demo"}else{"voice-demo"},"name":"Demo","version":"1.0.0","description":"Board","protocol":1});
+    let mut manifest = json!({"id":if personal{"personal-demo"}else{"voice-demo"},"name":if personal{"Demo"}else{"Duel"},"version":"1.0.0","description":"Board","protocol":1});
     if personal {
         manifest["launchModes"] = json!(["voice", "personal"]);
     }
+    install(server, id, &manifest);
+}
+/// An installation of a release that this manifest describes.
+fn install(server: &Server, id: &str, manifest: &Value) {
+    let db = server.database();
     let digest = "b".repeat(64);
     db.execute("INSERT INTO ActivityInstalls(Id,Source,Activity,Digest,Enabled) VALUES(?1,'https://github.com/test/demo',?2,?3,1)",
         params![id.to_uppercase(),manifest["id"].as_str().unwrap(),digest]).unwrap();
@@ -50,14 +62,39 @@ async fn room(who: &Person, token: &Value, mut action: Value) -> Response {
     )
     .await
 }
+/// A refusal the client explains by its code.
+#[track_caller]
+fn refused(response: &Response, status: u16, code: &str) {
+    assert_eq!(response.status, status, "{}", response.text());
+    assert_eq!(response.json::<Value>()["code"], code, "{}", response.text());
+}
+/// The voice rig with an activity domain.
+async fn voice_rig() -> Rig {
+    Rig::start_with(ACTIVITIES).await
+}
+/// Starts, joins or swaps the activity of a voice channel.
+async fn launch_in(who: &Person, channel: Id, body: Value) -> Response {
+    post(who, &format!("/api/activities/{channel}/launch"), body).await
+}
+/// Ends the activity of a voice channel, with no body, as the client does.
+async fn end_in(who: &Person, channel: Id) -> Response {
+    who.client
+        .send(request(&format!("/api/activities/{channel}/end")))
+        .await
+}
+/// The next announcement of what runs in the channel that `accept` takes.
+async fn announced(peer: &mut Peer, channel: Id, accept: impl Fn(&Value) -> bool) -> Value {
+    let channel = channel.to_string();
+    peer.next_where("VoiceActivityChanged", |d| {
+        d["channelId"] == channel.as_str() && accept(&d["activity"])
+    })
+    .await["activity"]
+        .clone()
+}
 
 #[tokio::test]
 async fn independent_authenticated_personal_sessions_enforce_launch_modes_tokens_and_revocation() {
-    let server = Server::start_with(&[
-        ("STELLARR_ACTIVITY_DOMAIN", "games.test"),
-        ("STELLARR_ACTIVITY_ORIGIN", ORIGIN),
-    ])
-    .await;
+    let server = Server::start_with(ACTIVITIES).await;
     let alice = server.found("owner").await;
     let bob = server.register("visitor").await;
     seed(&server, INSTALL, true);
@@ -69,7 +106,7 @@ async fn independent_authenticated_personal_sessions_enforce_launch_modes_tokens
     )
     .await;
     assert_eq!(list.status, 200, "{}", list.text());
-    let entries = list.json::<Value>();
+    let entries = list.json::<Value>()["activities"].clone();
     assert_eq!(entries.as_array().unwrap().len(), 1);
     assert_eq!(entries[0]["install"], INSTALL);
     assert_eq!(launch(&bob, VOICE_ONLY).await.status, 403);
@@ -164,7 +201,7 @@ async fn independent_authenticated_personal_sessions_enforce_launch_modes_tokens
     )
     .await
     .json::<Value>();
-    assert_eq!(pinned[0]["version"], "1.0.0");
+    assert_eq!(pinned["activities"][0]["version"], "1.0.0");
     assert_eq!(launch(&alice, INSTALL).await.status, 200);
     assert_eq!(launch(&bob, INSTALL).await.status, 403);
     assert_eq!(
@@ -174,18 +211,14 @@ async fn independent_authenticated_personal_sessions_enforce_launch_modes_tokens
             json!({"device":"desktop"})
         )
         .await
-        .json::<Value>(),
+        .json::<Value>()["activities"],
         json!([])
     );
 }
 
 #[tokio::test]
 async fn root_relative_assets_follow_the_origin_of_each_pinned_build() {
-    let server = Server::start_with(&[
-        ("STELLARR_ACTIVITY_DOMAIN", "games.test"),
-        ("STELLARR_ACTIVITY_ORIGIN", ORIGIN),
-    ])
-    .await;
+    let server = Server::start_with(ACTIVITIES).await;
     let owner = server.found("owner").await;
     let visitor = server.register("visitor").await;
     seed(&server, INSTALL, true);
@@ -349,11 +382,7 @@ async fn root_relative_assets_follow_the_origin_of_each_pinned_build() {
 
 #[tokio::test]
 async fn a_static_activity_checks_its_own_launch_even_after_the_installation_is_enabled_again() {
-    let server = Server::start_with(&[
-        ("STELLARR_ACTIVITY_DOMAIN", "games.test"),
-        ("STELLARR_ACTIVITY_ORIGIN", ORIGIN),
-    ])
-    .await;
+    let server = Server::start_with(ACTIVITIES).await;
     let owner = server.found("owner").await;
     let other = server.register("viewer").await;
     seed(&server, INSTALL, true);
@@ -383,7 +412,7 @@ async fn a_static_activity_checks_its_own_launch_even_after_the_installation_is_
     let listed = post(&owner, list, json!({"device":"desktop"}))
         .await
         .json::<Value>();
-    assert_eq!(listed[0]["running"], true);
+    assert_eq!(listed["activities"][0]["running"], true);
     assert_eq!(post(&owner, list, original).await.status, 410);
     assert_eq!(
         post(&owner, list, heartbeat(&next["access"])).await.status,
@@ -394,11 +423,7 @@ async fn a_static_activity_checks_its_own_launch_even_after_the_installation_is_
 #[tokio::test]
 async fn voice_channel_runs_at_most_one_activity_joins_directly_and_clears_when_last_person_leaves()
 {
-    let rig = crate::voice::Rig::start_with(&[
-        ("STELLARR_ACTIVITY_DOMAIN", "games.test"),
-        ("STELLARR_ACTIVITY_ORIGIN", ORIGIN),
-    ])
-    .await;
+    let rig = voice_rig().await;
     let bob = rig.person("bob").await;
     let carol = rig.person("carol").await;
     seed(&rig.server, INSTALL, true);
@@ -441,16 +466,16 @@ async fn voice_channel_runs_at_most_one_activity_joins_directly_and_clears_when_
     assert_eq!(started["activity"]["install"], INSTALL);
     assert_eq!(started["activity"]["name"], "Demo");
 
-    // A second, different activity on the same voice channel is rejected with 409 Conflict.
-    assert_eq!(
-        post(
+    // A second, different activity on the same voice channel is refused while one runs.
+    refused(
+        &post(
             &bob,
             &launch_path,
-            json!({"install": VOICE_ONLY, "device": "desktop"})
+            json!({"install": VOICE_ONLY, "device": "desktop"}),
         )
-        .await
-        .status,
-        409
+        .await,
+        409,
+        "activity-running",
     );
 
     // Joining from the voice bar without specifying `install` joins the running channel activity.
@@ -864,4 +889,347 @@ async fn activity_profiles_refresh_and_the_frame_can_load_a_members_current_avat
         .json::<Value>();
     assert!(removed["participants"][0]["avatar"].is_null());
     assert_eq!(get(path, cookie).await.status, 403);
+}
+
+#[tokio::test]
+async fn the_picker_names_the_owner_the_permissions_and_what_runs_only_in_voice() {
+    let server = Server::start_with(ACTIVITIES).await;
+    let owner = server.found("owner").await;
+    let visitor = server.register("visitor").await;
+    install(
+        &server,
+        INSTALL,
+        &json!({"id":"personal-demo","name":"Demo","version":"1.0.0","description":"Board","protocol":1,
+            "launchModes":["personal"],"permissions":["media.microphoneLevel"]}),
+    );
+    seed(&server, VOICE_ONLY, false);
+
+    let listed = post(
+        &visitor,
+        "/api/activities/personal/list",
+        json!({"device":"desktop"}),
+    )
+    .await;
+    assert_eq!(listed.status, 200, "{}", listed.text());
+    let listed = listed.json::<Value>();
+    assert_eq!(
+        listed["activities"][0]["permissions"],
+        json!(["media.microphoneLevel"])
+    );
+    assert_eq!(listed["voiceOnly"], json!(["Duel"]));
+    assert!(listed["live"].is_null());
+    assert_eq!(
+        listed["owner"],
+        json!({"id": owner.id, "name": "Owner", "avatar": null})
+    );
+    assert_eq!(listed["viewerIsOwner"], false);
+    let own = post(
+        &owner,
+        "/api/activities/personal/list",
+        json!({"device":"desktop"}),
+    )
+    .await
+    .json::<Value>();
+    assert_eq!(own["viewerIsOwner"], true);
+}
+
+#[tokio::test]
+async fn a_release_refuses_a_device_it_does_not_run_on() {
+    let server = Server::start_with(ACTIVITIES).await;
+    let owner = server.found("owner").await;
+    install(
+        &server,
+        INSTALL,
+        &json!({"id":"personal-demo","name":"Demo","version":"1.0.0","description":"Board","protocol":1,
+            "launchModes":["personal"],"devices":["desktop"]}),
+    );
+
+    let phone = post(
+        &owner,
+        "/api/activities/personal/launch",
+        json!({"install": INSTALL, "device": "phone"}),
+    )
+    .await;
+    refused(&phone, 422, "unsupported-device");
+}
+
+#[tokio::test]
+async fn whoever_launches_a_voice_activity_hosts_it_and_the_picker_shows_it_running() {
+    let rig = voice_rig().await;
+    let bob = rig.person("bob").await;
+    seed(&rig.server, INSTALL, true);
+    let mut alice_ws = rig.connect(&rig.owner).await;
+    let mut bob_ws = rig.connect(&bob).await;
+    alice_ws.join(rig.salon).await;
+    bob_ws.join(rig.salon).await;
+
+    let launched = launch_in(
+        &rig.owner,
+        rig.salon,
+        json!({"install": INSTALL, "device": "desktop"}),
+    )
+    .await;
+    assert_eq!(launched.status, 200, "{}", launched.text());
+    assert_eq!(launched.json::<Value>()["host"], rig.owner.id.as_str());
+
+    let listed = post(
+        &bob,
+        &format!("/api/activities/{}/list", rig.salon),
+        json!({"device": "desktop"}),
+    )
+    .await
+    .json::<Value>();
+    assert_eq!(listed["live"]["install"], INSTALL);
+    assert_eq!(listed["live"]["host"], rig.owner.id.as_str());
+}
+
+#[tokio::test]
+async fn members_who_see_the_channel_hear_of_its_activity_without_sitting_in_it() {
+    let rig = voice_rig().await;
+    let carol = rig.person("carol").await;
+    seed(&rig.server, INSTALL, true);
+    let mut alice_ws = rig.connect(&rig.owner).await;
+    let mut carol_ws = rig.connect(&carol).await;
+    alice_ws.join(rig.salon).await;
+
+    let launched = launch_in(
+        &rig.owner,
+        rig.salon,
+        json!({"install": INSTALL, "device": "desktop"}),
+    )
+    .await;
+    assert_eq!(launched.status, 200, "{}", launched.text());
+
+    let activity = announced(&mut carol_ws, rig.salon, |a| !a.is_null()).await;
+    assert_eq!(
+        activity,
+        json!({"install": INSTALL, "name": "Demo", "icon": null, "host": rig.owner.id,
+            "participants": [rig.owner.id], "seats": null})
+    );
+}
+
+#[tokio::test]
+async fn hosting_passes_to_whoever_has_been_inside_longest_when_the_host_leaves_the_activity() {
+    let rig = voice_rig().await;
+    let bob = rig.person("bob").await;
+    let carol = rig.person("carol").await;
+    seed(&rig.server, INSTALL, true);
+    let mut alice_ws = rig.connect(&rig.owner).await;
+    let mut bob_ws = rig.connect(&bob).await;
+    let mut carol_ws = rig.connect(&carol).await;
+    for ws in [&mut alice_ws, &mut bob_ws, &mut carol_ws] {
+        ws.join(rig.salon).await;
+    }
+
+    let alice = launch_in(
+        &rig.owner,
+        rig.salon,
+        json!({"install": INSTALL, "device": "desktop"}),
+    )
+    .await
+    .json::<Value>();
+    for who in [&bob, &carol] {
+        let joined = launch_in(who, rig.salon, json!({"device": "desktop"})).await;
+        assert_eq!(joined.status, 200, "{}", joined.text());
+    }
+    let left = post(
+        &rig.owner,
+        &format!("/api/activities/{}/leave", rig.salon),
+        json!({"install": INSTALL, "access": alice["access"]}),
+    )
+    .await;
+    assert_eq!(left.status, 200, "{}", left.text());
+
+    let activity = announced(&mut bob_ws, rig.salon, |a| a["host"] == bob.id.as_str()).await;
+    assert_eq!(activity["participants"], json!([bob.id, carol.id]));
+}
+
+#[tokio::test]
+async fn hosting_passes_on_when_the_host_leaves_the_voice_channel() {
+    let rig = voice_rig().await;
+    let bob = rig.person("bob").await;
+    seed(&rig.server, INSTALL, true);
+    let mut alice_ws = rig.connect(&rig.owner).await;
+    let mut bob_ws = rig.connect(&bob).await;
+    alice_ws.join(rig.salon).await;
+    bob_ws.join(rig.salon).await;
+    let launched = launch_in(
+        &rig.owner,
+        rig.salon,
+        json!({"install": INSTALL, "device": "desktop"}),
+    )
+    .await;
+    assert_eq!(launched.status, 200, "{}", launched.text());
+    let joined = launch_in(&bob, rig.salon, json!({"device": "desktop"})).await;
+    assert_eq!(joined.status, 200, "{}", joined.text());
+
+    // The host's lease goes with the seat, at once rather than when it lapses.
+    alice_ws.leave().await;
+
+    let activity = announced(&mut bob_ws, rig.salon, |a| a["host"] == bob.id.as_str()).await;
+    assert_eq!(activity["participants"], json!([bob.id]));
+}
+
+#[tokio::test]
+async fn the_host_ends_the_activity_for_everyone_in_it() {
+    let rig = voice_rig().await;
+    let bob = rig.person("bob").await;
+    seed(&rig.server, INSTALL, true);
+    let mut alice_ws = rig.connect(&rig.owner).await;
+    let mut bob_ws = rig.connect(&bob).await;
+    alice_ws.join(rig.salon).await;
+    bob_ws.join(rig.salon).await;
+    let launched = launch_in(
+        &rig.owner,
+        rig.salon,
+        json!({"install": INSTALL, "device": "desktop"}),
+    )
+    .await;
+    assert_eq!(launched.status, 200, "{}", launched.text());
+    let joined = launch_in(&bob, rig.salon, json!({"device": "desktop"})).await;
+    assert_eq!(joined.status, 200, "{}", joined.text());
+
+    let ended = end_in(&rig.owner, rig.salon).await;
+    assert_eq!(ended.status, 200, "{}", ended.text());
+    assert_eq!(ended.json::<Value>(), json!({"ok": true}));
+    announced(&mut bob_ws, rig.salon, Value::is_null).await;
+}
+
+#[tokio::test]
+async fn only_the_host_ends_an_activity_and_only_one_that_runs() {
+    let rig = voice_rig().await;
+    let bob = rig.person("bob").await;
+    seed(&rig.server, INSTALL, true);
+    let mut alice_ws = rig.connect(&rig.owner).await;
+    let mut bob_ws = rig.connect(&bob).await;
+    alice_ws.join(rig.salon).await;
+    bob_ws.join(rig.salon).await;
+
+    refused(&end_in(&rig.owner, rig.salon).await, 404, "not-found");
+    let launched = launch_in(
+        &rig.owner,
+        rig.salon,
+        json!({"install": INSTALL, "device": "desktop"}),
+    )
+    .await;
+    assert_eq!(launched.status, 200, "{}", launched.text());
+    refused(&end_in(&bob, rig.salon).await, 403, "not-host");
+}
+
+#[tokio::test]
+async fn somebody_who_does_not_host_cannot_swap_the_activity() {
+    let rig = voice_rig().await;
+    let bob = rig.person("bob").await;
+    seed(&rig.server, INSTALL, true);
+    seed(&rig.server, VOICE_ONLY, false);
+    let mut alice_ws = rig.connect(&rig.owner).await;
+    let mut bob_ws = rig.connect(&bob).await;
+    alice_ws.join(rig.salon).await;
+    bob_ws.join(rig.salon).await;
+    let launched = launch_in(
+        &rig.owner,
+        rig.salon,
+        json!({"install": INSTALL, "device": "desktop"}),
+    )
+    .await;
+    assert_eq!(launched.status, 200, "{}", launched.text());
+
+    let swap = launch_in(
+        &bob,
+        rig.salon,
+        json!({"install": VOICE_ONLY, "device": "desktop", "replace": true}),
+    )
+    .await;
+    refused(&swap, 403, "not-host");
+}
+
+#[tokio::test]
+async fn the_host_swaps_the_activity_for_everyone_and_hosts_the_next() {
+    let rig = voice_rig().await;
+    let bob = rig.person("bob").await;
+    seed(&rig.server, INSTALL, true);
+    seed(&rig.server, VOICE_ONLY, false);
+    let mut alice_ws = rig.connect(&rig.owner).await;
+    let mut bob_ws = rig.connect(&bob).await;
+    alice_ws.join(rig.salon).await;
+    bob_ws.join(rig.salon).await;
+    let launched = launch_in(
+        &rig.owner,
+        rig.salon,
+        json!({"install": INSTALL, "device": "desktop"}),
+    )
+    .await;
+    assert_eq!(launched.status, 200, "{}", launched.text());
+    let joined = launch_in(&bob, rig.salon, json!({"device": "desktop"})).await;
+    assert_eq!(joined.status, 200, "{}", joined.text());
+
+    let swapped = launch_in(
+        &rig.owner,
+        rig.salon,
+        json!({"install": VOICE_ONLY, "device": "desktop", "replace": true}),
+    )
+    .await;
+    assert_eq!(swapped.status, 200, "{}", swapped.text());
+    assert_eq!(swapped.json::<Value>()["install"], VOICE_ONLY);
+
+    // Those who were in the old activity hear it end, then what runs instead.
+    announced(&mut bob_ws, rig.salon, Value::is_null).await;
+    let next = announced(&mut bob_ws, rig.salon, |_| true).await;
+    assert_eq!(next["install"], VOICE_ONLY);
+    assert_eq!(next["participants"], json!([rig.owner.id]));
+}
+
+#[tokio::test]
+async fn a_full_activity_turns_the_next_person_away() {
+    let rig = voice_rig().await;
+    let bob = rig.person("bob").await;
+    install(
+        &rig.server,
+        VOICE_ONLY,
+        &json!({"id":"voice-demo","name":"Duel","version":"1.0.0","description":"Board","protocol":1,"seats":1}),
+    );
+    let mut alice_ws = rig.connect(&rig.owner).await;
+    let mut bob_ws = rig.connect(&bob).await;
+    alice_ws.join(rig.salon).await;
+    bob_ws.join(rig.salon).await;
+    let launched = launch_in(
+        &rig.owner,
+        rig.salon,
+        json!({"install": VOICE_ONLY, "device": "desktop"}),
+    )
+    .await;
+    assert_eq!(launched.status, 200, "{}", launched.text());
+
+    refused(
+        &launch_in(&bob, rig.salon, json!({"device": "desktop"})).await,
+        409,
+        "full",
+    );
+}
+
+#[tokio::test]
+async fn the_channel_list_learns_what_runs_in_the_voice_channels_a_member_sees() {
+    let rig = voice_rig().await;
+    let bob = rig.person("bob").await;
+    let carol = rig.person("carol").await;
+    seed(&rig.server, INSTALL, true);
+    let mut alice_ws = rig.connect(&rig.owner).await;
+    let mut carol_ws = rig.connect(&carol).await;
+    alice_ws.join(rig.night).await;
+    carol_ws.join(rig.salon).await;
+    for (who, room) in [(&rig.owner, rig.night), (&carol, rig.salon)] {
+        let launched = launch_in(who, room, json!({"install": INSTALL, "device": "desktop"})).await;
+        assert_eq!(launched.status, 200, "{}", launched.text());
+    }
+    // Bob sees the salon, but no longer the night shift.
+    rig.channel_override(rig.base_role(), rig.night, 0, VIEW_CHANNEL);
+
+    let snapshot = get(&bob, &format!("/api/activities/live?server={}", rig.server_id)).await;
+    assert_eq!(snapshot.status, 200, "{}", snapshot.text());
+    let snapshot = snapshot.json::<Value>();
+    assert_eq!(snapshot.as_array().map(Vec::len), Some(1), "{snapshot}");
+    assert_eq!(snapshot[0]["channelId"], rig.salon.to_string().as_str());
+    assert_eq!(snapshot[0]["activity"]["host"], carol.id.as_str());
+    let elsewhere = get(&bob, &format!("/api/activities/live?server={}", Id::random())).await;
+    assert_eq!(elsewhere.status, 403);
 }
