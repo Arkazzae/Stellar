@@ -47,6 +47,8 @@ export const en = {
   "pwa.menu": "Look for Install or Add to Home Screen in your browser menu. You can also open this instance in Chrome, Edge or Safari.",
   "pwa.insecure": "Open your instance over HTTPS with a trusted certificate.",
   "pwa.notifications": "Notification settings",
+  "pwa.offlineTitle": "You’re offline",
+  "pwa.offlineBody": "Stellarr will open your conversations when the connection returns.",
   "pwa.current": "You can enable notifications from this instance in settings.",
   "client.title": "The Stellarr app",
   "client.subtitle": "Pick the client for your system.",

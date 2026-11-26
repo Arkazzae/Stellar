@@ -50,7 +50,7 @@ function loadWorker(windows: TestClient[] = []) {
     },
   };
 
-  runInNewContext(SOURCE, { self, URL, JSON, Array, Object, String, Error, console });
+  runInNewContext(SOURCE, { self, URL, JSON, Array, Object, String, Error, console, MessageChannel, setTimeout, clearTimeout });
 
   const listener = (name: string) => {
     const found = listeners.get(name);
@@ -121,7 +121,7 @@ describe("notification worker push handling", () => {
     expect(worker.shown[0]?.options.data).toMatchObject({ url: "/" });
   });
 
-  it("ignores malformed JSON, a non-object, and a payload without a title", async () => {
+  it("falls back to a generic visible notice for malformed payloads", async () => {
     const worker = loadWorker();
     const broken = {
       data: {
@@ -139,8 +139,8 @@ describe("notification worker push handling", () => {
     await push(worker, ["not", "an", "object"]);
     await push(worker, { id: "n-1", body: "no title" });
 
-    expect(broken.waitUntil).not.toHaveBeenCalled();
-    expect(worker.shown).toHaveLength(0);
+    expect(broken.waitUntil).toHaveBeenCalledOnce();
+    expect(worker.shown.map((notice) => notice.title)).toEqual(["Stellarr", "Stellarr", "Stellarr"]);
   });
 
   it("truncates overlong titles and bodies instead of showing unbounded text", async () => {
@@ -152,13 +152,13 @@ describe("notification worker push handling", () => {
     expect(String(worker.shown[0]?.options.body)).toHaveLength(500);
   });
 
-  it("suppresses a duplicate when a visible focused app client is present", async () => {
+  it("shows a received push even with a focused client", async () => {
     const visible = client("https://chat.example/channel/general", true);
     const worker = loadWorker([visible]);
 
     await push(worker, { id: "m-1", title: "Nils mentions you", body: "Look" });
 
-    expect(worker.shown).toHaveLength(0);
+    expect(worker.shown).toHaveLength(1);
   });
 
   it("still delivers when the app is open only in the background", async () => {
@@ -194,6 +194,23 @@ describe("notification worker click handling", () => {
     await event.waitUntil.mock.calls[0]?.[0];
 
     expect(elsewhere.focus).toHaveBeenCalledOnce();
+    expect(worker.openWindow).not.toHaveBeenCalled();
+  });
+
+  it("hands a notice to the running app without reloading its call or focusing Cockpit", async () => {
+    const home = Object.assign(client("https://chat.example/"), {
+      postMessage: vi.fn((_data: unknown, ports: MessagePort[]) => ports[0]!.postMessage(true)),
+    });
+    const cockpit = client("https://chat.example/cockpit", true);
+    const worker = loadWorker([cockpit, home]);
+    const target = "/?notice=00000001-2222-3333-4444-000000000005";
+    const { event } = clickEvent(target);
+    worker.listener("notificationclick")(event);
+    await event.waitUntil.mock.calls[0]?.[0];
+    expect(home.focus).toHaveBeenCalledOnce();
+    expect(home.postMessage).toHaveBeenCalledWith({ type: "stellarr-open-notice", url: target }, expect.anything());
+    expect(cockpit.focus).not.toHaveBeenCalled();
+    expect(home.navigate).not.toHaveBeenCalled();
     expect(worker.openWindow).not.toHaveBeenCalled();
   });
 

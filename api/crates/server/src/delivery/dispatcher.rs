@@ -22,8 +22,7 @@
 //! tag the browser replaces by). A row that was leased five times without
 //! being written down is not leased again, and is cancelled when it expires.
 //!
-//! A person who is online is not treated differently: the service worker
-//! hides a notice for a window that has focus.
+//! Read and muted events are filtered before contacting the push service.
 
 use std::time::Duration;
 
@@ -301,17 +300,12 @@ async fn attempt(
                     MessageKey::NotificationDirectMessageBody,
                 ),
             };
-            let public_url = &state.settings().operations.public_url;
             let id = item.id.to_string().replace('-', "");
             let payload = PushPayload {
                 id: id.clone(),
                 title: messages.get(title, &[]).map_err(|_| Failure::Text)?,
                 body: messages.get(body, &[]).map_err(|_| Failure::Text)?,
-                url: if public_url.is_empty() {
-                    "/".to_string()
-                } else {
-                    format!("{public_url}/")
-                },
+                url: format!("/?notice={}", item.id),
                 tag: id,
             };
             Ok(match sender.send(&subscription, &payload).await {

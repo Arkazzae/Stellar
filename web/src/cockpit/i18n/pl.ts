@@ -453,6 +453,8 @@ export const pl = {
   "integrations.saveFailed": "Nie udało się zapisać integracji.",
   "integrations.active": "Aktywna",
   "integrations.inactive": "Wyłączona",
+  "integrations.push.ready": "Ta instancja ma skonfigurowane klucze VAPID dla powiadomień.",
+  "integrations.push.configure": "W konfiguracji instancji włącz STELLARR_PUSH_ENABLED, ustaw kontakt i stałą parę kluczy VAPID, a następnie odtwórz kontener.",
   "integrations.resend.description": "Wysyła pocztę przez API HTTPS Resend zamiast serwera SMTP z ustawień.",
   "integrations.resend.key": "Klucz API",
   "integrations.resend.toggle": "Wysyłaj pocztę przez Resend",

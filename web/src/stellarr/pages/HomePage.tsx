@@ -1,8 +1,9 @@
-import { useRouter } from "@stellarr/router";
-import { lazy, Suspense, useEffect } from "react";
+import { useRouter, useSearchParams } from "@stellarr/router";
+import { lazy, useCallback, Suspense, useEffect, useState } from "react";
 
 import { ErrorNotice, type ErrorNoticeProps } from "@/components/primitives/ErrorNotice";
 import { AppSkeleton } from "@/components/shell/AppSkeleton";
+import { launchEntry } from "@/lib/platform/launch";
 import { useLanguage } from "@/state/LanguageProvider";
 import { useSessionContext as useSession } from "@/state/SessionProvider";
 
@@ -57,8 +58,38 @@ const AppContainer = lazy(() =>
  */
 export default function HomePage() {
   const router = useRouter();
+  const entry = launchEntry(useSearchParams());
+  const finishEntry = useCallback(() => router.replace("/"), [router]);
   const { phase, verifiedAt, error, reload, logout } = useSession();
   const { t } = useLanguage();
+
+  const [offline, setOffline] = useState(() => navigator.onLine === false);
+  useEffect(() => {
+    const disconnected = () => setOffline(true);
+    const reconnected = () => {
+      setOffline(false);
+      if (phase === "error" || phase === "loading") reload();
+    };
+    window.addEventListener("offline", disconnected);
+    window.addEventListener("online", reconnected);
+    return () => {
+      window.removeEventListener("offline", disconnected);
+      window.removeEventListener("online", reconnected);
+    };
+  }, [phase, reload]);
+
+  useEffect(() => {
+    if (phase !== "ready") return;
+    const onNotice = (event: MessageEvent) => {
+      if (event.data?.type !== "stellarr-open-notice" || typeof event.data.url !== "string") return;
+      const entry = launchEntry(new URLSearchParams(event.data.url.slice(2)));
+      if (!entry?.startsWith("?notice=") || event.data.url !== "/" + entry) return;
+      router.replace("/" + entry);
+      event.ports[0]?.postMessage(true);
+    };
+    navigator.serviceWorker?.addEventListener("message", onNotice);
+    return () => navigator.serviceWorker?.removeEventListener("message", onNotice);
+  }, [phase, router]);
 
   const mayWarmApp = verifiedAt != null || canPrefetchApp();
   useEffect(() => {
@@ -67,15 +98,20 @@ export default function HomePage() {
   }, [mayWarmApp]);
 
   useEffect(() => {
-    if (phase === "anonymous") router.replace("/login");
-  }, [phase, router]);
+    if (phase === "anonymous") router.replace(entry ? "/login?returnUrl=" + encodeURIComponent("/" + entry) : "/login");
+  }, [phase, router, entry]);
 
   if (phase === "ready") {
     return (
       <Suspense fallback={<AppSkeleton verifiedAt={verifiedAt} />}>
-        <AppContainer />
+        <AppContainer entry={entry} onEntryHandled={finishEntry} />
       </Suspense>
     );
+  }
+
+  if (offline && (phase === "error" || phase === "loading")) {
+    return <LoadFailed title={t("pwa.offlineTitle")} message={t("pwa.offlineBody")}
+      actions={[{ label: t("common.tryAgain"), onClick: reload }]} />;
   }
 
   if (phase === "error" || phase === "revoked") {

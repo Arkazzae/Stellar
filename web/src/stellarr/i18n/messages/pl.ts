@@ -45,6 +45,8 @@ export const pl = {
   "pwa.menu": "Poszukaj polecenia instalacji lub dodania do ekranu głównego w menu przeglądarki. Możesz też otworzyć tę instancję w Chrome, Edge lub Safari.",
   "pwa.insecure": "Otwórz adres HTTPS swojej instancji z zaufanym certyfikatem.",
   "pwa.notifications": "Ustawienia powiadomień",
+  "pwa.offlineTitle": "Jesteś offline",
+  "pwa.offlineBody": "Stellarr otworzy rozmowy po odzyskaniu połączenia.",
   "pwa.current": "Powiadomienia z tej instancji możesz włączyć w ustawieniach.",
   "client.title": "Aplikacja Stellarr",
   "client.subtitle": "Wybierz klienta dla swojego systemu.",
