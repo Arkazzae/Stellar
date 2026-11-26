@@ -132,7 +132,7 @@ import { defineConfig } from "vite";
 export default defineConfig({ base: "./" });
 ```
 
-A default instance serves each launch under `/_activity/<key>/`. Use relative URLs for your own assets, such as `./sprites.png`. A leading slash resolves from the instance root. The local simulator serves the package at the root of its own origin, so it can mask this mistake. `stellarr validate` checks the release contents and manifest but does not resolve asset URLs in your generated HTML.
+A default instance serves each launch under `/_activity/<key>/`. Use relative URLs for your own assets, such as `./sprites.png`. A leading slash resolves from the instance root. The local simulator serves the package at the root of its own origin, so it can mask this mistake. `stellarr validate` warns when a published HTML file uses a root-relative `src` or `href` such as `/assets/game.js`. The warning names the file and URL. Paths under `/_stellarr/` are reserved for Stellarr and are allowed.
 
 Import typed helpers directly from `@stellarr/sdk` and place `stellarr.json` inside your Vite `public/` folder so `vite build` copies it next to `dist/index.html`:
 
