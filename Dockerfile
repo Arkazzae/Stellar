@@ -92,6 +92,7 @@ FROM --platform=$BUILDPLATFORM node:26-bookworm-slim@sha256:0042e17d232a87a2cd48
 WORKDIR /src
 COPY package.json package-lock.json ./
 COPY web/package.json web/
+COPY sdk/package.json sdk/
 COPY packages/stellarr-icons/package.json packages/stellarr-icons/
 COPY packages/stellarr-router/package.json packages/stellarr-router/
 COPY packages/stellarr-ui/package.json packages/stellarr-ui/
@@ -105,6 +106,7 @@ COPY --from=recipe-speex / artifacts/recipes/speex/out/
 COPY --from=recipe-bergamot / artifacts/recipes/bergamot/out/
 COPY --from=recipe-rnnoise / artifacts/recipes/rnnoise/out/
 COPY web/ web/
+COPY sdk/ sdk/
 WORKDIR /src/web
 # The build writes both apps to dist/. nginx sends the .gz file beside the
 # original to a browser that accepts gzip, so the text formats and the WASM are
