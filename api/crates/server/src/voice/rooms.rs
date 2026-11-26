@@ -142,11 +142,102 @@ struct Occupancy {
     participants: Vec<Occupant>,
 }
 
-/// Where a room's occupancy goes, worked out from the database.
+/// Where news of a room goes, worked out from the database.
 enum Reach {
     Conversation(Id, Id),
     Channel(Id, Option<Vec<Id>>),
     Nobody,
+}
+
+impl Reach {
+    /// The two people of a direct conversation, or the server of a channel
+    /// with the members who see it (none when everybody does).
+    fn of(db: &Connection, room: Id) -> rusqlite::Result<Reach> {
+        let conversation: Option<(Id, Id)> = db
+            .query_row(
+                "SELECT \"UserAId\", \"UserBId\" FROM \"DirectConversations\" WHERE \"Id\" = ?1",
+                [room],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        if let Some((a, b)) = conversation {
+            return Ok(Reach::Conversation(a, b));
+        }
+
+        let server: Option<Id> = db
+            .query_row(
+                "SELECT \"ServerId\" FROM \"Channels\" WHERE \"Id\" = ?1",
+                [room],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let Some(server) = server else {
+            return Ok(Reach::Nobody);
+        };
+        let viewers = visibility::viewers(db, server, room)?.map(|seeing| {
+            let mut people: Vec<Id> = seeing.into_iter().collect();
+            people.sort();
+            people
+        });
+        Ok(Reach::Channel(server, viewers))
+    }
+
+    /// Who hears it: those who see the room and whoever sits in it, who may
+    /// have been moved there without seeing it. None for a room that is
+    /// neither a channel nor a conversation.
+    fn audience(self, seated: &[Id]) -> Option<Audience> {
+        match self {
+            Reach::Conversation(a, b) => Some(Audience::Users(vec![a, b])),
+            Reach::Channel(server, None) => Some(Audience::Server(server)),
+            Reach::Channel(server, Some(mut people)) => {
+                for person in seated {
+                    if !people.contains(person) {
+                        people.push(*person);
+                    }
+                }
+                Some(Audience::Followers {
+                    server,
+                    users: people,
+                })
+            }
+            Reach::Nobody => None,
+        }
+    }
+}
+
+/// Who hears news of a room, as its occupancy reaches them (see
+/// [`broadcast_snapshot`]): what else is said of a room, such as the activity
+/// that runs in it, goes to the same people. None for a room that is neither
+/// a channel nor a conversation.
+pub async fn audience(state: &AppState, room: Id) -> Result<Option<Audience>, DbError> {
+    let seated: Vec<Id> = state
+        .realtime()
+        .map(|realtime| {
+            realtime
+                .presence()
+                .voice_users(room)
+                .into_iter()
+                .map(|seat| seat.user)
+                .collect()
+        })
+        .unwrap_or_default();
+    let reach = state
+        .database()
+        .read(move |db| -> Result<Reach, DbError> { Ok(Reach::of(db, room)?) })
+        .await?;
+    Ok(reach.audience(&seated))
+}
+
+/// Whether the person sees the room: a member of the server who views the
+/// channel, or one of the two people of a direct call they may take part in.
+pub fn sees(
+    db: &Connection,
+    presence: &PresenceTracker,
+    room: Id,
+    user: Id,
+) -> rusqlite::Result<bool> {
+    let access = access(db, presence, room, user)?;
+    Ok(access.allowed && held_in(db, &access, room, user)?.views())
 }
 
 /// Tells everybody who should see a room its current occupants. The hub and
@@ -177,34 +268,7 @@ pub async fn broadcast_snapshot(state: &AppState, room: Id) -> Result<(), DbErro
                     names.insert(*user, name);
                 }
             }
-
-            let conversation: Option<(Id, Id)> = db
-                .query_row(
-                    "SELECT \"UserAId\", \"UserBId\" FROM \"DirectConversations\" WHERE \"Id\" = ?1",
-                    [room],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
-                )
-                .optional()?;
-            if let Some((a, b)) = conversation {
-                return Ok((names, Reach::Conversation(a, b)));
-            }
-
-            let server: Option<Id> = db
-                .query_row(
-                    "SELECT \"ServerId\" FROM \"Channels\" WHERE \"Id\" = ?1",
-                    [room],
-                    |row| row.get(0),
-                )
-                .optional()?;
-            let Some(server) = server else {
-                return Ok((names, Reach::Nobody));
-            };
-            let viewers = visibility::viewers(db, server, room)?.map(|seeing| {
-                let mut people: Vec<Id> = seeing.into_iter().collect();
-                people.sort();
-                people
-            });
-            Ok((names, Reach::Channel(server, viewers)))
+            Ok((names, Reach::of(db, room)?))
         })
         .await?;
 
@@ -225,21 +289,8 @@ pub async fn broadcast_snapshot(state: &AppState, room: Id) -> Result<(), DbErro
             })
             .collect(),
     };
-    let audience = match reach {
-        Reach::Conversation(a, b) => Audience::Users(vec![a, b]),
-        Reach::Channel(server, None) => Audience::Server(server),
-        Reach::Channel(server, Some(mut people)) => {
-            for person in seated {
-                if !people.contains(&person) {
-                    people.push(person);
-                }
-            }
-            Audience::Followers {
-                server,
-                users: people,
-            }
-        }
-        Reach::Nobody => return Ok(()),
+    let Some(audience) = reach.audience(&seated) else {
+        return Ok(());
     };
     state
         .events()
