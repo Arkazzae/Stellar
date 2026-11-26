@@ -354,6 +354,61 @@ async fn a_database_that_has_the_schema_is_opened_as_it_is() {
     assert_eq!(steps, 1);
 }
 
+#[test]
+fn an_unversioned_database_upgrades_atomically_and_keeps_its_rows() {
+    let folder = TempDir::new();
+    let settings = database_settings(&folder);
+    drop(Database::open(&settings).unwrap());
+    let db = Connection::open(&settings.path).unwrap();
+    insert_user(&db, "kept").unwrap();
+    let version = || {
+        db.pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+            .unwrap()
+    };
+    let current_version = version();
+    assert!(current_version > 0);
+    db.execute_batch(
+        "PRAGMA user_version = 0;
+         DROP TABLE DiscordImportJobs;
+         DROP TABLE UploadLimits;
+         CREATE INDEX UploadLimits ON Users(Username);",
+    )
+    .unwrap();
+    assert!(Database::open(&settings).is_err());
+    assert_eq!(version(), 0);
+    assert!(db.prepare("SELECT * FROM DiscordImportJobs").is_err());
+
+    db.execute_batch("DROP INDEX UploadLimits").unwrap();
+    drop(Database::open(&settings).unwrap());
+    assert_eq!(version(), current_version);
+    assert!(
+        db.prepare("SELECT * FROM DiscordImportJobs, UploadLimits")
+            .is_ok()
+    );
+    assert_eq!(
+        db.query_row("SELECT Username FROM Users", [], |row| row
+            .get::<_, String>(0))
+            .unwrap(),
+        "kept"
+    );
+}
+
+#[test]
+fn a_database_from_a_newer_server_is_refused_with_its_version_intact() {
+    let folder = TempDir::new();
+    let settings = database_settings(&folder);
+    let db = Connection::open(&settings.path).unwrap();
+    db.pragma_update(None, "user_version", 9999).unwrap();
+    assert!(
+        matches!(Database::open(&settings), Err(DbError::Task(message)) if message.contains("9999"))
+    );
+    assert_eq!(
+        db.pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+            .unwrap(),
+        9999
+    );
+}
+
 #[tokio::test]
 async fn the_one_time_steps_of_a_new_database_carry_a_moment_in_the_stored_form() {
     let (_folder, database) = new_database();
