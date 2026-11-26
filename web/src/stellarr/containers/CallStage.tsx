@@ -11,6 +11,7 @@ import {
   useVoice,
 } from "@/state/hooks";
 
+import { ActivityDevPreview } from "./ActivityDevPreview";
 import { InstalledActivities } from "./InstalledActivities";
 import { popOutCall } from "./callPopout";
 import { VoiceProblemNotice } from "./VoiceProblemNotice";
@@ -47,6 +48,9 @@ export function CallStage({ fullscreenTarget }: CallStageProps) {
       <VoiceProblemNotice />
       {joinedChannelId && <InstalledActivities key={joinedChannelId} channel={joinedChannelId}
         muted={voice.state.muted} cameraOn={voice.call?.cameraOn} />}
+      {import.meta.env.DEV && typeof __ACTIVITY_PREVIEW__ !== "undefined" &&
+        __ACTIVITY_PREVIEW__ && joinedChannelId &&
+        <ActivityDevPreview key={"preview-" + joinedChannelId} channel={joinedChannelId} muted={voice.state.muted} cameraOn={voice.call?.cameraOn} />}
       <VoiceStage
         people={voice.people}
         cameraStreams={voice.cameraStreams}

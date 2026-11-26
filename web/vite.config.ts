@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv, type ProxyOptions } from "vite";
 
+import { previewMiddleware } from "../sdk/dev/instance.js";
 import { stellarrArtifactSizes } from "./artifactSizes";
 import { bundleReport } from "./bundleReport";
 import { BUILD_DIRECTORY, COCKPIT_DOCUMENT, stellarrDocuments, WEB_DOCUMENT } from "./documents";
@@ -65,15 +66,31 @@ function apiProxy(apiOrigin: string): Record<string, ProxyOptions> {
  *                                cross a bind mount
  *   VITE_ICE_SERVERS             written into the web client's bundle
  */
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command, isPreview }) => {
   const env = loadEnv(mode, here("."), "");
   const proxy = apiProxy(env.STELLARR_API_ORIGIN || "http://127.0.0.1:5000");
+  const previewEnabled = command === "serve" && !isPreview && env.STELLARR_ACTIVITY_DEV_ENABLED === "true";
   const allowedHosts = commaSeparated(env.STELLARR_DEV_ALLOWED_HOSTS);
 
   return {
     appType: "mpa",
+    define: { __ACTIVITY_PREVIEW__: JSON.stringify(previewEnabled) },
     plugins: [
       react(),
+      {
+        name: "stellarr-activity-preview",
+        apply: "serve",
+        configureServer(server) {
+          if (!previewEnabled) return;
+          const preview = previewMiddleware({
+            origin: env.STELLARR_ACTIVITY_DEV_ORIGIN || "http://localhost:3000",
+            domain: env.STELLARR_ACTIVITY_DEV_DOMAIN || "activity.localhost",
+            apiOrigin: env.STELLARR_API_ORIGIN || "http://127.0.0.1:5000",
+          });
+          server.middlewares.use(preview.middleware);
+          server.httpServer?.once("close", preview.close);
+        },
+      },
       stellarrDocuments({ instanceLanguage: env.STELLARR_LANGUAGE, publicDir: here("public") }),
       stellarrArtifactSizes(),
       bundleReport(),
