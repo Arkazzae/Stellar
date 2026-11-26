@@ -40,19 +40,20 @@ use crate::settings::DatabaseSettings;
 pub use error::DbError;
 pub use gate::MutationGate;
 
-/// Connections open at the same time, at most. SQLite lets many readers and
-/// one writer work together; more connections than this only queue behind
-/// the writer.
-const MAX_CONNECTIONS: usize = 16;
+/// One of the sixteen connections is reserved for the writer.
+const MAX_READERS: usize = 15;
+const WRITER_FLAGS: OpenFlags =
+    OpenFlags::SQLITE_OPEN_READ_WRITE.union(OpenFlags::SQLITE_OPEN_CREATE);
 
-/// A handle to the database. Cloning it shares the connections.
 #[derive(Clone)]
 pub struct Database {
-    inner: Arc<Inner>,
+    readers: Arc<Pool>,
+    writer: Arc<Pool>,
 }
 
-struct Inner {
+struct Pool {
     settings: DatabaseSettings,
+    flags: OpenFlags,
     idle: Mutex<Vec<Connection>>,
     permits: Arc<Semaphore>,
 }
@@ -62,20 +63,22 @@ impl Database {
     /// none. It blocks, so it is called before the server starts or from a
     /// blocking thread.
     pub fn open(settings: &DatabaseSettings) -> Result<Database, DbError> {
-        let mut connection = connect(settings)?;
+        let mut connection = connect(settings, WRITER_FLAGS)?;
         schema::prepare(&mut connection)?;
         Ok(Database {
-            inner: Arc::new(Inner {
-                settings: settings.clone(),
-                idle: Mutex::new(vec![connection]),
-                permits: Arc::new(Semaphore::new(MAX_CONNECTIONS)),
-            }),
+            readers: Pool::new(
+                settings,
+                OpenFlags::SQLITE_OPEN_READ_ONLY,
+                MAX_READERS,
+                vec![],
+            ),
+            writer: Pool::new(settings, WRITER_FLAGS, 1, vec![connection]),
         })
     }
 
     /// Where the database file is.
     pub fn path(&self) -> &Path {
-        &self.inner.settings.path
+        &self.writer.settings.path
     }
 
     /// Runs `work` on a connection, inside one snapshot of the database. A
@@ -86,19 +89,17 @@ impl Database {
         T: Send + 'static,
         E: From<DbError> + From<rusqlite::Error> + Send + 'static,
     {
-        self.run(move |connection| {
-            // A statement that would change something fails, instead of
-            // changing it inside a transaction that is never committed.
-            connection.pragma_update(None, "query_only", true)?;
-            let transaction =
-                connection.transaction_with_behavior(TransactionBehavior::Deferred)?;
-            let result = work(&transaction);
-            // A read changes nothing; ending the transaction either way only
-            // releases the snapshot.
-            drop(transaction);
-            result
-        })
-        .await
+        self.readers
+            .run(move |connection| {
+                let transaction =
+                    connection.transaction_with_behavior(TransactionBehavior::Deferred)?;
+                let result = work(&transaction);
+                // A read changes nothing; ending the transaction either way only
+                // releases the snapshot.
+                drop(transaction);
+                result
+            })
+            .await
     }
 
     /// Runs `work` in one transaction that holds the write lock. Returning
@@ -109,14 +110,15 @@ impl Database {
         T: Send + 'static,
         E: From<DbError> + From<rusqlite::Error> + Send + 'static,
     {
-        self.run(move |connection| {
-            let transaction =
-                connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-            let value = work(&transaction)?;
-            transaction.commit()?;
-            Ok(value)
-        })
-        .await
+        self.writer
+            .run(move |connection| {
+                let transaction =
+                    connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                let value = work(&transaction)?;
+                transaction.commit()?;
+                Ok(value)
+            })
+            .await
     }
 
     /// Takes the write lock with short polls for work that must compete with
@@ -125,22 +127,23 @@ impl Database {
     where
         F: FnOnce(&Transaction) -> rusqlite::Result<()> + Send + 'static,
     {
-        let timeout = self.inner.settings.busy_timeout;
-        self.run(move |connection| {
-            connection.busy_timeout(Duration::ZERO)?;
-            let outcome = (|| {
-                let transaction = retry_lock(timeout, || {
-                    Transaction::new_unchecked(connection, TransactionBehavior::Immediate)
-                })?;
-                work(&transaction)?;
-                transaction.commit()
-            })();
-            let restored = connection.busy_timeout(timeout);
-            outcome?;
-            restored?;
-            Ok(())
-        })
-        .await
+        let timeout = self.writer.settings.busy_timeout;
+        self.writer
+            .run(move |connection| {
+                connection.busy_timeout(Duration::ZERO)?;
+                let outcome = (|| {
+                    let transaction = retry_lock(timeout, || {
+                        Transaction::new_unchecked(connection, TransactionBehavior::Immediate)
+                    })?;
+                    work(&transaction)?;
+                    transaction.commit()
+                })();
+                let restored = connection.busy_timeout(timeout);
+                outcome?;
+                restored?;
+                Ok(())
+            })
+            .await
     }
 
     /// Like [`Database::write`], but a unique value that another request took
@@ -157,41 +160,56 @@ impl Database {
             Err(error) => Err(error),
         }
     }
+}
 
-    async fn run<T, E, F>(&self, work: F) -> Result<T, E>
+impl Pool {
+    fn new(
+        settings: &DatabaseSettings,
+        flags: OpenFlags,
+        size: usize,
+        idle: Vec<Connection>,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            settings: settings.clone(),
+            flags,
+            idle: Mutex::new(idle),
+            permits: Arc::new(Semaphore::new(size)),
+        })
+    }
+
+    async fn run<T, E, F>(self: &Arc<Self>, work: F) -> Result<T, E>
     where
         F: FnOnce(&mut Connection) -> Result<T, E> + Send + 'static,
         T: Send + 'static,
         E: From<DbError> + Send + 'static,
     {
-        let permit = Arc::clone(&self.inner.permits)
+        let permit = Arc::clone(&self.permits)
             .acquire_owned()
             .await
             .map_err(|_| DbError::Task("the database is closed".to_string()))?;
-        let inner = Arc::clone(&self.inner);
+        let pool = Arc::clone(self);
         let joined = tokio::task::spawn_blocking(move || {
             let _permit = permit;
-            let taken = inner
+            let taken = pool
                 .idle
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .pop();
             let mut connection = match taken {
                 Some(connection) => connection,
-                None => connect(&inner.settings).map_err(E::from)?,
+                None => connect(&pool.settings, pool.flags).map_err(E::from)?,
             };
-            // What an earlier lease switched on or off must not stay so for
-            // the next one that borrows the connection.
-            for (pragma, wanted) in [("foreign_keys", true), ("query_only", false)] {
-                connection
-                    .pragma_update(None, pragma, wanted)
-                    .map_err(|e| E::from(DbError::from(e)))?;
+            if pool.flags.contains(OpenFlags::SQLITE_OPEN_READ_WRITE) {
+                for (setting, value) in [("foreign_keys", true), ("query_only", false)] {
+                    connection
+                        .pragma_update(None, setting, value)
+                        .map_err(DbError::from)?;
+                }
             }
             let outcome = work(&mut connection);
             // A connection that was in the middle of a transaction when the
             // closure panicked never gets here, so only sound ones are kept.
-            inner
-                .idle
+            pool.idle
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .push(connection);
@@ -240,15 +258,14 @@ pub(crate) fn retry_lock<T>(
 /// cache is not used: with write-ahead logging a reader goes on from the last
 /// commit while another connection writes, and a shared cache would make it
 /// wait.
-fn connect(settings: &DatabaseSettings) -> Result<Connection, DbError> {
-    let connection = Connection::open_with_flags(
-        &settings.path,
-        OpenFlags::SQLITE_OPEN_READ_WRITE
-            | OpenFlags::SQLITE_OPEN_CREATE
-            | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )?;
+fn connect(settings: &DatabaseSettings, flags: OpenFlags) -> Result<Connection, DbError> {
+    let connection =
+        Connection::open_with_flags(&settings.path, flags | OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
     connection.busy_timeout(settings.busy_timeout)?;
     connection.pragma_update(None, "foreign_keys", true)?;
+    if flags.contains(OpenFlags::SQLITE_OPEN_READ_ONLY) {
+        connection.pragma_update(None, "query_only", true)?;
+    }
     Ok(connection)
 }
 
