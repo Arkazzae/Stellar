@@ -172,7 +172,11 @@ impl FakeMedia {
 
     /// The room and the account a session was created for.
     pub fn session_of(&self, session: &str) -> Option<(String, String)> {
-        self.inner.state().sessions.get(session).map(|(room, owner, _)| (room.clone(), owner.clone()))
+        self.inner
+            .state()
+            .sessions
+            .get(session)
+            .map(|(room, owner, _)| (room.clone(), owner.clone()))
     }
 
     /// When set, every request is cut off as a media server that is not there
@@ -624,7 +628,9 @@ async fn create(inner: &Arc<Inner>, body: &str, activity: bool) -> Answer {
         state.session_count += 1;
         let session = format!("session-{}", state.session_count);
         let epoch = state.epoch.clone();
-        state.sessions.insert(session.clone(), (room, user, activity));
+        state
+            .sessions
+            .insert(session.clone(), (room, user, activity));
         (session, epoch, state.signal_on_create.clone())
     };
     if let Some((kind, payload)) = wait_for {
