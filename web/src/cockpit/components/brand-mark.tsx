@@ -1,4 +1,4 @@
-/** The outline of the one-colour mark, as in branding/logo/mono.svg. */
+/** The outline of the one-colour mark, as in website/src/images/logo/mono.svg. */
 export const MARK_PATH =
   "M26 8H38C53 8 58 13 58 28C58 43 53 48 38 48H33C31.4 48 29.9 48.5 28.6 49.4L18.64 56.27C17.46 57.08 16.5 56.58 16.5 55.15V49.6C16.5 47.8 15.5 46.8 13.71 45.95C8.11 43.28 6 37.75 6 28C6 13 11 8 26 8ZM21.5 21.5a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0v-7a3 3 0 0 1 3-3ZM32 17a3 3 0 0 1 3 3v16a3 3 0 0 1-6 0v-16a3 3 0 0 1 3-3ZM42.5 20a3 3 0 0 1 3 3v10a3 3 0 0 1-6 0v-10a3 3 0 0 1 3-3Z";
 

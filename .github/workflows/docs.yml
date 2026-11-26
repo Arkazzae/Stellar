@@ -17,15 +17,15 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "docs/**"
-      - "branding/logo/**"
-      - "branding/guidelines/fonts/**"
+      - "website/src/images/logo/**"
+      - "web/src/cockpit/assets/fonts/**"
       - ".github/workflows/docs.yml"
   push:
     branches: [main]
     paths:
       - "docs/**"
-      - "branding/logo/**"
-      - "branding/guidelines/fonts/**"
+      - "website/src/images/logo/**"
+      - "web/src/cockpit/assets/fonts/**"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 

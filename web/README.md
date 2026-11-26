@@ -39,7 +39,7 @@ npm run dev -w stellarr-web   # http://localhost:3000 (/) and http://localhost:3
 | `src/stellarr/lib/` | `voice/` (SFU client, Web Audio DSP, SFrame E2EE), `e2ee/` (X25519/AES-GCM DMs), `realtime/`, `chatTranslation/` (Bergamot WASM), `betterDiscord/`, `platform/` (PWA install, badge, file share), `messages/`, and `deviceStore/` (IndexedDB cache) |
 | [`src/cockpit/`](src/cockpit/README.md) | Standalone operator panel SPA |
 | [`bench/`](bench/README.md) | Headless Chrome CDP benchmarks (10k-message transcript, 150-channel rail drag) and [voice DSP characterization records](bench/voice/README.md) |
-| `scripts/` | Build/asset utilities (`sync-theme-fonts.mjs`, `export-identity-art.mjs`, `export-mascot.mjs`, `derive-language-profiles.mjs`, `verify-bergamot-runtime.mjs`) |
+| `scripts/` | Build/asset utilities (`sync-theme-fonts.mjs`, `derive-language-profiles.mjs`, `verify-bergamot-runtime.mjs`) |
 
 ## Verification
 

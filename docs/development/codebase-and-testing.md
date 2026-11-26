@@ -14,7 +14,6 @@
 | [`sdk/`](../../sdk/README.md) | JavaScript, Node.js CLI | `@stellarr/sdk` activity client, local simulator, bundler, and [Activity contract](../../sdk/CONTRACT.md). |
 | `docs/` | VitePress, Mermaid | Documentation site (`navigation.ts` derives sidebar order from `docs/README.md`). |
 | [`website/`](../../website/README.md) | Vanilla JS, CSS, Vite | `stellarr.online` landing page and `/install.sh` endpoint (standalone npm project). |
-| [`branding/`](../../branding/README.md) | SVG, WebP, CDP | Logos, astronaut mascot, default avatars/banners, [UI icons](../../branding/icons/README.md), and [README tour film](../../branding/film/README.md). |
 
 ## Core engineering invariants
 
@@ -90,6 +89,6 @@ STELLARR_SMOKE_IMAGE=stellarr:ci STELLARR_SMOKE_LIMITS='--memory 512m --cpus 1' 
 | --- | --- |
 | `infra/tests/setting-names.test.sh` | Exact parity of all 61 `STELLARR_*` variables across `variables.rs`, `infra/*.sh`, `docker-compose.yml`, `.env.example`, and [`docs/install/configuration.md`](../install/configuration.md). |
 | `npm run tokens:check -w @stellarr/ui` | Every `--ui-*` token read by `@stellarr/ui` is defined by both apps and documented in [`packages/stellarr-ui/README.md`](../../packages/stellarr-ui/README.md). |
-| `npm run icons:build -w @stellarr/icons -- --check` | Generated `paths.ts` and `branding/icons/{broken,linear}/*.svg` match `glyphs.ts`. |
+| `npm run icons:build -w @stellarr/icons -- --check` | Generated `paths.ts` matches `glyphs.ts`. |
 | `web/documents.test.ts` & `artifacts.test.ts` | Route parity with `infra/nginx.conf`, locale parity with `infra/entrypoint.sh`, and WASM/model SHA-256 parity with `artifacts/manifest.json`. |
 | `cd docs && npm test && npm run build` | `<h1>` titles, sidebar ordering, GitHub relative-link rewriting, and internal link/anchor validity across `docs/`. |

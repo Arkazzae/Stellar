@@ -32,8 +32,7 @@ export function hueFor(id: string): number {
 
 /**
  * The mascot faces in `public/identity/avatars`, transparent, drawn on the
- * person's colour. `scripts/export-identity-art.mjs` makes them from
- * `branding/avatars`.
+ * person's colour. Their source portraits live in StellarrBranding.
  */
 const AVATARS = [
   "01-pixel-cat",
@@ -59,8 +58,8 @@ const AVATARS = [
 ] as const;
 
 /**
- * The scenes in `public/identity/banners`, cut by the same script from
- * `branding/backgrounds` to the mini profile's strip with both mascots in it.
+ * The scenes in `public/identity/banners` are cropped to keep both mascots
+ * visible in the mini profile. Their originals live in StellarrBranding.
  */
 const BANNERS = [
   "01-orbit-lounge",

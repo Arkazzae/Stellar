@@ -1,27 +1,18 @@
 /**
- * Build the icon family from `src/source/glyphs.ts`:
- *
- * - `src/paths.ts`, the static table the apps import;
- * - `branding/icons/linear/*.svg` and `branding/icons/broken/*.svg`.
- *
- *   node scripts/build-icons.mjs           write both
- *   node scripts/build-icons.mjs --check   fail if either is out of date
- *   node scripts/build-icons.mjs --audit   list strokes closer than the spacing rule
+ * Build the icon path table from `src/source/glyphs.ts`.
+ * Use --check to verify the committed table or --audit to inspect stroke spacing.
  */
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 
 import { CLEAR, samples } from "../src/source/geometry.ts";
 import { GLYPHS } from "../src/source/glyphs.ts";
 
-const VARIANTS = ["linear", "broken"];
 const check = process.argv.includes("--check");
 const audit = process.argv.includes("--audit");
 const table = new URL("../src/paths.ts", import.meta.url);
-const branding = new URL("../../../branding/icons/", import.meta.url);
 
 const strokes = (name, variant) => GLYPHS[name].map((s) => (typeof s === "string" ? s : s[variant]));
 const names = Object.keys(GLYPHS);
-const kebab = (name) => name.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
 
 // ── The table ──
 const list = (paths) => `[\n${paths.map((d) => `      ${JSON.stringify(d)},`).join("\n")}\n    ]`;
@@ -61,41 +52,14 @@ export function iconPaths(name: IconName, variant: IconVariant): readonly IconPa
 }
 `;
 
-// ── The SVG files ──
-const svg = (name, variant) =>
-  [
-    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">',
-    `  <title>${name.replace(/([a-z0-9])([A-Z])/g, "$1 $2")}</title>`,
-    ...strokes(name, variant).map((d) => `  <path d="${d}"/>`),
-    "</svg>",
-    "",
-  ].join("\n");
-const files = new Map();
-for (const variant of VARIANTS) for (const name of names) files.set(`${variant}/${kebab(name)}.svg`, svg(name, variant));
-
-const listSvgs = async (dir) =>
-  (await readdir(new URL(dir, branding)).catch(() => [])).filter((f) => f.endsWith(".svg")).map((f) => (dir ? `${dir}${f}` : f));
-const existing = [...(await listSvgs("")), ...(await listSvgs("linear/")), ...(await listSvgs("broken/"))];
-const stale = existing.filter((f) => !files.has(f));
-
 if (check) {
-  const problems = [];
-  if ((await readFile(table, "utf8").catch(() => null)) !== source) problems.push("src/paths.ts");
-  for (const [file, text] of files) {
-    if ((await readFile(new URL(file, branding), "utf8").catch(() => null)) !== text) problems.push(`branding/icons/${file}`);
+  if ((await readFile(table, "utf8")) !== source) {
+    throw new Error("Regenerate src/paths.ts with npm run icons:build -w @stellarr/icons");
   }
-  for (const file of stale) problems.push(`branding/icons/${file} (no longer in the family)`);
-  if (problems.length) {
-    throw new Error(`Icons need building (npm run icons:build -w @stellarr/icons):\n  ${problems.slice(0, 20).join("\n  ")}${problems.length > 20 ? `\n  …and ${problems.length - 20} more` : ""}`);
-  }
-  console.log(`[icons] Verified ${names.length} glyphs, paths.ts and ${files.size} SVG files.`);
 } else {
   await writeFile(table, source);
-  for (const variant of VARIANTS) await mkdir(new URL(`${variant}/`, branding), { recursive: true });
-  for (const [file, text] of files) await writeFile(new URL(file, branding), text);
-  for (const file of stale) await rm(new URL(file, branding));
-  console.log(`[icons] Built ${names.length} glyphs: paths.ts and ${files.size} SVG files${stale.length ? `, removed ${stale.length} old ones` : ""}.`);
 }
+console.log(`[icons] ${check ? "Verified" : "Built"} paths.ts for ${names.length} glyphs.`);
 
 // ── Spacing audit: separate strokes either join or keep CLEAR apart, centre to centre ──
 if (audit) {

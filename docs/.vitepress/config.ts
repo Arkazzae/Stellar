@@ -6,12 +6,12 @@ import { buildNavigation } from './navigation.ts'
 
 const repository = 'https://github.com/Arkazzae/Stellarr'
 const docs = fileURLToPath(new URL('..', import.meta.url))
-const branding = fileURLToPath(new URL('../../branding', import.meta.url))
+const logos = fileURLToPath(new URL('../../website/src/images/logo', import.meta.url))
+const fonts = fileURLToPath(new URL('../../web/src/cockpit/assets/fonts', import.meta.url))
 
-// The drawings are read from branding/ and embedded, so the site has no copy
-// of them to keep in step.
+// Embed the same logo files that ship with the project website.
 function drawing(name: string): string {
-  const svg = readFileSync(`${branding}/logo/${name}.svg`, 'utf8')
+  const svg = readFileSync(`${logos}/${name}.svg`, 'utf8')
   return `data:image/svg+xml,${encodeURIComponent(svg)}`
 }
 
@@ -50,8 +50,8 @@ export default defineConfig({
   transformHtml: (html) =>
     html.replace(/<link rel="preload" href="[^"]*inter-roman-latin[^"]*"[^>]*>/, ''),
   vite: {
-    // The style sheet loads the fonts from branding/, outside the docs/ root.
-    server: { fs: { allow: [docs, branding] } },
+    // The style sheet loads the fonts from the web client, outside the docs/ root.
+    server: { fs: { allow: [docs, fonts] } },
   },
   themeConfig: {
     // small.svg (the mark for 16 to 47 px) has a light bubble for dark

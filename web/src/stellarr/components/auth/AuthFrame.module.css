@@ -61,7 +61,7 @@
 }
 
 /* The lockup: the small mark, spaced from the wordmark by the height of its
-   shortest bar, as branding/README.md asks. The mark keeps the brand's
+   shortest bar. The mark keeps the brand's
    colours in every palette: a light bubble on dark schemes, a dark one on
    light ones, and indigo bars. */
 .lockup {

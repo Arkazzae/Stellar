@@ -1,6 +1,6 @@
 # `@stellarr/icons`
 
-Stellarr's vector icon package, shared by the web client (`web/`), Cockpit (`web/src/cockpit/`), and [`@stellarr/ui`](../stellarr-ui/README.md). The same glyph definitions generate the standalone SVG files in [`branding/icons/`](../../branding/icons/).
+Stellarr's vector icon package, shared by the web client (`web/`), Cockpit (`web/src/cockpit/`), and [`@stellarr/ui`](../stellarr-ui/README.md).
 
 The package is private and consumed directly as TypeScript source (`exports` points to `src/index.ts`; Vite and Vitest compile it as part of the importing application). React is its only runtime dependency.
 
@@ -23,10 +23,10 @@ Pass `variant="linear"` or `variant="broken"` on an individual `<Icon>` or wrap 
 - [`src/source/geometry.ts`](src/source/geometry.ts): Shared geometric primitives (`rect`, `circle`, `arc`, `poly`), transforms, and contour knockouts/gaps.
 - [`src/paths.ts`](src/paths.ts): Generated static path table imported at runtime. Do not edit by hand.
 
-After modifying [`src/source/glyphs.ts`](src/source/glyphs.ts) or [`src/source/geometry.ts`](src/source/geometry.ts), regenerate [`src/paths.ts`](src/paths.ts) and [`branding/icons/`](../../branding/icons/) from the repository root:
+After modifying [`src/source/glyphs.ts`](src/source/glyphs.ts) or [`src/source/geometry.ts`](src/source/geometry.ts), regenerate [`src/paths.ts`](src/paths.ts) from the repository root:
 
 ```sh
-npm run icons:build -w @stellarr/icons              # regenerate src/paths.ts and branding/icons/
+npm run icons:build -w @stellarr/icons              # regenerate src/paths.ts
 npm run icons:build -w @stellarr/icons -- --check   # verify generated files match source (run in CI)
 npm run icons:build -w @stellarr/icons -- --audit   # check for stroke crowding and clearance violations
 ```
@@ -39,8 +39,6 @@ npm run icons:build -w @stellarr/icons -- --audit   # check for stroke crowding 
 - **Broken variant gaps**: One gap of length `GAP` (`3.1`) per primary contour on its longest straight segment (preferring the upper-right quadrant where geometry permits). Dots, short ticks, and small rings remain closed in both variants.
 - **Diagonal slash knockouts**: Mute/disable slashes knock out underlying contours within `2.5` units in both variants (`knockLine`, `knockNear`).
 - **Accessibility**: `<Icon>` renders `aria-hidden="true"` by default; place accessible labels on the enclosing interactive control.
-
-Brand logos, mascot artwork, default avatars, and audio waveforms live under [`branding/`](../../branding/README.md).
 
 ## Verification
 

@@ -8,7 +8,7 @@ import { BrandMark, MARK_PATH } from "./brand-mark";
 
 describe("BrandMark", () => {
   it("draws the outline of the brand's one-colour mark", () => {
-    const source = readFileSync(join(process.cwd(), "..", "branding", "logo", "mono.svg"), "utf8");
+    const source = readFileSync(join(process.cwd(), "..", "website", "src", "images", "logo", "mono.svg"), "utf8");
 
     expect(/ d="([^"]+)"/.exec(source)?.[1]).toBe(MARK_PATH);
   });

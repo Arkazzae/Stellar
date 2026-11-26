@@ -75,13 +75,12 @@ jobs:
           # manifest, so the Dockerfile stages and the bake file that build
           # them count too.
           check sdk '^(sdk/|package(-lock)?\.json$|\.github/workflows/ci\.yml$)'
-          check web '^(web/|sdk/(dev/|host/|package\.json$)|artifacts/|packages/|package(-lock)?\.json$|branding/icons/|infra/(nginx\.conf|entrypoint\.sh)$|Dockerfile$|docker-bake\.hcl$|\.github/workflows/ci\.yml$)'
+          check web '^(web/|sdk/(dev/|host/|package\.json$)|artifacts/|packages/|package(-lock)?\.json$|website/src/images/logo/mono\.svg$|infra/(nginx\.conf|entrypoint\.sh)$|Dockerfile$|docker-bake\.hcl$|\.github/workflows/ci\.yml$)'
           check media '^(media/|\.github/workflows/ci\.yml$)'
           check init '^(init/|\.github/workflows/ci\.yml$)'
           # website/ is the project site, its own npm project outside the root
-          # workspaces. It reads the logo, fonts and tour film from branding/,
-          # and serves install.sh.
-          check website '^(website/|branding/(logo|film|guidelines/fonts)/|install\.sh$|\.github/workflows/ci\.yml$)'
+          # workspaces. It shares the Cockpit fonts and serves install.sh.
+          check website '^(website/|web/src/cockpit/assets/fonts/|install\.sh$|\.github/workflows/ci\.yml$)'
           # The installer, init/installer/ and the install.sh that fetches it,
           # downloads docker-compose.yml and .env.example and writes .env from
           # them, and its tests read both. The same job checks that the
@@ -194,7 +193,7 @@ jobs:
           else
             printf '### Voice playback check\n\nNo report: the check did not run, or stopped before it compared anything; see its step.\n' >> "$GITHUB_STEP_SUMMARY"
           fi
-      # src/paths.ts and branding/icons/ are built from the glyph source in
+      # src/paths.ts is built from the glyph source in
       # @stellarr/icons; a glyph changed in one place only fails here.
       - run: npm run icons:build -w @stellarr/icons -- --check
       # Every token the package reads must be defined by each app, the web

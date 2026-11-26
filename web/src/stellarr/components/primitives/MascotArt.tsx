@@ -3,8 +3,7 @@ import { useCallback, useState } from "react";
 import styles from "./MascotArt.module.css";
 
 /**
- * The stickers `scripts/export-mascot.mjs` exports from the brand files
- * (`branding/mascot/stickers/`) into `public/mascot/`, at 104 and 208 pixels.
+ * The stickers exported from StellarrBranding into `public/mascot/`, at 104 and 208 pixels.
  * Keep the two lists in step.
  */
 export type StickerName =

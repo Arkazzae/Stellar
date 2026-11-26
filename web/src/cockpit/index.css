@@ -12,7 +12,7 @@
  * as the system asks. Tailwind's dark: variant follows the same media query.
  */
 
-/* Outfit is the brand's typeface (branding/README.md) and JetBrains Mono sets
+/* Outfit is the brand's typeface and JetBrains Mono sets
    code, logs and other technical values, as in the web client. The unicode
    ranges are the Latin and Latin Extended subsets, as on the documentation site,
    so a page without Polish letters loads only the latin file of each face.

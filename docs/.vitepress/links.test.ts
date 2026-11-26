@@ -35,8 +35,8 @@ test('a link to a file outside docs goes to that file on GitHub', () => {
   assert.deepEqual(render('[compose](../../docker-compose.yml)', 'install/quick-start.md').hrefs, [
     `${repository}/blob/main/docker-compose.yml`,
   ])
-  assert.deepEqual(render('[folder](../branding/)', 'architecture.md').hrefs, [
-    `${repository}/blob/main/branding/`,
+  assert.deepEqual(render('[folder](../packages/)', 'architecture.md').hrefs, [
+    `${repository}/blob/main/packages/`,
   ])
 })
 

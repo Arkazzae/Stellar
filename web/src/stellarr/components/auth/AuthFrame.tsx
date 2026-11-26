@@ -40,7 +40,7 @@ function focusWasLost(): boolean {
   );
 }
 
-/** The Stellarr mark and wordmark, drawn from `branding/logo/small.svg`, the mark for 16–47px. */
+/** The Stellarr mark and wordmark, drawn from `website/src/images/logo/small.svg`, the mark for 16–47px. */
 export function StellarrLockup() {
   return (
     <p className={styles.lockup}>

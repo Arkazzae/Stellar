@@ -4,7 +4,7 @@ import { MascotImage, type StickerName } from "@/components/primitives/MascotArt
  * The moment each account screen stands for, with the mascot art that shows
  * it: a scene beside the form on a wide screen, a sticker above the heading
  * on a narrow one. The files are the brand's own, exported to WebP by
- * `scripts/export-mascot.mjs` into `public/mascot/`; the components that
+ * the StellarrBranding export script into `public/mascot/`; the components that
  * draw them are shared with the rest of the app.
  */
 export type AuthScene =
