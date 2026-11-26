@@ -1,15 +1,16 @@
 # Platform Templates (`deploy/`)
 
-Packages the production Stellarr container for non-Compose host platforms (Docker Compose hosts use the root [`docker-compose.yml`](../docker-compose.yml) directly).
+The default [Compose deployment](../docker-compose.yml) runs one container. This directory contains the optional split deployment and platform integrations.
 
 | Target | Artifact | Documentation |
 | --- | --- | --- |
+| **Split Docker Compose** | [`split/compose.yml`](split/compose.yml) | [Setup and operations](split/README.md) |
 | **Unraid** | [`unraid/stellarr.xml`](unraid/stellarr.xml) | [`docs/install/unraid.md`](../docs/install/unraid.md) |
 | **Cloudflare R2 Relay Worker** | [`cloudflare/backup-relay/`](cloudflare/backup-relay/README.md) | [`docs/admin/cloudflare-r2.md`](../docs/admin/cloudflare-r2.md) |
 
 ## Template contract
 
-[`docker-compose.yml`](../docker-compose.yml) defines the canonical ports, capabilities, and resource limits; the image provides runtime defaults. Every platform template in `deploy/` must follow these rules:
+[`docker-compose.yml`](../docker-compose.yml) defines the canonical ports, capabilities, and resource limits; the image provides runtime defaults. Templates for the single-container image follow these rules:
 
 1. **Image tag:** Default to `ghcr.io/arkazzae/stellarr:latest` while allowing operators to pin a series tag (e.g. `1.2`).
 2. **Single volume:** Mount one persistent host path or volume at `/data/stellarr`.

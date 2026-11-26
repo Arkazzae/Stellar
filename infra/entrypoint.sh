@@ -121,43 +121,92 @@ if [[ -z "$media_public_ip" ]]; then
   fi
 fi
 
-# Migrate existing volumes before any operation that touches instance data.
-# Physical traversal and non-dereferencing chown leave symlinks alone.
-mkdir -p "$data_root"
-private_dirs=("$data_root"/{db,files,keys,logs,secrets})
-mounted_tls=()
-if [[ ! -L "$data_root/tls" ]] && mountpoint -q -- "$data_root/tls"; then
-  mounted_tls=(-path "$data_root/tls" -prune -o)
+# The optional Compose stack selects a component explicitly. Its API shares
+# loopback with nginx; only the authenticated media control crosses a bridge.
+component="${1:-all}"
+# Stellarr Media advertises the public and LAN addresses when configured,
+# plus the container address that optional coturn uses to reach it.
+# STELLARR_MEDIA_ADVERTISE overrides that list.
+export STELLARR_MEDIA_BIND="0.0.0.0:49000"
+export STELLARR_MEDIA_PUBLIC_IP="$media_public_ip"
+export STELLARR_MEDIA_PUBLIC_PORT="$media_port"
+export STELLARR_MEDIA_LAN_IP="$media_lan_ip"
+export STELLARR_MEDIA_CONTROL_BIND="127.0.0.1:5200"
+export STELLARR_MEDIA_LOG="$media_log"
+if [[ -n "$media_advertise" ]]; then
+  export STELLARR_MEDIA_ADVERTISE="$media_advertise"
 else
-  private_dirs+=("$data_root/tls")
+  unset STELLARR_MEDIA_ADVERTISE
 fi
-find -P "$data_root" -xdev "${mounted_tls[@]}" \( -type d -o -type f \) ! -user stellarr \
-  -exec chown -h stellarr:stellarr -- {} +
+
+if [[ -z "$media_public_ip" && -z "$media_lan_ip" && -z "$media_advertise" ]]; then
+  echo "STELLARR_PUBLIC_IP is empty, so the media server advertises only this container's own address." \
+    "Browsers outside the container network need a reachable media candidate." \
+    "Set STELLARR_PUBLIC_IP to the IPv4 address browsers reach this host at, or to 'auto'." >&2
+fi
+
+# Each shared secret has a single writer and a dedicated volume. The API
+# mounts it read-only after the producing service passes its health check.
+split_secret() {
+  local root="/run/credentials/$1" name="$2"
+  if [[ "$component" == "split-$1" ]]; then
+    install -d -m 0700 "$root/secrets"
+  fi
+  read_or_create_secret "$root" "$name"
+}
+
+if [[ "$component" == split-media ]]; then
+  STELLARR_MEDIA_CONTROL_SECRET="$(split_secret media media-control-secret)"
+  export STELLARR_MEDIA_CONTROL_SECRET STELLARR_MEDIA_CONTROL_BIND="0.0.0.0:5200"
+  exec setpriv --reuid=nobody --regid=nogroup --clear-groups -- /opt/stellarr/media/stellarr-media
+fi
+
 run_as_api() {
   setpriv --reuid=stellarr --regid=stellarr --clear-groups -- "$@"
 }
 
-# A backup staged with `stellarr backup restore` replaces the instance's data
-# here, before any service starts and before the secrets below are read, so
-# every service sees the restored instance. An archive the restore refuses
-# leaves the data as it was. A restore that failed part-way and could not undo
-# itself leaves a marker, and the instance does not start on that volume.
-restore_dir="$data_root/restore"
-[[ ! -e "$restore_dir/broken" ]] ||
-  fail "A restore failed part-way and could not put the previous data back; see $restore_dir/last-restore.json. Repair the data volume, then remove $restore_dir/broken."
-if [[ -f "$restore_dir/staged.zip" ]]; then
-  echo "Restoring the backup staged in $restore_dir/staged.zip." >&2
-  restore_status=0
-  run_as_api /usr/local/bin/stellarr --data-root "$data_root" backup apply --yes || restore_status=$?
-  case "$restore_status" in
-    0) ;;
-    4) echo "The staged backup was not restored, and the instance starts with its previous data; see $restore_dir/last-restore.json." >&2 ;;
-    *) fail "Restoring the staged backup failed; see $restore_dir/last-restore.json." ;;
-  esac
-fi
+prepare_instance_data() {
+  # Migrate existing volumes before any operation that touches instance data.
+  # Physical traversal and non-dereferencing chown leave symlinks alone.
+  mkdir -p "$data_root"
+  local -a private_dirs=("$data_root"/{db,files,keys,logs,secrets})
+  local -a mounted_tls=()
+  if [[ ! -L "$data_root/tls" ]] && mountpoint -q -- "$data_root/tls"; then
+    mounted_tls=(-path "$data_root/tls" -prune -o)
+  else
+    private_dirs+=("$data_root/tls")
+  fi
+  find -P "$data_root" -xdev "${mounted_tls[@]}" \( -type d -o -type f \) ! -user stellarr \
+    -exec chown -h stellarr:stellarr -- {} +
 
-run_as_api mkdir -p "${private_dirs[@]}"
-run_as_api chmod 700 "$data_root" "${private_dirs[@]}"
+  # A backup staged with `stellarr backup restore` replaces the instance's data
+  # here, before any service starts and before the secrets below are read, so
+  # every service sees the restored instance. An archive the restore refuses
+  # leaves the data as it was. A restore that failed part-way and could not undo
+  # itself leaves a marker, and the instance does not start on that volume.
+  local restore_dir="$data_root/restore" restore_status
+  [[ ! -e "$restore_dir/broken" ]] ||
+    fail "A restore failed part-way and could not put the previous data back; see $restore_dir/last-restore.json. Repair the data volume, then remove $restore_dir/broken."
+  if [[ -f "$restore_dir/staged.zip" ]]; then
+    echo "Restoring the backup staged in $restore_dir/staged.zip." >&2
+    restore_status=0
+    run_as_api /usr/local/bin/stellarr --data-root "$data_root" backup apply --yes || restore_status=$?
+    case "$restore_status" in
+      0) ;;
+      4) echo "The staged backup was not restored, and the instance starts with its previous data; see $restore_dir/last-restore.json." >&2 ;;
+      *) fail "Restoring the staged backup failed; see $restore_dir/last-restore.json." ;;
+    esac
+  fi
+
+  run_as_api mkdir -p "${private_dirs[@]}"
+  run_as_api chmod 700 "$data_root" "${private_dirs[@]}"
+}
+
+case "$component" in
+  split-web) install -d -m 0700 -o stellarr -g stellarr "$data_root" ;;
+  split-turn) [[ "$turn_enabled" == true ]] || fail "The TURN service requires STELLARR_TURN_ENABLED=true." ;;
+  *) prepare_instance_data ;;
+esac
 mkdir -p /run/nginx
 
 # The secrets the API shares with coturn and the media server are the ones in
@@ -169,7 +218,12 @@ read_instance_secret() {
   run_as_api bash -e -c 'source /usr/local/lib/stellarr/settings.sh; read_or_create_secret "$1" "$2"' \
     read-instance-secret "$data_root" "$1"
 }
-media_control_secret="$(read_instance_secret media-control-secret)"
+case "$component" in
+  split-api) media_control_secret="$(split_secret media media-control-secret)" ;;
+  split-web|split-turn) media_control_secret='' ;;
+  *) media_control_secret="$(read_instance_secret media-control-secret)" ;;
+esac
+export STELLARR_MEDIA_CONTROL_SECRET="$media_control_secret"
 
 # What the API, the TLS script and the media server read, as resolved above.
 export STELLARR_DATA_ROOT="$data_root"
@@ -183,7 +237,11 @@ export STELLARR_TURNS_ENABLED="$turns_enabled"
 export Rtc__MediaControlUrl="http://127.0.0.1:5200"
 export Rtc__MediaControlSecret="$media_control_secret"
 if [[ "$turn_enabled" == "true" ]]; then
-  turn_secret="$(read_instance_secret turn-shared-secret)"
+  case "$component" in
+    split-api|split-turn) turn_secret="$(split_secret turn turn-shared-secret)" ;;
+    split-web) turn_secret='' ;;
+    *) turn_secret="$(read_instance_secret turn-shared-secret)" ;;
+  esac
   export Rtc__TurnSharedSecret="$turn_secret"
 else
   unset Rtc__TurnSharedSecret
@@ -200,28 +258,6 @@ else
   echo "STELLARR_DOMAIN is not set, so the instance has no public address: reset links stay off and desktop clients keep the address they connected to." >&2
 fi
 
-# Stellarr Media advertises the public and LAN addresses when configured,
-# plus the container address that optional coturn uses to reach it.
-# STELLARR_MEDIA_ADVERTISE overrides that list.
-export STELLARR_MEDIA_BIND="0.0.0.0:49000"
-export STELLARR_MEDIA_PUBLIC_IP="$media_public_ip"
-export STELLARR_MEDIA_PUBLIC_PORT="$media_port"
-export STELLARR_MEDIA_LAN_IP="$media_lan_ip"
-export STELLARR_MEDIA_CONTROL_BIND="127.0.0.1:5200"
-export STELLARR_MEDIA_CONTROL_SECRET="$media_control_secret"
-export STELLARR_MEDIA_LOG="$media_log"
-if [[ -n "$media_advertise" ]]; then
-  export STELLARR_MEDIA_ADVERTISE="$media_advertise"
-else
-  unset STELLARR_MEDIA_ADVERTISE
-fi
-
-if [[ -z "$media_public_ip" && -z "$media_lan_ip" && -z "$media_advertise" ]]; then
-  echo "STELLARR_PUBLIC_IP is empty, so the media server advertises only this container's own address." \
-    "Browsers outside the container network need a reachable media candidate." \
-    "Set STELLARR_PUBLIC_IP to the IPv4 address browsers reach this host at, or to 'auto'." >&2
-fi
-
 # Where the API listens, and the environment it runs in. Both are assigned
 # whatever .env holds: nginx forwards to the loopback address, and the API
 # trusts the last X-Forwarded-For entry only because nothing else can reach it,
@@ -230,10 +266,19 @@ fi
 export STELLARR_API_LISTEN="127.0.0.1:5000"
 export STELLARR_ENVIRONMENT="Production"
 
-/usr/local/bin/stellarr-tls-maintenance prepare
+if [[ "$component" == split-api ]]; then
+  export Rtc__MediaControlUrl="http://media:5200"
+  cd /opt/stellarr/api
+  umask 077
+  exec setpriv --reuid=stellarr --regid=stellarr --clear-groups -- ./stellarr-api
+fi
 
-# Render TURN configuration only when the service is enabled.
-if [[ "$turn_enabled" == "true" ]]; then
+if [[ "$component" != split-turn ]]; then
+  /usr/local/bin/stellarr-tls-maintenance prepare
+fi
+
+# Render TURN configuration only in the container serving TURN.
+if [[ "$turn_enabled" == "true" && "$component" != split-web ]]; then
   turn_tcp_line="# TURN/TCP client listener enabled"
   turn_tls_line="# TURN/TLS client listener enabled"
   turn_dtls_line="# TURN/DTLS client listener enabled"
@@ -271,6 +316,9 @@ if [[ "$turn_enabled" == "true" ]]; then
   printf '%s\n' "$turn_config" "${turn_peers[@]}" > "$turn_pending"
   chown turnserver:turnserver "$turn_pending"
   mv -f "$turn_pending" /etc/turnserver.conf
+  if [[ "$component" == split-turn ]]; then
+    exec setpriv --reuid=turnserver --regid=turnserver --clear-groups -- /usr/bin/turnserver -c /etc/turnserver.conf
+  fi
 fi
 
 write_instance_language /run/stellarr/stellarr-instance.js
@@ -321,4 +369,7 @@ printf '%s\n' "$nginx_config" > /etc/nginx/nginx.conf
 # The services and how each is started, checked and stopped are compiled into
 # stellarr-init (init/src/services.rs), which passes each service its settings.
 umask 077
+if [[ "$component" == split-web ]]; then
+  exec /usr/sbin/nginx -e stderr -g 'daemon off;'
+fi
 exec /usr/local/bin/stellarr-init run

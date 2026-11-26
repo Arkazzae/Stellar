@@ -11,6 +11,7 @@ Step-by-step installation, networking, TLS, and upgrade guides for operators.
 
 | Guide | Scope |
 | --- | --- |
+| [Split deployment](https://github.com/Arkazzae/Stellarr/tree/main/deploy/split) | Separate web, API, media, and optional TURN containers |
 | [Quick start](install/quick-start.md) | Automated `install.sh` setup, manual Docker Compose install, `/setup` wizard, and first voice call |
 | [Requirements](install/requirements.md) | Host sizing (~35 MiB idle RAM), storage quotas, published ports, LAN/NAT rules, and outbound network policy |
 | [Configuration](install/configuration.md) | Precedence rules, all 61 `STELLARR_*` variables, raw `Section__Key` overrides, logging, and `docker run` |
