@@ -58,6 +58,9 @@
 /* After `composer.css` and `transcript.css`: the picker hangs off controls both
    of them position, and the jumbo rule raises a `.msg-body` size set there. */
 @import "./components/emoji.css";
+/* After `settings.css` and `voice.css`: the picker wears the short dialog's
+   card, and the activity's panel takes the call stage's place. */
+@import "./components/activities.css";
 
 /* Tailwind scans these for class names; the ported component CSS lives outside
    the JSX, so nothing here needs a safelist. Cockpit's code is another app's,
