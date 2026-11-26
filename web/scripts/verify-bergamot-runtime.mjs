@@ -330,5 +330,6 @@ try {
   );
 } finally {
   await new Promise((resolveClose) => server.close(resolveClose));
-  await rm(profile, { recursive: true, force: true });
+  // Chromium helpers can finish writing the profile after the parent exits.
+  await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }
