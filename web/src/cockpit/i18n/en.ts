@@ -458,6 +458,8 @@ export const en = {
   "integrations.saveFailed": "Could not save the integration.",
   "integrations.active": "Active",
   "integrations.inactive": "Off",
+  "integrations.push.ready": "This instance has valid VAPID keys for push notifications.",
+  "integrations.push.configure": "Enable STELLARR_PUSH_ENABLED, set the contact and a persistent VAPID key pair in the instance configuration, then recreate the container.",
   "integrations.resend.description": "Sends mail through Resend's HTTPS API instead of the SMTP server in the settings.",
   "integrations.resend.key": "API key",
   "integrations.resend.toggle": "Send mail through Resend",

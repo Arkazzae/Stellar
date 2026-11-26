@@ -7,10 +7,8 @@
  * and it keeps the web client's shell for the release in use and answers
  * from it (see "The shell" below).
  *
- * The push payload is { id, title, body, url, tag }. The server sends `tag`
- * with the same value the live page uses for that event when it has one, so a
- * system notification and a page notification replace each other instead of
- * stacking. A payload without a tag gets a stable per-id tag of its own.
+ * The push payload is { id, title, body, url, tag }. Retries of the same
+ * delivery reuse its tag, so they replace its previous system notification.
  */
 "use strict";
 
@@ -71,27 +69,8 @@ function parsePayload(data) {
   return { id, title, body, tag, url: safeUrl(raw.url) };
 }
 
-async function visibleFocusedClient() {
-  try {
-    const windows = await self.clients.matchAll({
-      type: "window",
-      includeUncontrolled: true,
-    });
-    return windows.some(
-      (client) => client.visibilityState === "visible" && client.focused === true,
-    );
-  } catch {
-    // If the client list cannot be read, delivering is better than dropping.
-    return false;
-  }
-}
-
 async function showPushNotification(payload) {
-  // A visible, focused app already showed this in the page. A hidden app does
-  // not suppress it: the system notification is how a phone reaches someone
-  // whose browser is in the background or closed.
-  if (await visibleFocusedClient()) return false;
-
+  // Every received Web Push must produce a visible system notification.
   await self.registration.showNotification(payload.title, {
     body: payload.body,
     tag: payload.tag,
@@ -112,6 +91,26 @@ function clientKey(value) {
   }
 }
 
+// A signed-in client can open the conversation in place, keeping its call alive.
+// An old or suspended client may never acknowledge, so keep the cold-start path.
+function handOffNotice(client, url) {
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    const settle = (ok) => {
+      clearTimeout(timer);
+      channel.port1.close();
+      resolve(ok);
+    };
+    const timer = setTimeout(() => settle(false), 800);
+    channel.port1.onmessage = (event) => settle(event.data === true);
+    try {
+      client.postMessage({ type: "stellarr-open-notice", url }, [channel.port2]);
+    } catch {
+      settle(false);
+    }
+  });
+}
+
 async function openNotification(value) {
   const target = safeUrl(value);
   let windows = [];
@@ -125,10 +124,17 @@ async function openNotification(value) {
   }
 
   let client = windows.find((candidate) => clientKey(candidate.url) === target);
+  if (!client && target.startsWith("/?notice=")) {
+    const home = windows.find((candidate) => clientKey(candidate.url) === HOME_URL);
+    if (home && typeof home.postMessage === "function") {
+      await home.focus();
+      if (await handOffNotice(home, target)) return;
+    }
+  }
   // The home page is a focus target of its own: bring the app forward without
   // inventing a route or moving the person away from where they were.
   if (client === undefined && target === HOME_URL) {
-    client = windows.find((candidate) => clientKey(candidate.url) !== null);
+    client = windows.find((candidate) => ["/", "/login", "/register"].includes(clientKey(candidate.url)));
   }
 
   if (client !== undefined) {
@@ -422,8 +428,9 @@ self.addEventListener("message", (event) => {
 });
 
 self.addEventListener("push", (event) => {
-  const payload = parsePayload(event.data);
-  if (payload === null) return;
+  const payload = parsePayload(event.data) ?? {
+    title: "Stellarr", body: "", tag: "stellarr-activity", url: HOME_URL,
+  };
   event.waitUntil(showPushNotification(payload).catch(() => undefined));
 });
 
@@ -432,6 +439,6 @@ self.addEventListener("notificationclick", (event) => {
   const data = event.notification.data;
   const url = data && typeof data.url === "string" ? data.url : HOME_URL;
   event.waitUntil(
-    openNotification(url).catch(() => self.clients.openWindow(HOME_URL).catch(() => undefined)),
+    openNotification(url).catch(() => self.clients.openWindow(safeUrl(url)).catch(() => undefined)),
   );
 });

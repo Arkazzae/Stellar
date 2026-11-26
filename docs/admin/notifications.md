@@ -9,7 +9,7 @@ Notification preferences are evaluated at the moment a message is posted. Enabli
 Notifications are designed so external email relays and browser push providers never see private conversation metadata or message content:
 
 - **Zero conversation content**: Emails and Web Push payloads omit sender names, server names, channel names, and message text (including for both unencrypted and end-to-end encrypted direct messages).
-- **Generic localized copy**: Notification text uses the instance language (`STELLARR_LANGUAGE`, `en` or `pl`) and links only to the instance root (`STELLARR_PUBLIC_URL` or `STELLARR_DOMAIN`):
+- **Generic localized copy**: Notification text uses the instance language (`STELLARR_LANGUAGE`, `en` or `pl`) and keeps names and message text private. Email links open the instance root. A push carries an opaque delivery ID that the signed-in app resolves on the instance:
   - Mention: *"Someone mentioned you in a channel. Open Stellarr to read it."*
   - Direct message: *"You have a new direct message. Open Stellarr to read it."*
 - **Self-contained email rendering**: Outgoing HTML emails use Stellarr's dark *Midnight* template (`api/crates/mail/src/layout.rs`) with inline CID PNG attachments (`lockup.png`, `mention.png`, `direct-message.png`), making zero external image or font requests when opened in a mail client.
@@ -27,9 +27,11 @@ Email notifications require:
 
 ## Web Push
 
-Web Push delivers notifications through the browser's push service (`web/public/stellarr-worker.js`) even when all Stellarr tabs are closed. When a Stellarr window is currently visible and focused, the Service Worker suppresses the duplicate OS notification because the live app already displays the in-app alert.
+Web Push delivers notifications through the browser's push service (`web/public/stellarr-worker.js`) even when all Stellarr tabs are closed. Each received push displays a system notification, including when a Stellarr window has focus. Opening it takes the signed-in recipient to the DM or channel message after the server checks current access. Deleted or inaccessible targets open the notifications inbox.
 
 Web Push remains disabled until you configure a persistent VAPID key pair in `.env` and users opt in under **Settings → Notifications**.
+
+Check **Cockpit → Integrations → Web Push** for the instance's VAPID configuration status. On iPhone and iPad, first add the instance to the Home Screen, launch it from its icon, then enable push for the account and enroll the device in **Settings → Notifications**.
 
 ### 1. Generate a persistent VAPID key pair
 

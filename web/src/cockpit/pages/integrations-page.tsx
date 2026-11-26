@@ -284,6 +284,14 @@ export function IntegrationsPage() {
       {data ? (
         <div className="relative min-h-0 flex-1 overflow-y-auto">
           <div className="grid items-start gap-6 lg:grid-cols-2">
+            {data.pushReady !== undefined && (
+              <Card className="gap-0 py-0">
+                <CardTitleRow icon="bell" title="Web Push"><StateBadge active={data.pushReady} /></CardTitleRow>
+                <p className="px-5 py-5 text-sm text-muted-foreground">
+                  {t(data.pushReady ? "integrations.push.ready" : "integrations.push.configure")}
+                </p>
+              </Card>
+            )}
             <ResendCard
               settings={data}
               apiKey={secret("mail.resend-api-key")}

@@ -43,7 +43,9 @@ async fn a_mention_is_sent_by_push_and_by_mail_with_generic_content() {
     let (_, plain) = open(&browser, &seen[0].body);
     let json: serde_json::Value = serde_json::from_slice(&plain).unwrap();
     assert_eq!(json["title"], "New mention");
-    assert_eq!(json["url"], "https://chat.test/");
+    let id = json["url"].as_str().unwrap().strip_prefix("/?notice=").unwrap();
+    assert!(Id::parse(id).is_some());
+    assert_eq!(id.replace('-', ""), json["id"].as_str().unwrap());
     assert_eq!(json["body"], "Someone mentioned you in a channel. Open Stellarr to read it.");
     let rows = world.rows(message).await;
     for row in &rows {

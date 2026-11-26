@@ -377,6 +377,7 @@ export interface CockpitSettings {
   /** Whether the web client offers GIFs: switched on and with a key. */
   giphyEnabled: boolean;
   giphyKeyConfigured: boolean;
+  pushReady?: boolean;
   inviteMailEnabled: boolean;
   recoveryMailEnabled: boolean;
   alertMailEnabled: boolean;
