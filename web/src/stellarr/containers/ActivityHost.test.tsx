@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 
 import type { ActivitySession } from "@/state/hooks";
@@ -77,4 +77,34 @@ it("lets anyone else only leave, and says who hosts", () => {
   fireEvent.click(bar.getByRole("button", { name: "Wyjdź z aktywności" }));
   expect(stubs.activities.leave).toHaveBeenCalledWith("voice");
   expect(stubs.activities.end).not.toHaveBeenCalled();
+});
+
+it("asks with the app's card before an activity gets the camera, and refuses on no", async () => {
+  const camera = { ...session, permissions: ["media.cameraTile"] };
+  setStubs({ activities: { voice: camera, live: new Map() } });
+  render(<ActivityPanel slot="voice" session={camera} target={null} />);
+  const frame = screen.getByTitle<HTMLIFrameElement>("SyncTube");
+  const port = { postMessage: vi.fn(), close: vi.fn(), onmessage: null as null | ((event: unknown) => void) };
+  const hello = Object.assign(new Event("message"), {
+    source: frame.contentWindow,
+    origin: "https://synctube.games.test",
+    data: "stellarr:media:v1",
+    ports: [port],
+  });
+  act(() => {
+    window.dispatchEvent(hello);
+  });
+  await act(async () => {
+    port.onmessage?.({ data: { op: "open", kind: "cameraTile", id: 7 } });
+  });
+
+  const question = screen.getByRole("dialog", { name: "Pokazać kamerę w SyncTube?" });
+  expect(question).toHaveTextContent("Zobaczą ją tylko osoby w tej aktywności.");
+  expect(port.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ op: "reply" }));
+  await act(async () => {
+    fireEvent.click(within(question).getByRole("button", { name: "Nie pokazuj" }));
+  });
+
+  expect(port.postMessage).toHaveBeenCalledWith({ op: "reply", id: 7, error: "Permission denied." });
+  expect(screen.queryByRole("dialog")).toBeNull();
 });
