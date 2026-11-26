@@ -177,52 +177,22 @@ describe("Rail voice occupants", () => {
 });
 
 describe("Rail voice activities", () => {
-  const activity = {
-    install: "synctube",
-    name: "SyncTube",
-    icon: null,
-    participants: ["ada"],
-    seats: 2,
-    inside: false,
-    joining: false,
-    full: false,
-    failure: null as string | null,
-  };
-  const channel = (patch: Partial<typeof activity>): VoiceChannelVM => ({
-    id: "v-1",
-    name: "Ogólny",
-    occupants: [person({ id: "ada", displayName: "Ada" }), person({ id: "me", displayName: "Maja" })],
-    activity: { ...activity, ...patch },
-  });
-
-  const cases: [string, Partial<typeof activity>, string | null][] = [
-    ["outside", {}, "Dołącz do SyncTube"],
-    ["inside", { inside: true, participants: ["ada", "me"] }, null],
-    ["full", { participants: ["ada", "kenji"], full: true }, null],
-  ];
-  it.each(cases)("shows what runs under the channel (%s), and marks who is inside", (_case, patch, join) => {
-    const onJoinActivity = vi.fn();
-    const onOpenActivity = vi.fn();
-    setup([], { voiceChannels: [channel(patch)], onJoinActivity, onOpenActivity });
+  it("marks the people inside the channel's activity, and offers no row for it", () => {
+    setup([], {
+      voiceChannels: [
+        {
+          id: "v-1",
+          name: "Ogólny",
+          occupants: [person({ id: "ada", displayName: "Ada" }), person({ id: "me", displayName: "Maja" })],
+          activity: { install: "synctube", name: "SyncTube", icon: null, participants: ["ada"] },
+        },
+      ],
+    });
 
     expect(within(row("Ada")).getByRole("img", { name: "W SyncTube" })).toBeInTheDocument();
-    expect(within(row("Maja")).queryByRole("img", { name: "W SyncTube" }) !== null).toBe(
-      patch.participants?.includes("me") ?? false,
-    );
-    if (join !== null) {
-      fireEvent.click(screen.getByRole("button", { name: join }));
-      expect(onJoinActivity).toHaveBeenCalledWith("v-1");
-      return;
-    }
-    expect(screen.queryByRole("button", { name: "Dołącz do SyncTube" })).toBeNull();
-    if ("inside" in patch) {
-      const current = screen.getByRole("button", { name: /SyncTube/ });
-      expect(current).toHaveAttribute("aria-current", "true");
-      fireEvent.click(current);
-      expect(onOpenActivity).toHaveBeenCalledWith("v-1");
-    } else {
-      expect(screen.getByText("Komplet")).toHaveAttribute("title", "Komplet, 2 z 2. Spróbuj, gdy ktoś wyjdzie.");
-    }
+    expect(within(row("Maja")).queryByRole("img", { name: "W SyncTube" })).toBeNull();
+    expect(screen.queryByText("SyncTube")).toBeNull();
+    expect(screen.queryByRole("button", { name: /SyncTube/ })).toBeNull();
   });
 });
 
