@@ -42,7 +42,7 @@ const OVERRIDES: &[&str] = &[
     "docker-compose.override.yaml",
 ];
 // The documentation will move to its own address; every link starts here.
-const DOCS_URL: &str = "https://arkazzae.github.io/Stellarr";
+const DOCS_URL: &str = "https://arkazzae.github.io/Stellar";
 pub const ISSUES_URL: &str = "https://github.com/Arkazzae/Stellarr/issues";
 const ENV_MARKER: &str =
     "# Written by the Stellarr installer, which changes only the settings it is given.";
