@@ -1,43 +1,5 @@
-/**
- * Puts every prebuilt file the browser loads at run time where it is served,
- * after checking that its bytes are the ones artifacts/manifest.json records.
- *
- * `AudioWorklet.addModule`, `WebAssembly.instantiate`, `importScripts` and the
- * model downloads all need a real URL, so these files cannot go through the
- * bundler. The manifest is the one place that says where each of them came
- * from. Every entry has:
- *
- *   id        a logical name, which outlives any one origin of the file
- *   path      the path it is served under: its URL path, and its place below
- *             web/public/, the directory this script writes to
- *   source    where this script takes the bytes from, one of
- *               { "file": "<path below artifacts/>" }  a file committed here
- *               { "recipe": "<name>", "output": "<file name>" }
- *                 a file built by artifacts/recipes/<name>/ into its out/
- *                 directory, as the README there describes
- *   sha256, size  of those bytes
- *   upstream  { project, from, verified }: the project the file belongs to,
- *             the URL or npm package file it was taken from, and what its
- *             bytes were checked against when it was. A file taken from an
- *             npm package may also record the tarball's `integrity`, so the
- *             check can be repeated once no lockfile names the package
- *   license   an SPDX expression
- *
- * Replacing a file, say a prebuilt WASM with one built from source here, is a
- * change to its entry alone: the served path, and so the client, stay the same.
- *
- * Runs from the predev, prebuild and pretest npm hooks of web/, so the dev
- * server, the build and the tests always see the recorded files. Any missing file or
- * any difference from the manifest fails the run, in development as in an
- * image build. A committed file that is missing or different means a broken
- * checkout or an edit nobody recorded. A recipe's output that is missing has
- * not been built yet, and one that differs was built from other inputs, such
- * as an out/ folder left from before the recipe changed. None of these should
- * reach a browser or be hidden by the client falling back to something else.
- * This script never builds a recipe itself; `docker buildx bake recipes` does.
- *
- *   node artifacts/assemble.mjs
- */
+/** Verify the browser package files before serving them from this instance. */
+import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, normalize, resolve, sep } from "node:path";
@@ -48,7 +10,8 @@ const manifestFile = join(artifactsRoot, "manifest.json");
 const servedRoot = resolve(artifactsRoot, "..", "web", "public");
 
 const SHA256 = /^[0-9a-f]{64}$/;
-const RECIPE_NAME = /^[a-z0-9][a-z0-9-]*$/;
+const web = createRequire(join(artifactsRoot, "../web/package.json"));
+const packages = new Set(["@stellarr/audio-filters", "@stellarr/translation"]);
 
 export async function readManifest() {
   return JSON.parse(await readFile(manifestFile, "utf8")).artifacts;
@@ -63,12 +26,11 @@ function below(root, relative) {
   return full.startsWith(root.endsWith(sep) ? root : root + sep) ? full : null;
 }
 
-function sourceFile(source) {
-  if (typeof source?.file === "string") return below(artifactsRoot, source.file);
-  if (RECIPE_NAME.test(source?.recipe ?? "")) {
-    return below(join(artifactsRoot, "recipes", source.recipe, "out"), source.output);
-  }
-  return null;
+function sourceFile(entry) {
+  const name = entry.source?.package;
+  if (!packages.has(name)) return null;
+  const root = dirname(web.resolve(name + "/package.json"));
+  return below(join(root, "dist"), entry.path);
 }
 
 /** Problems with the entry itself, before any file is read. */
@@ -78,7 +40,7 @@ function entryProblems(entry, seenIds, seenPaths) {
   else if (seenIds.has(entry.id)) problems.push("repeats an id");
   if (below(servedRoot, entry.path) === null) problems.push("has a path outside web/public");
   else if (seenPaths.has(entry.path)) problems.push(`repeats the path ${entry.path}`);
-  if (sourceFile(entry.source) === null) problems.push("has no usable source");
+  if (sourceFile(entry) === null) problems.push("has no usable source");
   if (!SHA256.test(entry.sha256 ?? "")) problems.push("has no sha256");
   if (!Number.isSafeInteger(entry.size) || entry.size < 0) problems.push("has no size");
   if (typeof entry.upstream?.project !== "string" || typeof entry.upstream?.from !== "string") {
@@ -147,24 +109,16 @@ export async function assemble({ log = () => {} } = {}) {
       continue;
     }
 
-    const source = sourceFile(entry.source);
+    const source = sourceFile(entry);
     const bytes = await readIfPresent(source);
     if (bytes === null) {
-      const hint =
-        entry.source.recipe === undefined
-          ? ""
-          : " (build the recipes first: docker buildx bake recipes, at the repository root)";
-      problems.push(`${name}: ${source} is missing${hint}`);
+      problems.push(name + ": " + source + " is missing from " + entry.source.package);
       continue;
     }
     const hash = sha256(bytes);
     if (bytes.byteLength !== entry.size || hash !== entry.sha256) {
-      const hint =
-        entry.source.recipe === undefined ? "" : " (rebuild the recipes: docker buildx bake recipes)";
-      problems.push(
-        `${name}: ${source} is ${bytes.byteLength} bytes with sha256 ${hash}, ` +
-          `the manifest records ${entry.size} bytes with sha256 ${entry.sha256}${hint}`,
-      );
+      problems.push(name + ": expected " + entry.size + " bytes with sha256 " + entry.sha256 +
+        ", found " + bytes.byteLength + " bytes with sha256 " + hash + " in " + source);
       continue;
     }
 

@@ -33,7 +33,7 @@ Setting `STELLARR_LANGUAGE=pl` (or `en`) in `.env` configures the instance defau
 > Chat translation runs entirely inside the user's browser using WebAssembly and a dedicated Web Worker (`web/public/bergamot-worker.js`). Message text never leaves the browser, and downloaded model files are cached in IndexedDB across sessions.
 
 1. **Engine and models**:
-   - The Bergamot WASM runtime (`/codecs/bergamot/bergamot-translator.wasm` and `bergamot-translator.js`, v0.6.0 from `mozilla/translations`) is compiled from source during the Docker build by [`artifacts/recipes/bergamot/`](../artifacts/recipes/README.md) (Emscripten 3.1.8 on `linux/amd64`, producing byte-identical WASM to Firefox Remote Settings).
+   - The Bergamot WASM runtime (`/codecs/bergamot/bergamot-translator.wasm` and `bergamot-translator.js`, v0.6.0 from `mozilla/translations`) is compiled from pinned source for @stellarr/translation by [`artifacts/recipes/bergamot/`](../artifacts/recipes/README.md) (Emscripten 3.1.8 on `linux/amd64`, producing byte-identical WASM to Firefox Remote Settings).
    - Translation uses Mozilla's 2.x Marian models (`pl-en` 2.0 and `en-pl` 2.1: `model.<pair>.intgemm.alphas.bin`, `lex.50.50.<pair>.s2t.bin`, and shared `vocab.<pair>.spm`) listed in `web/public/bergamot-models/registry.json`.
 2. **Same-origin download and SHA-256 verification**: When translation is enabled, missing model files are fetched from `/bergamot-models/<pair>/<file>` on the Stellarr instance (never from an external CDN) and verified against the exact byte size and SHA-256 digest in `registry.json` (which matches `artifacts/manifest.json`).
 3. **Content-addressed IndexedDB model cache**: Verified model files are stored in IndexedDB (`bergamot-models`, object store `files`) **keyed by their SHA-256 digest**. Because `plen` and `enpl` share an identical SentencePiece vocabulary (`vocab.*.spm`), the vocabulary is downloaded and stored only once. On worker startup, `pruneStoredFiles` deletes any IndexedDB entries whose key is not in the current `registry.json`, automatically cleaning up models from older releases.
@@ -50,7 +50,7 @@ Setting `STELLARR_LANGUAGE=pl` (or `en`) in `.env` configures the instance defau
    - Register the catalog chunk in `LOADERS` (`web/src/stellarr/i18n/index.ts`), `CATALOGS` (`web/src/stellarr/i18n/localeScript.ts`), `CATALOG_MODULES`/`preloadPlan` (`web/documents.ts`), `CATALOG_UNAVAILABLE` (`web/src/stellarr/i18n/messages/unavailable.ts`), and `web/vitest.setup.ts`.
    - Add the code to `write_instance_language` in `infra/entrypoint.sh` (enforced by `web/documents.test.ts`).
    - Add the native label to `NATIVE_NAMES` in `web/src/stellarr/components/account/panes/LanguagePane.tsx` and the BCP 47 tag to `LOCALE_TAG` in `web/src/stellarr/lib/format/format.ts` (and verify `pluralForm`).
-   - For chat translation support, update `TranslationTargetLanguage` (`i18n/index.ts`), `primaryPair` (`lib/chatTranslation/modelStatus.ts`), `artifacts/manifest.json`, `artifacts/NOTICES`, and `web/public/bergamot-models/registry.json`, placing model files under `artifacts/files/bergamot-models/<pair>/`.
+   - For chat translation support, update `TranslationTargetLanguage` (`i18n/index.ts`), `primaryPair` (`lib/chatTranslation/modelStatus.ts`), the model inventory in `artifacts/npm/sources.json` and `artifacts/NOTICES`. Publish the new translation package and update its pinned version in the web workspace.
 2. **Cockpit**:
    - Add `web/src/cockpit/i18n/<code>.ts` and register the locale in `web/src/cockpit/i18n/index.ts`.
 3. **Backend API (`api/crates/messages/` & `api/crates/server/`)**:
@@ -58,7 +58,8 @@ Setting `STELLARR_LANGUAGE=pl` (or `en`) in `.env` configures the instance defau
 
 ## Verification
 
-Install workspace dependencies from the repository root with `npm ci`, and build the recipe WebAssembly binaries ([`artifacts/recipes/`](../artifacts/recipes/README.md)) once with `docker buildx bake recipes`:
+Install workspace dependencies from the repository root with `npm ci`.
+
 
 ```bash
 # Web client and Cockpit unit tests, typecheck, and lint
