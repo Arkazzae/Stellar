@@ -54,6 +54,7 @@ const LAST_ROLLOUT_BUCKET: i32 = 99;
 pub fn routes() -> Endpoints {
     Endpoints::new()
         .get("/.well-known/stellarr/client", discovery::describe)
+        .get("/api/client/manifest.webmanifest", discovery::manifest)
         .get("/api/desktop/release", describe_desktop)
         .get("/api/desktop/release/arch", download_desktop)
         .get("/api/android/release", describe_android)

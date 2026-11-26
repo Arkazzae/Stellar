@@ -10,6 +10,7 @@ import { StellarrApp } from "./app";
 import { CatalogUnavailable } from "./components/shell/CatalogUnavailable";
 import { loadCatalog } from "./i18n";
 import { documentLocale } from "./i18n/defaultLocale";
+import { observeInstallation } from "./lib/platform/install";
 import { routes } from "./routes";
 
 /**
@@ -22,6 +23,7 @@ import { routes } from "./routes";
  * translate without waiting. A catalog that cannot be fetched gets a notice
  * that needs none, with a way to load the page again.
  */
+observeInstallation();
 const container = document.getElementById("root");
 if (container === null) throw new Error("The document has no #root to render into.");
 const root = createRoot(container);

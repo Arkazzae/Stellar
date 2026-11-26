@@ -59,11 +59,13 @@ describe("ServerRailContainer", () => {
     expect(stubs.ui.setRailOpen).toHaveBeenCalledWith(false);
   });
 
-  it("offers server creation and discovery without a client download", async () => {
+  it("opens the installation, creation and discovery dialogs", async () => {
     const user = userEvent.setup();
     render(<ServerRailContainer />);
     await user.click(screen.getByRole("button", { name: "Dodaj serwer i więcej" }));
-    expect(screen.queryByRole("button", { name: /Pobierz aplikację/ })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Zainstaluj Stellarr" }));
+    expect(stubs.ui.openModal).toHaveBeenCalledWith("client");
+    await user.click(screen.getByRole("button", { name: "Dodaj serwer i więcej" }));
     await user.click(screen.getByRole("button", { name: /Utwórz serwer/ }));
     expect(stubs.ui.openModal).toHaveBeenCalledWith("server-create");
 

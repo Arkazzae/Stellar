@@ -72,6 +72,10 @@ cargo run --locked --release --manifest-path init/installer/Cargo.toml -- --buil
 2. Open the HTTPS address printed by the installer (default `https://localhost`), accept the local self-signed certificate, and run through `/setup` to create your owner account and first server.
 3. Visit `/cockpit` on your instance to manage accounts, security, logs, and backups.
 
+## Install the client
+
+Open your instance over trusted HTTPS. After joining, choose **Install Stellarr** from the menu beneath the server list. Chrome and Edge offer an install dialog when available. In Safari on iPhone or iPad, choose **Share → Add to Home Screen**. On macOS, choose **File → Add to Dock**. The icon opens all your servers on that instance. For mentions and direct messages on a closed app, enable [Web Push](docs/admin/notifications.md).
+
 ## Inviting friends
 
 Local testing works right away on your machine. Before inviting friends over the internet:
