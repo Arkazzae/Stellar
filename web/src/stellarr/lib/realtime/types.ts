@@ -118,10 +118,17 @@ export interface SoundboardChangedEvent {
   serverId: string;
 }
 
+/** An activity running on a voice channel, as everyone who can see the channel learns of it. */
 export interface VoiceActivitySummary {
   install: string;
   name: string;
   icon: string | null;
+  /** Who leads it: only they change it or end it for everyone. */
+  host: string;
+  /** Who is inside, in the order they joined; the first after the host takes over from them. */
+  participants: string[];
+  /** How many it seats; null when anyone who comes fits. */
+  seats: number | null;
 }
 
 export interface VoiceActivityChangedEvent {

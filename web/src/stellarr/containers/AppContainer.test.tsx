@@ -39,6 +39,7 @@ vi.mock("@/state/EncryptionProvider", () => ({ EncryptionProvider: providerNamed
 vi.mock("@/state/FriendsProvider", () => ({ FriendsProvider: providerNamed("Friends") }));
 vi.mock("@/state/ChatProvider", () => ({ ChatProvider: providerNamed("Chat") }));
 vi.mock("@/state/ProfileProvider", () => ({ ProfileProvider: providerNamed("Profile") }));
+vi.mock("@/state/ActivitiesProvider", () => ({ ActivitiesProvider: providerNamed("Activities") }));
 
 vi.mock("./AppBadge", () => ({ AppBadge: () => null }));
 vi.mock("./AppAppearance", () => ({ AppAppearance: () => null }));
@@ -89,6 +90,7 @@ describe("AppContainer", () => {
       "Friends",
       "Chat",
       "Profile",
+      "Activities",
     ]);
   });
 

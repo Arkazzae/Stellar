@@ -167,29 +167,36 @@ describe("hub payload decoders", () => {
   });
 
   it("decodes live voice channel activity updates and clears", () => {
-    expect(
-      HUB_DECODERS.VoiceActivityChanged({
-        channelId: "v1",
-        activity: { install: "act-1", name: "Sketch", icon: "/art/icon.png" },
-      }),
-    ).toEqual({
+    const summary = {
+      install: "act-1",
+      name: "Sketch",
+      icon: "/art/icon.png",
+      host: "u-ada",
+      participants: ["u-ada", "u-kenji"],
+      seats: 2,
+    };
+    expect(HUB_DECODERS.VoiceActivityChanged({ channelId: "v1", activity: summary })).toEqual({
       channelId: "v1",
-      activity: { install: "act-1", name: "Sketch", icon: "/art/icon.png" },
+      activity: summary,
     });
+    // What an older summary leaves out reads as nobody inside and no limit.
     expect(
-      HUB_DECODERS.VoiceActivityChanged({
-        channelId: "v1",
-        activity: { install: "act-1", name: "Sketch", icon: null },
-      }),
+      HUB_DECODERS.VoiceActivityChanged({ channelId: "v1", activity: { install: "act-1", name: "Sketch" } }),
     ).toEqual({
       channelId: "v1",
-      activity: { install: "act-1", name: "Sketch", icon: null },
+      activity: { install: "act-1", name: "Sketch", icon: null, host: "", participants: [], seats: null },
     });
     expect(
       HUB_DECODERS.VoiceActivityChanged({ channelId: "v1", activity: null }),
     ).toEqual({ channelId: "v1", activity: null });
     expect(
       HUB_DECODERS.VoiceActivityChanged({ channelId: "v1", activity: { install: "act-1" } }),
+    ).toBeNull();
+    expect(
+      HUB_DECODERS.VoiceActivityChanged({
+        channelId: "v1",
+        activity: { ...summary, participants: ["u-ada", 7] },
+      }),
     ).toBeNull();
     expect(HUB_DECODERS.VoiceActivityChanged({ channelId: "", activity: null })).toBeNull();
   });

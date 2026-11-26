@@ -142,6 +142,13 @@ export interface UiValue extends PanelsValue, DialogsValue {
   friendsSearchRequested: boolean;
   takeFriendsSearch: () => void;
   openDm: (id: string) => void;
+  /**
+   * The activity you run for yourself has the room, on the messages side, in
+   * place of Friends or a conversation. Going to either hides it again; it
+   * keeps running in the background.
+   */
+  activityOpen: boolean;
+  openActivity: () => void;
   /** Back to the server rail and whatever channel it was last on. */
   openServer: () => void;
   /** The text channel the room returns to when a call ends. */
@@ -479,6 +486,8 @@ export function UiProvider({ children }: { children: ReactNode }) {
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [friendsTab, setFriendsTab] = useState<FriendsTab>("online");
   const [friendsSearchRequested, setFriendsSearchRequested] = useState(false);
+  const [activityChosen, setActivityChosen] = useState(false);
+  const activityOpen = activityChosen && space === "dm" && activeDmId === null;
   /*
    * Cinema belongs to the call it was turned on in, so it ends with that call
    * however the call ends: the other person declining a private call, a lost
@@ -525,6 +534,14 @@ export function UiProvider({ children }: { children: ReactNode }) {
   const openFriends = useCallback(() => {
     setSpace("dm");
     setActiveDmId(null);
+    setActivityChosen(false);
+    closeDrawers();
+  }, [closeDrawers]);
+
+  const openActivity = useCallback(() => {
+    setSpace("dm");
+    setActiveDmId(null);
+    setActivityChosen(true);
     closeDrawers();
   }, [closeDrawers]);
 
@@ -540,6 +557,7 @@ export function UiProvider({ children }: { children: ReactNode }) {
     (id: string) => {
       setSpace("dm");
       setActiveDmId(id);
+      setActivityChosen(false);
       closeDrawers();
     },
     [closeDrawers],
@@ -607,6 +625,8 @@ export function UiProvider({ children }: { children: ReactNode }) {
       friendsSearchRequested,
       takeFriendsSearch,
       openDm,
+      activityOpen,
+      openActivity,
       openServer,
       activeTextChannelId,
       activeChannelId: roomView === "voice" ? voiceChannelId : activeTextChannelId,
@@ -631,6 +651,8 @@ export function UiProvider({ children }: { children: ReactNode }) {
       friendsSearchRequested,
       takeFriendsSearch,
       openDm,
+      activityOpen,
+      openActivity,
       openServer,
       activeTextChannelId,
       voiceChannelId,
