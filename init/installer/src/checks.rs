@@ -1,6 +1,16 @@
 //! What a value has to look like: ports, addresses, release tags and git
 //! references, and the order of releases.
 
+pub fn is_language_code(value: &str) -> bool {
+    let mut parts = value.split('-');
+    let primary = parts.next().unwrap_or_default();
+    (2..=3).contains(&primary.len())
+        && primary.bytes().all(|b| b.is_ascii_lowercase())
+        && parts.all(|part| {
+            (1..=8).contains(&part.len()) && part.bytes().all(|b| b.is_ascii_alphanumeric())
+        })
+}
+
 pub fn is_port(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 5

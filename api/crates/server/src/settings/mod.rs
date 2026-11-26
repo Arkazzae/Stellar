@@ -724,13 +724,7 @@ impl Settings {
         environment: Environment,
         listen: Option<&str>,
     ) -> Result<Settings, SettingError> {
-        let language_text = config.raw("Stellarr:Language").unwrap_or("en");
-        let language = Language::parse(language_text).map_err(|refused| {
-            SettingError::new(format!(
-                "Stellarr:Language is \"{}\" but must be \"en\" or \"pl\".",
-                refused.0
-            ))
-        })?;
+        let language = Language::resolve(config.raw("Stellarr:Language").unwrap_or_default());
         let relay = relay::RelaySettings::load(config)?;
         let rtc = RtcSettings::load(config, &environment, relay.arrangement.enabled)?;
         let event_log = environment

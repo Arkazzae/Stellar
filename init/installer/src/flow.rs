@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use crate::checks::{
     binding_port, exact_version, is_address, is_exact_version, is_hostname, is_http_binding,
-    is_ipv4, is_local_address, is_port, normalize_address, port_number, release_series,
+    is_ipv4, is_language_code, is_local_address, is_port, normalize_address, port_number, release_series,
     version_older,
 };
 use crate::cli::{KEYS, Key, Options, env};
@@ -1578,23 +1578,27 @@ impl Run {
         if !self.given(Key::Language) {
             self.put(Key::Language, "en");
             if self.interactive {
-                let default = if self.o.locale_language.starts_with("pl") {
-                    "pl"
-                } else {
-                    "en"
-                };
-                self.ui.question("Interface language, en or pl", NONE);
+                let default = self
+                    .o
+                    .locale_language
+                    .split(['_', '-', '.', '@'])
+                    .next()
+                    .filter(|code| is_language_code(code))
+                    .unwrap_or("en")
+                    .to_owned();
+                self.ui
+                    .question("Interface language code (for example en, pl or de)", NONE);
                 let language = loop {
-                    let answer = self.ui.prompt(default)?;
+                    let answer = self.ui.prompt(&default)?;
                     let answer = if answer.is_empty() {
-                        default.to_string()
+                        default.clone()
                     } else {
                         answer
                     };
-                    if answer == "en" || answer == "pl" {
+                    if is_language_code(&answer) {
                         break answer;
                     }
-                    self.ui.retry("Answer en or pl");
+                    self.ui.retry("Enter a language code such as en, pl or de");
                 };
                 self.put(Key::Language, language);
             }

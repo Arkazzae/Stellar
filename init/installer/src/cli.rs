@@ -1,7 +1,8 @@
 //! The options and the environment variables that stand in for them.
 
 use crate::checks::{
-    is_address, is_http_binding, is_ipv4, is_port, is_ref, is_tag, normalize_address,
+    is_address, is_http_binding, is_ipv4, is_language_code, is_port, is_ref, is_tag,
+    normalize_address,
 };
 
 /// The settings the installer writes to `.env`, in the order it handles them.
@@ -276,8 +277,8 @@ impl Options {
                     }
                 }
                 Key::Language => {
-                    if value != "en" && value != "pl" {
-                        return Err(format!("{from} \"{value}\" is not en or pl"));
+                    if !is_language_code(value) {
+                        return Err(format!("{from} \"{value}\" is not a language code"));
                     }
                 }
                 Key::TurnEnabled => {
@@ -368,6 +369,12 @@ mod tests {
     }
 
     #[test]
+    fn passes_a_language_code_to_the_installed_release() {
+        let options = parse(&["--language", "de"]).unwrap();
+        assert_eq!(options.setting(Key::Language).value, "de");
+    }
+
+    #[test]
     fn refuses_bad_values() {
         for args in [
             &["--domain", "bad_host"][..],
@@ -375,7 +382,7 @@ mod tests {
             &["--public-ip", "300.1.1.1"],
             &["--https-port", "0"],
             &["--turns-port=08443"],
-            &["--language", "de"],
+            &["--language", "bad/code"],
             &["--version", "bad!tag"],
             &["--ref", "../main"],
             &["--dir"],
