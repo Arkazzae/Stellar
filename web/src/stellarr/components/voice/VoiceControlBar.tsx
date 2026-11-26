@@ -3,11 +3,12 @@ import { useState, useSyncExternalStore } from "react";
 import { Icon } from "@stellarr/icons";
 import { ActivityIcon } from "@/components/activities/ActivityIcon";
 import type { PopoverTriggerProps } from "@/components/primitives/Popover";
-import { keyChordParts, type KeyChord } from "@/lib/keybinds/keybinds";
+import type { KeyChord } from "@/lib/keybinds/keybinds";
 import type { Sound, SoundboardLive, SuppressorDownload, VoiceSettings } from "@/ports";
 import { useLanguage } from "@/state/LanguageProvider";
 
 import { MicMenu } from "./MicMenu";
+import { microphoneTitle } from "./microphoneTitle";
 import { QualityMenu } from "./QualityMenu";
 import { cameraQualityMenu, screenQualityMenu } from "./qualityMenus";
 import { SoundboardPopover } from "./SoundboardPopover";
@@ -187,15 +188,8 @@ export function VoiceControlBar({
 
   const cinemaTitle = cinema ? t("voiceBar.cinemaExit") : t("voiceBar.cinema");
   const fullscreenTitle = fullscreen ? t("voiceBar.fullscreenExit") : t("voiceBar.fullscreen");
-  const muteTitle = muted ? t("voiceBar.unmute") : t("voiceBar.mute");
-  // The button still mutes. In push to talk its title also says which key
-  // opens the microphone, or that none does yet.
+  const micTitle = microphoneTitle(t, muted, settings.inputMode, talkKey);
   const pushToTalk = settings.inputMode === "pushToTalk";
-  const micTitle = !pushToTalk
-    ? muteTitle
-    : talkKey === null
-      ? t("voiceBar.pushToTalkNoKey", { action: muteTitle })
-      : t("voiceBar.pushToTalkTitle", { action: muteTitle, key: keyChordParts(talkKey).join("+") });
   const micClass = muted ? "vc-btn muted" : pushToTalk && talking ? "vc-btn on" : "vc-btn";
   const soundTitle = deafened ? t("shell.unmuteSound") : t("shell.muteSound");
   const cameraTitle = cameraPending

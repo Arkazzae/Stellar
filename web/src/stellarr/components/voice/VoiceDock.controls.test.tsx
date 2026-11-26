@@ -118,7 +118,7 @@ describe("VoiceDock controls", () => {
   it("toggles the microphone and the sound, and shows when each is off", async () => {
     const user = userEvent.setup();
     const p = props({ call: call({ muted: true, deafened: true }) });
-    render(<VoiceDock {...p} />);
+    const { rerender } = render(<VoiceDock {...p} />);
 
     const mic = screen.getByRole("button", { name: "Mikrofon" });
     const sound = screen.getByRole("button", { name: "Wycisz dźwięk" });
@@ -131,6 +131,14 @@ describe("VoiceDock controls", () => {
 
     expect(p.onToggleMute).toHaveBeenCalledOnce();
     expect(p.onToggleDeafen).toHaveBeenCalledOnce();
+
+    // In push to talk, as on the call's bar, it also names the key, or its lack.
+    const pushToTalk = { ...voiceSettings, inputMode: "pushToTalk" as const };
+    const talkKey = { code: "KeyV", ctrl: false, alt: false, shift: false, meta: false };
+    rerender(<VoiceDock {...p} settings={pushToTalk} talkKey={talkKey} />);
+    expect(mic).toHaveAttribute("title", "Wyłącz wyciszenie. Naciśnij i mów: przytrzymaj V");
+    rerender(<VoiceDock {...p} settings={pushToTalk} talkKey={null} />);
+    expect(mic.getAttribute("title")).toMatch(/Brak klawisza mówienia/);
   });
 
   it("starts and stops screen sharing", async () => {

@@ -5,11 +5,13 @@ import { Avatar } from "@/components/primitives/Avatar";
 import type { CallVM, PersonVM } from "@/components/view-models";
 import { SoundboardPopover } from "@/components/voice/SoundboardPopover";
 import type { MessageKey } from "@/i18n";
+import type { KeyChord } from "@/lib/keybinds/keybinds";
 import type { Sound, SoundboardLive, SuppressorDownload, VoiceSettings } from "@/ports";
 import { useLanguage } from "@/state/hooks";
 
 import { CallClock } from "./CallClock";
 import { MicMenu } from "./MicMenu";
+import { microphoneTitle } from "./microphoneTitle";
 import { IDLE_SOUNDBOARD } from "./soundboardLive";
 import { VoiceSeatContext } from "./useVoiceSeat";
 
@@ -68,6 +70,8 @@ export interface VoiceDockProps {
   onManageSounds?: () => void;
   /** Device settings: the microphone menu edits them, the soundboard reads its volume. */
   settings: VoiceSettings;
+  /** The talk key, which the microphone's title names in push to talk; null while none is set. */
+  talkKey?: KeyChord | null;
   onChangeSettings: (patch: Partial<VoiceSettings>) => void;
   /** The chosen suppressor's files on their way: a ring on the microphone's arrow. */
   suppressorDownload?: SuppressorDownload | null;
@@ -137,6 +141,7 @@ function DockControls({
   soundboardLive = IDLE_SOUNDBOARD,
   onManageSounds,
   settings,
+  talkKey = null,
   onChangeSettings,
   suppressorDownload = null,
   onOpenSoundSettings,
@@ -167,7 +172,7 @@ function DockControls({
           icon={call.muted ? "micSlash" : "mic"}
           pressed={call.muted}
           pressedClass="muted"
-          title={call.muted ? t("voiceBar.unmute") : t("voiceBar.mute")}
+          title={microphoneTitle(t, call.muted, settings.inputMode, talkKey)}
           label={t("voice.microphone")}
           onClick={onToggleMute}
         />

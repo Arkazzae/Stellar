@@ -4,10 +4,12 @@ import { AccountRow } from "@/components/account/AccountRow";
 import { VoiceDock } from "@/components/voice/VoiceDock";
 import type { PersonVM } from "@/components/view-models";
 import { initials } from "@/lib/format/format";
+import { TALK_ACTION } from "@/lib/keybinds/keybinds";
 import {
   useAccount,
   useEmoji,
   useFriends,
+  useKeybinds,
   usePorts,
   useSession,
   useUi,
@@ -34,6 +36,7 @@ export const RailVoiceDock = memo(function RailVoiceDock() {
   // The dock's own slice of the call: a ring that flips in it renders nothing here.
   const voice = useVoiceCall();
   const { ringing } = useFriends();
+  const { bindings } = useKeybinds();
   const { voiceSettings, soundboard } = usePorts();
   const settings = useSyncExternalStore(
     voiceSettings.subscribe,
@@ -56,6 +59,9 @@ export const RailVoiceDock = memo(function RailVoiceDock() {
       soundboardLive={soundboard.live}
       onManageSounds={voice.soundboard.canManage ? () => ui.openModal("soundboard") : undefined}
       settings={settings}
+      // Named on the microphone in push to talk: with a text channel open,
+      // the dock is the only microphone on screen.
+      talkKey={bindings[TALK_ACTION]}
       onChangeSettings={(patch) => voiceSettings.update(patch)}
       suppressorDownload={voice.suppressorDownload}
       // Device pickers and the rest of the sound live in the voice settings,
