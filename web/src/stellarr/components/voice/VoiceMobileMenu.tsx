@@ -35,7 +35,6 @@ function Action({ icon, iconSize = 18, label, active = false, onClick }: ActionP
 export interface VoiceMobileMenuProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  sharing: boolean;
   cinema: boolean;
   fullscreen: boolean;
   sounds: Sound[];
@@ -46,7 +45,6 @@ export interface VoiceMobileMenuProps {
   onManageSounds?: () => void;
   soundboardVolume: number;
   onSoundboardVolumeChange: (volume: number) => void;
-  onToggleShare: () => void;
   onToggleCinema: () => void;
   onToggleFullscreen: () => void;
   onSelectMicrophone: () => void;
@@ -65,7 +63,6 @@ export interface VoiceMobileMenuProps {
 export function VoiceMobileMenu({
   open,
   onOpenChange,
-  sharing,
   cinema,
   fullscreen,
   sounds,
@@ -74,7 +71,6 @@ export function VoiceMobileMenu({
   onManageSounds,
   soundboardVolume,
   onSoundboardVolumeChange,
-  onToggleShare,
   onToggleCinema,
   onToggleFullscreen,
   onSelectMicrophone,
@@ -118,13 +114,6 @@ export function VoiceMobileMenu({
             <span>{t("voiceBar.lessOften")}</span>
           </div>
           <div className="vc-mobile-actions">
-            <Action
-              icon="screencast"
-              iconSize={20}
-              label={sharing ? t("voiceBar.stopSharing") : t("voiceBar.shareScreen")}
-              active={sharing}
-              onClick={run(onToggleShare)}
-            />
             {onPlaySound === undefined ? null : (
               <Action
                 icon="board"

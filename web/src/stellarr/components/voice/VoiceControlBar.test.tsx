@@ -69,10 +69,16 @@ describe("VoiceControlBar quality drawers", () => {
     ).toBeNull();
   });
 
-  it("keeps secondary call actions available through the compact menu", async () => {
+  it("toggles screen sharing directly and keeps a single share action when More is open", async () => {
     const user = userEvent.setup();
     const onToggleShare = vi.fn();
-    render(<VoiceControlBar {...props({ onToggleShare })} />);
+    const view = render(<VoiceControlBar {...props({ onToggleShare })} />);
+    const share = screen.getByRole("button", { name: "Udostępnij ekran" });
+    await user.click(share);
+    expect(onToggleShare).toHaveBeenCalledOnce();
+    view.rerender(<VoiceControlBar {...props({ onToggleShare, sharing: true })} />);
+    expect(share).toHaveAttribute("aria-pressed", "true");
+    expect(share).toHaveAttribute("title", "Zakończ udostępnianie");
 
     await user.click(
       screen.getByRole("button", { name: "Więcej opcji rozmowy" }),
@@ -82,11 +88,8 @@ describe("VoiceControlBar quality drawers", () => {
     expect(menu).not.toBeNull();
     expect(menu).not.toHaveAttribute("hidden");
 
-    await user.click(
-      within(menu!).getByRole("button", { name: "Udostępnij ekran" }),
-    );
-    expect(onToggleShare).toHaveBeenCalledOnce();
-    expect(menu).toHaveAttribute("hidden");
+    expect(within(menu!).queryByRole("button", { name: /Udostępnij ekran|Zatrzymaj ekran/ })).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Udostępnij ekran" })).toEqual([share]);
   });
 
   it("changes microphone, camera and screen quality from their arrow drawers", async () => {

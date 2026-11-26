@@ -67,7 +67,7 @@ function props(overrides: Partial<VoiceControlBarProps> = {}): VoiceControlBarPr
   };
 }
 
-it("opens the activity picker from one control next to the camera in a channel call", () => {
+it("groups the three device controls together and opens activities beside screen sharing", () => {
   const onOpenActivities = vi.fn();
   const { rerender } = render(<VoiceControlBar {...props()} />);
   expect(screen.queryByRole("button", { name: "Aktywności" })).toBeNull();
@@ -75,7 +75,14 @@ it("opens the activity picker from one control next to the camera in a channel c
   const button = screen.getByRole("button", { name: "Aktywności" });
   expect(button).toHaveTextContent(/^$/);
   expect(button).toHaveAttribute("title", "Aktywności");
-  expect(button.previousElementSibling?.querySelector("button")).toHaveAccessibleName("Włącz kamerę");
+  const groups = Array.from(document.querySelectorAll(".vc-center > .vc-grp"));
+  const controls = groups.map(group =>
+    Array.from(group.querySelectorAll(".vc-btn"), control => control.getAttribute("aria-label")),
+  );
+  expect(controls).toEqual([
+    ["Mikrofon", "Wycisz dźwięk", "Włącz kamerę"],
+    ["Udostępnij ekran", "Aktywności"],
+  ]);
   expect(button).toHaveAttribute("aria-haspopup", "dialog");
   fireEvent.click(button);
   expect(onOpenActivities).toHaveBeenCalledOnce();
