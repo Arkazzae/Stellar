@@ -258,9 +258,9 @@ async fn a_new_database_has_the_schema_and_both_one_time_steps() {
         .await
         .unwrap();
 
-    // What the first server creates on an empty folder: 280 tables, indexes,
-    // triggers and the full-text table with its own.
-    assert_eq!(objects, 280);
+    // The original 280 objects plus the import, upload limit and activity
+    // tables and their indexes.
+    assert_eq!(objects, 292);
     assert_eq!(steps, ["ordinary-permissions", "view-channel"]);
     assert!(search);
 }
