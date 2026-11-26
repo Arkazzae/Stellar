@@ -27,6 +27,7 @@ interface Launch {
   access: string;
   src: string;
   permissions: string[];
+  youtube?: boolean;
   title: string;
 }
 interface LaunchReply {
@@ -34,6 +35,7 @@ interface LaunchReply {
   access: string;
   src: string;
   permissions: string[];
+  youtube?: boolean;
   title: string;
 }
 

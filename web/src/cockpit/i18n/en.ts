@@ -82,7 +82,7 @@ export const en = {
   "activities.cancel": "Cancel",
   "activities.confirmRemove": "Remove all installed versions and end active sessions?",
   "activities.failed": "Could not load the activity library.",
-  "activities.hosting": "Configure DNS, HTTPS and STELLARR_ACTIVITY_DOMAIN to launch activities from voice.",
+  "activities.hosting": "Check the instance’s HTTPS address and configured activity domain.",
   "activities.added": "Added",
   "activities.removed": "Removed",
   "activities.changed": "New or changed",

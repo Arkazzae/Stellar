@@ -253,16 +253,15 @@ async fn route_checks(
     let mut cookies = Vec::new();
     let mut renewal = None;
     let cookie = auth::cookies::read(request.headers(), auth::session::cookie_name(environment));
-    // An installed activity may share a registrable domain with Stellarr.
-    // Browser cookies can accompany its requests even though its origin differs.
+    // Opaque package frames send Origin: null. Dedicated activity hosts can
+    // also share the instance's registrable domain and send browser cookies.
     if cookie.is_some()
         && !request.method().is_safe()
-        && pipeline
-            .state
-            .settings()
-            .activity_domain
-            .as_ref()
-            .is_some_and(|name| !name.is_empty())
+        && (request
+            .headers()
+            .get(header::ORIGIN)
+            .is_some_and(|v| v == "null")
+            || pipeline.state.settings().activity_domain.is_some())
         && request.uri().path().starts_with("/api/")
         && !(request.uri().path().starts_with("/api/auth/oidc/")
             && request.uri().path().ends_with("/callback"))

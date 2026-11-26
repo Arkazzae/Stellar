@@ -500,3 +500,38 @@ async fn voice_channel_runs_at_most_one_activity_joins_directly_and_clears_when_
         200
     );
 }
+
+#[tokio::test]
+async fn installed_packages_share_the_instance_address_with_isolated_revocable_assets() {
+    let server = Server::start().await;
+    let owner = server.found("owner").await;
+    seed(&server, INSTALL, true);
+    server.database().execute(
+        "INSERT INTO ActivityFiles(Install,Digest,Path,Content) VALUES(?1,?2,'index.html',?3)",
+        params![INSTALL.to_uppercase(), "b".repeat(64), b"<p>Custom activity</p>".as_slice()],
+    ).unwrap();
+    let launched = launch(&owner, INSTALL).await;
+    assert_eq!(launched.status, 200, "{}", launched.text());
+    let body = launched.json::<Value>();
+    let path = body["src"].as_str().unwrap().strip_prefix(ORIGIN).unwrap();
+    assert!(path.starts_with("/_activity/") && path.ends_with("/index.html"));
+    assert!(!path.contains(body["access"].as_str().unwrap()));
+    assert_eq!(body["youtube"], false);
+    let browser = server.anonymous();
+    let asset = browser.get(path).await;
+    assert_eq!(asset.status, 200, "{}", asset.text());
+    assert_eq!(asset.text(), "<p>Custom activity</p>");
+    let policy = asset.header("content-security-policy").unwrap();
+    assert!(policy.contains("sandbox allow-scripts allow-forms allow-presentation;"));
+    assert!(policy.contains("frame-ancestors https://chat.test;"));
+    assert_eq!(asset.header("access-control-allow-origin"), Some("*"));
+    assert_eq!(asset.header("referrer-policy"), Some("strict-origin"));
+    assert_eq!(asset.header("cache-control"), Some("no-store"));
+    assert!(asset.header("set-cookie").is_none());
+    let sdk = browser.get("/_stellarr/sdk/v1.js").await;
+    assert_eq!(sdk.status, 200);
+    assert_eq!(sdk.header("access-control-allow-origin"), Some("*"));
+    let disabled = post(&owner, &format!("/api/cockpit/activities/{INSTALL}/manage"), json!({"action":"disable"})).await;
+    assert_eq!(disabled.status, 200);
+    assert_eq!(browser.get(path).await.status, 403);
+}

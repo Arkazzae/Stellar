@@ -196,7 +196,7 @@ async fn list(State(state): State<AppState>, _: InstanceOwner) -> ApiResult<Json
         })
         .collect::<Vec<_>>();
     Ok(Json(
-        json!({"activities":entries,"hosting":live::config(&state).is_ok()}),
+        json!({"activities":entries,"hosting":state.settings().activity_domain.is_none() || live::config(&state).is_ok()}),
     ))
 }
 
@@ -393,6 +393,8 @@ pub fn routes() -> Endpoints {
         .post("/api/activities/{channel}/tile", live::tile)
         .json_body_up_to(128 * 1024)
         .authorized()
+        .get("/_activity/{asset_key}/{*path}", live::sandbox_asset)
+        .get("/_stellarr/sdk/{name}", live::sandbox_sdk)
         .get("/_activity-files", live::asset_root)
         .get("/_activity-files/{*path}", live::asset)
 }

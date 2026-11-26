@@ -15,7 +15,6 @@ cd "$work"
 STELLARR_INSTALLER_VERSION="$version" bash "$root/install.sh" --version "$version" --dir "$instance" \
   --yes --domain localhost --https-port 18743 --public-ip 127.0.0.1 --language en --disable-turn
 test "$(docker inspect --format '{{.Config.Image}}' stellarr)" = "ghcr.io/arkazzae/stellarr:$version"
-printf '\nSTELLARR_ACTIVITY_DOMAIN=activities.localhost\nSTELLARR_ACTIVITY_ORIGIN=%s\n' "$origin" >> "$instance/.env"
 docker compose --project-directory "$instance" up -d --wait
 curl --fail --silent --show-error --insecure "$origin/health/ready" >/dev/null
 cd "$root"
