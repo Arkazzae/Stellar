@@ -348,7 +348,7 @@ async fn manage(
         })
         .await?;
     if end {
-        state.activities().remove(id);
+        state.activities().remove(&state, id);
     }
     Ok(Json(json!({"ok":true})))
 }
@@ -382,6 +382,9 @@ pub fn routes() -> Endpoints {
         .json_body()
         .authorized()
         .post("/api/activities/{channel}/launch", live::launch)
+        .json_body()
+        .authorized()
+        .post("/api/activities/{channel}/leave", live::leave)
         .json_body()
         .authorized()
         .post("/api/activities/{channel}/room", live::room)

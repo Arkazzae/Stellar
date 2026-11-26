@@ -42,9 +42,13 @@ pub fn registration() -> Registration {
                 .realtime()
                 .presence()
                 .take_departure(cx.connection_id())
-                && let Err(error) = broadcast_snapshot(cx.state(), departure.channel).await
             {
-                tracing::warn!(%error, "a room was not told that somebody left it");
+                cx.state()
+                    .activities()
+                    .sync_voice_channel(cx.state(), departure.channel);
+                if let Err(error) = broadcast_snapshot(cx.state(), departure.channel).await {
+                    tracing::warn!(%error, "a room was not told that somebody left it");
+                }
             }
         })
 }
@@ -170,9 +174,13 @@ async fn join_voice(cx: Context, arguments: Vec<Value>) -> Result<Value, HubErro
         }
     }
     for left in vacated {
+        cx.state().activities().sync_voice_channel(cx.state(), left);
         broadcast_snapshot(cx.state(), left).await.map_err(internal)?;
     }
     broadcast_snapshot(cx.state(), room).await.map_err(internal)?;
+    cx.state()
+        .activities()
+        .announce_to_connection(cx.state(), cx.connection_id(), room);
     super::sounds::announce_join_sound(&cx, room, user)
         .await
         .map_err(internal)?;
@@ -182,6 +190,9 @@ async fn join_voice(cx: Context, arguments: Vec<Value>) -> Result<Value, HubErro
 async fn leave_voice(cx: Context, arguments: Vec<Value>) -> Result<Value, HubError> {
     let [] = arguments::exactly(arguments)?;
     if let Some(departure) = cx.realtime().presence().leave_voice(cx.connection_id()) {
+        cx.state()
+            .activities()
+            .sync_voice_channel(cx.state(), departure.channel);
         broadcast_snapshot(cx.state(), departure.channel)
             .await
             .map_err(internal)?;
@@ -221,6 +232,7 @@ async fn decline_direct_call(cx: Context, arguments: Vec<Value>) -> Result<Value
     }
 
     let seated = cx.realtime().presence().end_voice_room(id);
+    cx.state().activities().sync_voice_channel(cx.state(), id);
     send_to(
         &cx,
         seated,
