@@ -386,6 +386,56 @@
     padding: 0 var(--sp-5);
   }
 
+  .personal-activity-library {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+    gap: var(--sp-5);
+    padding: 0;
+    margin: 0;
+    list-style: none;
+  }
+
+  .personal-activity-library li {
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--surface-room);
+  }
+
+  .personal-activity-image {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    background: var(--surface-overlay);
+  }
+
+  .personal-activity-cover {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .personal-activity-icon {
+    position: absolute;
+    bottom: var(--sp-3);
+    left: var(--sp-3);
+    width: 44px;
+    height: 44px;
+    border: 2px solid var(--surface-room);
+    border-radius: var(--radius-sm);
+  }
+
+  .personal-activity-details {
+    display: grid;
+    justify-items: start;
+    gap: var(--sp-2);
+    padding: var(--sp-4);
+  }
+
+  .personal-activity-details p {
+    color: var(--text-muted);
+    margin: 0 0 var(--sp-2);
+  }
+
   /* Spans the list it filters, so its right edge lands where the row actions
      do rather than stopping short of them. */
   .fr-find {

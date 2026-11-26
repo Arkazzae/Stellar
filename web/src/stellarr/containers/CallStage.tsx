@@ -11,6 +11,7 @@ import {
   useVoice,
 } from "@/state/hooks";
 
+import { InstalledActivities } from "./InstalledActivities";
 import { popOutCall } from "./callPopout";
 import { VoiceProblemNotice } from "./VoiceProblemNotice";
 
@@ -44,6 +45,8 @@ export function CallStage({ fullscreenTarget }: CallStageProps) {
   return (
     <>
       <VoiceProblemNotice />
+      {joinedChannelId && <InstalledActivities key={joinedChannelId} channel={joinedChannelId}
+        muted={voice.state.muted} cameraOn={voice.call?.cameraOn} />}
       <VoiceStage
         people={voice.people}
         cameraStreams={voice.cameraStreams}
