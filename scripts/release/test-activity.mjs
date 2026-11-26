@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { launch } from "../../web/bench/cdp.mjs";
 
 const [origin, sdk] = process.argv.slice(2);
-const browser = await launch({ flags: ["--ignore-certificate-errors", "--no-proxy-server", "--host-resolver-rules=MAP *.activities.localhost 127.0.0.1"] });
+const browser = await launch({ flags: ["--ignore-certificate-errors", "--no-proxy-server"] });
 try {
   const page = await browser.newPage();
   await page.goto(origin + "/login");
@@ -25,7 +25,9 @@ try {
     await page.eval(selector + ".click()");
   }
   await page.eval(`window.addEventListener("message", e => {
-    if (new URL(e.origin).hostname.endsWith(".activities.localhost") && e.data?.releaseCheck) {
+    const frame = document.querySelector(".activity-viewport iframe");
+    if (frame && e.source === frame.contentWindow && e.origin === "null" &&
+        new URL(frame.src).origin === location.origin && e.data?.releaseCheck) {
       window.releaseResult = e.data.releaseCheck;
     }
   })`);

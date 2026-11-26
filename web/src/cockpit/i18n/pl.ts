@@ -77,7 +77,7 @@ export const pl = {
   "activities.cancel": "Anuluj",
   "activities.confirmRemove": "Usunąć wszystkie zainstalowane wersje i zakończyć trwające sesje?",
   "activities.failed": "Nie udało się wczytać biblioteki aktywności.",
-  "activities.hosting": "Skonfiguruj DNS, HTTPS i STELLARR_ACTIVITY_DOMAIN, aby uruchamiać aktywności z kanałów głosowych.",
+  "activities.hosting": "Sprawdź adres HTTPS i skonfigurowaną domenę aktywności instancji.",
   "activities.added": "Dodano",
   "activities.removed": "Usunięto",
   "activities.changed": "Nowy lub zmieniony",

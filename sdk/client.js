@@ -1,4 +1,4 @@
-import { createMedia } from "./media.js";
+import { connectPort, createMedia } from "./media.js";
 
 const pollInterval = 200;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -15,7 +15,7 @@ function embeddedTransport() {
     if (data.error) call.reject(Object.assign(new Error(data.error), { status: data.status }));
     else call.resolve(data.value);
   };
-  window.parent.postMessage("stellarr:dev-connect:v1", "*", [channel.port2]);
+  connectPort("stellarr:dev-connect:v1", channel.port2);
   const send = input => new Promise((resolve, reject) => {
     const id = ++serial;
     const finish = fn => value => {
@@ -320,7 +320,7 @@ export async function connect({ initialState = {} } = {}) {
     },
   };
   try {
-    media = createMedia({ context, permissions, volume: opened.volume, request, send, on, participants: participants.api });
+    media = createMedia({ context, permissions, volume: opened.volume, youtube: opened.youtube, request, send, on, participants: participants.api });
     session.media = media;
   } catch (error) { await depart("close").catch(() => {}); throw error; }
   timer = setTimeout(poll, pollInterval);

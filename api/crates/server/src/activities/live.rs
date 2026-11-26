@@ -68,6 +68,7 @@ struct Lease {
     user: Id,
     account_session: Id,
     account_version: i64,
+    parent_origin: String,
     token: Id,
     ticket: Option<Id>,
     cookie: Id,
@@ -206,6 +207,40 @@ pub(super) fn config(state: &AppState) -> ApiResult<(String, String)> {
     }
     Ok((origin, domain))
 }
+/// A wildcard deployment has a configured parent. For a fresh instance use
+/// the HTTPS origin the browser actually opened, including the public port.
+pub(super) struct ActivityParent(String);
+
+impl axum::extract::FromRequestParts<AppState> for ActivityParent {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        state: &AppState,
+    ) -> ApiResult<Self> {
+        let origin = if state.settings().activity_domain.is_some() {
+            config(state)?.0
+        } else {
+            let client = parts
+                .extensions
+                .get::<crate::http::ClientInfo>()
+                .ok_or_else(ApiError::forbidden)?;
+            let host = client
+                .host
+                .as_deref()
+                .or_else(|| parts.headers.get(header::HOST)?.to_str().ok())
+                .ok_or_else(ApiError::forbidden)?;
+            let origin = format!("https://{host}");
+            let url = stellarr_outbound::Url::parse(&origin).map_err(|_| ApiError::forbidden())?;
+            if !client.is_https() || url.host_header() != host {
+                return Err(ApiError::forbidden());
+            }
+            origin
+        };
+        approved_origin(&parts.headers, &origin)?;
+        Ok(Self(origin))
+    }
+}
 fn seated(state: &AppState, scope: Scope, user: Id) -> bool {
     let Scope::Voice(channel) = scope else {
         return scope == Scope::Personal(user);
@@ -266,14 +301,10 @@ pub(super) async fn available(
     State(state): State<AppState>,
     caller: Caller,
     Path(path): Path<String>,
-    headers: HeaderMap,
+    ActivityParent(_): ActivityParent,
     Json(input): Json<Device>,
 ) -> ApiResult<Json<Value>> {
     let channel = Scope::from_path(&path, caller.user)?;
-    let Ok((origin, _)) = config(&state) else {
-        return Ok(Json(json!([])));
-    };
-    approved_origin(&headers, &origin)?;
     check(&state, channel, caller.user)?;
     let _gate = state.activities().changes.read().await;
     let all = library(&state).await?;
@@ -314,12 +345,10 @@ pub(super) async fn launch(
     State(state): State<AppState>,
     caller: Caller,
     Path(path): Path<String>,
-    headers: HeaderMap,
+    ActivityParent(origin): ActivityParent,
     Json(input): Json<Launch>,
 ) -> ApiResult<Json<Value>> {
     let channel = Scope::from_path(&path, caller.user)?;
-    let (origin, domain) = config(&state)?;
-    approved_origin(&headers, &origin)?;
     let _gate = state.activities().changes.read().await;
     let all = library(&state).await?;
     check(&state, channel, caller.user)?;
@@ -363,7 +392,13 @@ pub(super) async fn launch(
                     .map(|c| c.manifest.launch_modes.contains(&channel.mode()))
                     .ok_or_else(ApiError::not_found)
             },
-            |room| Ok(room.installed.manifest.launch_modes.contains(&channel.mode())),
+            |room| {
+                Ok(room
+                    .installed
+                    .manifest
+                    .launch_modes
+                    .contains(&channel.mode()))
+            },
         )?;
         if !allowed_mode {
             return Err(ApiError::forbidden());
@@ -405,13 +440,22 @@ pub(super) async fn launch(
         }
         let token = Id::random();
         let ticket = Id::random();
-        let port = stellarr_outbound::Url::parse(&origin)
-            .map_err(ApiError::internal)?
-            .port();
-        let suffix = if port == 443 {
-            String::new()
+        let asset_key = Id::random();
+        let src = if let Some(domain) = &state.settings().activity_domain {
+            let port = stellarr_outbound::Url::parse(&origin)
+                .map_err(ApiError::internal)?
+                .port();
+            let suffix = if port == 443 {
+                String::new()
+            } else {
+                format!(":{port}")
+            };
+            format!(
+                "https://{}.{domain}{suffix}/_stellarr/start/{ticket}",
+                live.asset_label
+            )
         } else {
-            format!(":{port}")
+            format!("{origin}/_activity/{asset_key}/index.html")
         };
         live.leases.insert(
             caller.user,
@@ -421,7 +465,8 @@ pub(super) async fn launch(
                 account_version: user.session_version,
                 token,
                 ticket: Some(ticket),
-                cookie: Id::random(),
+                cookie: asset_key,
+                parent_origin: origin,
                 touched: Instant::now(),
             },
         );
@@ -432,10 +477,11 @@ pub(super) async fn launch(
         };
         let payload = json!({
             "install": install_id,
-            "src": format!("https://{}.{domain}{suffix}/_stellarr/start/{ticket}", live.asset_label),
+            "src": src,
             "access": token,
             "title": live.installed.manifest.name,
             "permissions": live.installed.manifest.permissions,
+            "youtube": live.installed.manifest.connects.iter().any(|c| c.host == "www.youtube-nocookie.com"),
         });
         (payload, started)
     };
@@ -449,12 +495,10 @@ pub(super) async fn leave(
     State(state): State<AppState>,
     caller: Caller,
     Path(path): Path<String>,
-    headers: HeaderMap,
+    ActivityParent(_): ActivityParent,
     Json(input): Json<ActiveLaunch>,
 ) -> ApiResult<Json<Value>> {
     let channel = Scope::from_path(&path, caller.user)?;
-    let (origin, _) = config(&state)?;
-    approved_origin(&headers, &origin)?;
     let (still_running, ended_voice) = {
         let mut rooms = state.activities().rooms.lock().unwrap();
         prune(&mut rooms, &state);
@@ -494,11 +538,8 @@ fn in_session<T>(
     channel: Scope,
     caller: Caller,
     input: &Action,
-    headers: &HeaderMap,
     op: impl FnOnce(&mut Live) -> ApiResult<T>,
 ) -> ApiResult<T> {
-    let (origin, _) = config(state)?;
-    approved_origin(headers, &origin)?;
     let mut rooms = state.activities().rooms.lock().unwrap();
     let live = rooms
         .get_mut(&(input.install, channel))
@@ -527,14 +568,13 @@ pub(super) async fn room(
     State(state): State<AppState>,
     caller: Caller,
     Path(path): Path<String>,
-    headers: HeaderMap,
+    ActivityParent(origin): ActivityParent,
     Json(input): Json<Action>,
 ) -> ApiResult<Response> {
     let channel = Scope::from_path(&path, caller.user)?;
     let _gate = state.activities().changes.read().await;
     let mut person = json!({"id": caller.user});
     if input.action["op"] == "open" {
-        let (origin, _) = config(&state)?;
         let user = state
             .database()
             .read(move |db| User::find(db, caller.user))
@@ -547,7 +587,7 @@ pub(super) async fn room(
                 .map(|path| format!("{origin}{path}"))
         );
     }
-    let result = in_session(&state, channel, caller, &input, &headers, |live| {
+    let result = in_session(&state, channel, caller, &input, |live| {
         let stale: Vec<Id> = live
             .leases
             .keys()
@@ -603,12 +643,12 @@ pub(super) async fn tile(
     State(state): State<AppState>,
     caller: Caller,
     Path(path): Path<String>,
-    headers: HeaderMap,
+    ActivityParent(_): ActivityParent,
     Json(input): Json<Action>,
 ) -> ApiResult<Json<Value>> {
     let channel = Scope::from_path(&path, caller.user)?;
     let _gate = state.activities().changes.read().await;
-    in_session(&state, channel, caller, &input, &headers, |live| {
+    in_session(&state, channel, caller, &input, |live| {
         if !live
             .installed
             .manifest
@@ -799,28 +839,7 @@ pub(super) async fn asset(
         }
         found.ok_or_else(ApiError::forbidden)?
     };
-    let current = state.clone();
-    let active = state
-        .database()
-        .read(move |db| {
-            let (user, version, session_id) = credential;
-            let checked = session::authenticate(
-                db,
-                current.sealer(),
-                &current.settings().environment,
-                true,
-                session::Ticket::of_connection(user, version, session_id),
-                Timestamp::now(),
-            )?;
-            Ok::<_, crate::database::DbError>(matches!(
-                checked,
-                session::Authentication::SignedIn { .. }
-            ))
-        })
-        .await?;
-    if !active {
-        return Err(ApiError::forbidden());
-    }
+    verify_asset_session(&state, credential).await?;
     if let Some((cookie, scope)) = cookie {
         let key = match scope {
             Scope::Personal(id) => format!("personal-{id}"),
@@ -831,19 +850,7 @@ pub(super) async fn asset(
             .header(header::SET_COOKIE,format!("__Host-stellarr-act-{key}={cookie}; Path=/; Secure; HttpOnly; SameSite=None; Partitioned"))
             .header(header::CACHE_CONTROL,"no-store").header(header::REFERRER_POLICY,"no-referrer").body(Body::empty()).unwrap());
     }
-    let (content_type, bytes) = match path.as_str() {
-        "_stellarr/sdk/v1.js" => ("text/javascript", Bytes::from_static(SDK.as_bytes())),
-        "_stellarr/sdk/media.js" => ("text/javascript", Bytes::from_static(MEDIA.as_bytes())),
-        _ => {
-            let file = path;
-            let mime = media_type(&file);
-            let bytes=state.database().read(move|db|->ApiResult<Vec<u8>>{
-                use rusqlite::OptionalExtension;
-                db.query_row("SELECT f.Content FROM ActivityFiles f JOIN ActivityInstalls i ON i.Id=f.Install WHERE i.Enabled=1 AND f.Install=?1 AND f.Digest=?2 AND f.Path=?3",rusqlite::params![install,digest,file],|r|r.get(0)).optional()?.ok_or_else(ApiError::not_found)
-            }).await?;
-            (mime, Bytes::from(bytes))
-        }
-    };
+    let (content_type, bytes) = read_asset(&state, install, digest, path).await?;
     let external = manifest
         .connects
         .iter()
@@ -867,6 +874,147 @@ pub(super) async fn asset(
             "camera=(), microphone=(), display-capture=()",
         );
     Ok(asset_content(builder, &headers, content_type, bytes))
+}
+
+async fn verify_asset_session(state: &AppState, credential: (Id, i64, Id)) -> ApiResult<()> {
+    let current = state.clone();
+    let active = state
+        .database()
+        .read(move |db| {
+            let (user, version, session_id) = credential;
+            let checked = session::authenticate(
+                db,
+                current.sealer(),
+                &current.settings().environment,
+                true,
+                session::Ticket::of_connection(user, version, session_id),
+                Timestamp::now(),
+            )?;
+            Ok::<_, crate::database::DbError>(matches!(
+                checked,
+                session::Authentication::SignedIn { .. }
+            ))
+        })
+        .await?;
+    if !active {
+        return Err(ApiError::forbidden());
+    }
+    Ok(())
+}
+
+async fn read_asset(
+    state: &AppState,
+    install: Id,
+    digest: String,
+    path: String,
+) -> ApiResult<(&'static str, Bytes)> {
+    Ok(match path.as_str() {
+        "_stellarr/sdk/v1.js" => ("text/javascript", Bytes::from_static(SDK.as_bytes())),
+        "_stellarr/sdk/media.js" => ("text/javascript", Bytes::from_static(MEDIA.as_bytes())),
+        _ => {
+            let mime = media_type(&path);
+            let bytes = state
+                .database()
+                .read(move |db| -> ApiResult<Vec<u8>> {
+                    use rusqlite::OptionalExtension;
+                    db.query_row(
+                    "SELECT f.Content FROM ActivityFiles f JOIN ActivityInstalls i ON i.Id=f.Install
+                     WHERE i.Enabled=1 AND f.Install=?1 AND f.Digest=?2 AND f.Path=?3",
+                    rusqlite::params![install, digest, path],
+                    |row| row.get(0),
+                ).optional()?.ok_or_else(ApiError::not_found)
+                })
+                .await?;
+            (mime, Bytes::from(bytes))
+        }
+    })
+}
+
+/// This URL carries a read-only, per-launch capability. The sandbox sends
+/// anonymous CORS requests for modules and fonts, including relative imports.
+pub(super) async fn sandbox_asset(
+    State(state): State<AppState>,
+    Path((key, path)): Path<(Id, String)>,
+    headers: HeaderMap,
+) -> ApiResult<Response> {
+    if state.settings().activity_domain.is_some()
+        || headers.contains_key("service-worker")
+        || headers
+            .get("sec-fetch-dest")
+            .is_some_and(|d| d == "serviceworker" || d == "sharedworker")
+    {
+        return Err(ApiError::forbidden());
+    }
+    let _gate = state.activities().changes.read().await;
+    let (install, digest, manifest, origin, credential) = {
+        let rooms = state.activities().rooms.lock().unwrap();
+        rooms
+            .iter()
+            .find_map(|((install, scope), live)| {
+                let lease = live.leases.values().find(|l| l.cookie == key)?;
+                (lease.touched.elapsed() < Duration::from_secs(60)
+                    && seated(&state, *scope, lease.user))
+                .then(|| {
+                    (
+                        *install,
+                        live.installed.digest.clone(),
+                        live.installed.manifest.clone(),
+                        lease.parent_origin.clone(),
+                        (lease.user, lease.account_version, lease.account_session),
+                    )
+                })
+            })
+            .ok_or_else(ApiError::forbidden)?
+    };
+    verify_asset_session(&state, credential).await?;
+    let (mime, bytes) = read_asset(&state, install, digest, path).await?;
+    let files = format!("{origin}/_activity/{key}/");
+    let external = manifest
+        .connects
+        .iter()
+        .map(|c| format!("https://{}", c.host))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let frames = if external.is_empty() {
+        "'none'"
+    } else {
+        &external
+    };
+    let policy = format!(
+        "sandbox allow-scripts allow-forms allow-presentation; default-src 'none'; \
+         script-src {files} {origin}/_stellarr/sdk/ 'unsafe-inline' 'wasm-unsafe-eval' {external}; \
+         style-src {files} 'unsafe-inline' {external}; img-src {files} {origin}/assets/ data: blob: {external}; \
+         media-src {files} blob: {external}; font-src {files} data: {external}; \
+         connect-src {files} {origin}/_stellarr/sdk/ {external}; worker-src {files} blob:; \
+         frame-src {frames}; frame-ancestors {origin}; base-uri 'none'; form-action 'none'; object-src 'none'"
+    );
+    let builder = Response::builder()
+        .header(header::CONTENT_TYPE, mime)
+        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+        .header(header::CONTENT_SECURITY_POLICY, policy)
+        .header(header::REFERRER_POLICY, "strict-origin")
+        .header(header::CACHE_CONTROL, "no-store")
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+        .header(
+            "Permissions-Policy",
+            "microphone=(), camera=(), display-capture=()",
+        );
+    Ok(asset_content(builder, &headers, mime, bytes))
+}
+
+pub(super) async fn sandbox_sdk(Path(file): Path<String>) -> ApiResult<Response> {
+    let source = match file.as_str() {
+        "v1.js" => SDK,
+        "media.js" => MEDIA,
+        _ => return Err(ApiError::not_found()),
+    };
+    Ok(Response::builder()
+        .header(header::CONTENT_TYPE, "text/javascript")
+        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+        .header(header::CACHE_CONTROL, "no-cache")
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+        .body(Body::from(source))
+        .unwrap())
 }
 
 #[cfg(test)]

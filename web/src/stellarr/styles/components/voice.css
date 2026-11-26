@@ -84,6 +84,7 @@
   .activity-stage-switch button:focus-visible { outline: 2px solid var(--accent); }
   .activity-volume { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); }
   .activity-volume input { width: 72px; accent-color: var(--accent); }
+  .activity-viewport { position: relative; overflow: hidden; }
   .activity-viewport iframe { display: block; width: 100%; height: clamp(320px, 58vh, 680px); border: 0; }
   .voice-activity-stage .activity-viewport:not([hidden]) {
     container: activity-space / size;
