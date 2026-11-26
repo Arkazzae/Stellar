@@ -217,7 +217,7 @@ export function RoomContainer() {
         </div>
 
         <div className={inVoice ? "view active" : "view"}>
-          <CallStage fullscreenTarget={fullscreenTarget} />
+          <CallStage key={voice.channelId} fullscreenTarget={fullscreenTarget} />
         </div>
       </div>
 

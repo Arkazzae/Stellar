@@ -395,6 +395,16 @@
     list-style: none;
   }
 
+  .activity-picker .personal-activity-library {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+    gap: var(--sp-4);
+  }
+
+  @media (min-width: 768px) {
+    .activity-picker:has(li:nth-child(2)) .am-card { width: min(640px, 100%); }
+    .activity-picker:has(li:nth-child(3)) .am-card { width: min(920px, 100%); }
+  }
+
   .personal-activity-library li {
     overflow: hidden;
     border: 1px solid var(--line);
