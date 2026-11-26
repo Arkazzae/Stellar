@@ -127,6 +127,8 @@ jobs:
   # release cannot replace a newer stable tag.
   release:
     needs: [verify-image-pull, installer]
+    outputs:
+      promoted-latest: ${{ steps.promote.outputs.latest }}
     concurrency:
       group: release-promotion
       queue: max
@@ -198,6 +200,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Promote the stable image
+        id: promote
         if: ${{ !contains(github.ref_name, '-') }}
         run: |
           gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" > releases.json
@@ -234,5 +237,23 @@ jobs:
             docker --config "$registry_config" manifest inspect "$IMAGE:$alias" > /dev/null
             if [[ $alias == latest ]]; then
               gh release edit "$TAG" --latest
+              echo latest=true >> "$GITHUB_OUTPUT"
             fi
           done < promotions.txt
+
+  verify-stable-install:
+    needs: release
+    if: needs.release.outputs.promoted-latest == 'true'
+    runs-on: ubuntu-latest
+    permissions: {}
+    timeout-minutes: 10
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Install the default version from the project website
+        run: |
+          cd "$RUNNER_TEMP"
+          curl -fsSL --retry 3 https://stellarr.online/install.sh -o install.sh
+          bash install.sh --yes --dir "$RUNNER_TEMP/instance" --domain localhost --public-ip 127.0.0.1 --disable-turn
+          test "$(docker inspect --format '{{.Config.Image}}' stellarr)" = "ghcr.io/arkazzae/stellarr:${TAG#v}"
+          curl -kfsS https://localhost/health/ready >/dev/null
