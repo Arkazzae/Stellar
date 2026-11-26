@@ -13,7 +13,6 @@ From the repository root:
 
 ```bash
 npm ci
-docker buildx bake recipes     # build WebAssembly recipes once (see artifacts/README.md)
 npm run dev -w stellarr-web    # http://localhost:3000 (/) and http://localhost:3000/cockpit
 ```
 

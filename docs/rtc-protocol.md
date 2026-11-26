@@ -261,8 +261,6 @@ The entire capture, suppressor, and playback DSP pipeline is held to sample- and
 ## Verification
 
 ```bash
-# Build browser WASM recipes once per checkout (artifacts/recipes/README.md)
-docker buildx bake recipes
 
 # Web client RTC & audio unit tests (includes voice DSP characterization checks)
 npm run typecheck -w stellarr-web

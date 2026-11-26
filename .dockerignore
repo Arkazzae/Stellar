@@ -8,10 +8,7 @@
 **/obj
 **/TestResults
 **/artifacts
-# The top-level artifacts/ holds the browser's binaries, committed or built by
-# a recipe, which the web build assembles. A recipe's out/ folder and the
-# copies in web/public/ are left out, so a file that a development run built
-# or assembled can never stand in for what the image builds itself.
+# Include source recipes and inventories, excluding generated browser files.
 !artifacts
 artifacts/recipes/*/out
 web/public/audio/rnnoise.wasm
@@ -20,7 +17,8 @@ web/public/audio/gtcrn.wasm
 web/public/audio/speex.wasm
 web/public/codecs
 web/public/bergamot-models/*
-!web/public/bergamot-models/registry.json
+web/public/audio/*-worklet.js
+artifacts/files
 media/target
 init/target
 api/target

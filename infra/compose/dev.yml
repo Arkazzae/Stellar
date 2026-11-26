@@ -24,9 +24,7 @@
 #
 # The first start installs the npm packages and compiles the API's and the
 # media server's crates into named volumes, so it is slow. The web
-# service checks the browser's binaries before it starts; those that
-# artifacts/recipes/ builds from source are built on the host first, once:
-# `docker buildx bake recipes`.
+# service verifies and serves the browser files from its pinned npm packages.
 #
 # Published ports are for clients on this machine. Media advertises both the
 # host loopback port and its Docker address, which the optional TURN relay uses.

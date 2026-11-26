@@ -6,7 +6,7 @@ on:
       - "scripts/npm/**"
       - "web/src/stellarr/lib/voice/capture/**"
       - "package-lock.json"
-      - "Dockerfile"
+      - "docker-bake.hcl"
       - ".github/workflows/npm-runtime.yml"
   push:
     tags: ["npm-audio-filters-v*", "npm-translation-v*"]
@@ -61,6 +61,12 @@ jobs:
         env:
           PACKAGE: ${{ matrix.package }}
         run: node scripts/npm/pack-runtime.mjs "$PACKAGE" "$RUNNER_TEMP/inputs" "$RUNNER_TEMP/packages"
+      - name: Test the packed runtime in Chrome
+        env:
+          PACKAGE: ${{ matrix.package }}
+        run: |
+          export STELLARR_CHROMIUM=$(command -v google-chrome)
+          bash scripts/npm/test-runtime.sh "$PACKAGE" "$RUNNER_TEMP"/packages/*.tgz
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: npm-${{ matrix.package }}

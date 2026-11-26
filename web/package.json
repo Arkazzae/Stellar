@@ -23,8 +23,10 @@
     "pretest": "node ../artifacts/assemble.mjs"
   },
   "dependencies": {
+    "@stellarr/audio-filters": "0.1.0",
     "@stellarr/icons": "*",
     "@stellarr/router": "*",
+    "@stellarr/translation": "0.1.0",
     "@stellarr/ui": "*",
     "react": "19.3.1",
     "react-dom": "19.3.1"
