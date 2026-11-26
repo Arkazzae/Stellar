@@ -357,6 +357,7 @@ pub async fn end_direct_call(state: &AppState, first: Id, second: Id, by: Id) {
         }
     };
     let seated = realtime.presence().end_voice_room(room);
+    state.activities().sync_voice_channel(state, room).await;
     super::hub::send_to_connections(
         state,
         seated,
