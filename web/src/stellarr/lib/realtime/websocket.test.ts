@@ -92,6 +92,22 @@ describe("realtime WebSocket", () => {
     expect(status).toEqual(["connecting", "connected", "idle"]);
   });
 
+  it("keeps activity status codes and rejects an oversized request before sending", async () => {
+    const { client, open, socket } = createClient();
+    await open();
+    const body = { install: "game", access: "lease", action: { op: "read" } };
+    const read = client.activityRoom("personal", body);
+    expect(socket().sentFrames()).toEqual([{ type: "call", id: 1, method: "ActivityRoom", args: ["personal", body] }]);
+    socket().receive({ type: "result", id: 1, value: { value: { revision: 4 } } });
+    await expect(read).resolves.toEqual({ revision: 4 });
+    const refused = client.activityRoom("personal", body);
+    socket().receive({ type: "result", id: 2, value: { error: "The host changed.", status: 409 } });
+    await expect(refused).rejects.toMatchObject({ status: 409 });
+    await expect(client.activityRoom("personal", { action: { op: "write", patch: { board: "x".repeat(200_000) } } }))
+      .rejects.toMatchObject({ code: "frame_too_large" });
+    expect(socket().sentFrames()).toHaveLength(2);
+  });
+
   it("adds the active server to the hub query and preserves other parameters", async () => {
     rememberActiveServerId("server 1");
     const { client, connect, open } = createClient();

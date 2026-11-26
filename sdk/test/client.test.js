@@ -143,3 +143,64 @@ test("the browser SDK exposes a personal instance session with no voice place", 
   assert.equal(session.context.standalone, false);
   assert.equal(session.context.place, null);
 });
+
+test("a push-capable session delivers messages and drains queued commands between heartbeats", async t => {
+  const room = createRoom({ authority: "host" });
+  const previousWindow = globalThis.window;
+  const page = globalThis.window = new EventTarget();
+  const ports = [], reads = [];
+  let bridge, session, lostDecision = false, lostSettlement = false;
+  t.after(async () => {
+    await session?.close();
+    for (const port of ports) port.close();
+    if (previousWindow) globalThis.window = previousWindow;
+    else delete globalThis.window;
+  });
+  const delivery = {
+    message(_user, message) { bridge.postMessage({ update: { message } }); return true; },
+    command() { bridge.postMessage({ update: {} }); },
+  };
+  page.parent = { postMessage(kind, _, [port]) {
+    ports.push(port);
+    if (kind !== "stellarr:dev-connect:v1") return;
+    bridge = port;
+    port.onmessage = ({ data: { id, input } }) => {
+      const value = room({ id: "alice", name: "Alice" }, input, delivery);
+      if (input.op === "open") value.roomEvents = true;
+      if (input.op === "read") reads.push(value);
+      if (input.op === "decide") {
+        if (input.id === "dropped-notice") {
+          lostSettlement = true;
+        } else {
+          port.postMessage({ update: { settled: input.id } });
+          if (!lostDecision) {
+            lostDecision = true;
+            port.postMessage({ id, error: "Decision acknowledgement lost", status: 503 });
+            return;
+          }
+        }
+      }
+      port.postMessage({ id, value });
+    };
+  } };
+  session = await connect({ initialState: { score: 0 } });
+  await eventually(() => reads.length === 1);
+  const messages = [];
+  session.on("cursor", value => messages.push(value));
+  session.send("cursor", 42, { to: "alice" });
+  await eventually(() => messages.length > 0);
+  await sleep(350);
+  assert.deepEqual(messages, [42]);
+  assert.equal(reads.length, 1, "idle and transient messages need no short polls");
+  assert.equal(reads[0].participants, undefined, "heartbeat omits the known roster");
+  session.commands.handle("point", (_data, _command, state) => ({
+    patch: { score: state.score + 1 }, result: state.score + 1,
+  }));
+  const turns = await Promise.all(Array.from({length: 4}, () => session.commands.submit("point", {})));
+  assert.deepEqual(turns, [1, 2, 3, 4]);
+  assert.equal(session.state.get().score, 4);
+  assert.ok(lostDecision);
+  assert.equal(await session.commands.submit("point", {}, { id: "dropped-notice" }), 5);
+  assert.ok(lostSettlement);
+  assert.equal(session.state.get().score, 5);
+});

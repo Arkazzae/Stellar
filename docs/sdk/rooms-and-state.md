@@ -8,8 +8,8 @@ Every Stellarr activity gets four specialized data channels out of the box so yo
 flowchart TD
     Question{"What kind of data are you storing?"}
     Question -->|"Personal unlocks, high scores, settings"| Progress["session.progress (per-account, <= 64 KiB)"]
-    Question -->|"60 Hz cursors, strokes, physics"| Send["session.send / on (ephemeral JSON or Uint8Array)"]
-    Question -->|"Shared room state"| Rules{"Need anti-cheat turns or secret hands?"}
+    Question -->|"Live cursors, strokes, physics snapshots"| Send["session.send / on (ephemeral JSON or Uint8Array)"]
+    Question -->|"Shared room state"| Rules{"Need a trusted host for turns or secret hands?"}
     Rules -->|"No (polls, queues, boards)"| Shared["authority: 'shared' -> session.state.set()"]
     Rules -->|"Yes (card games, trivia, charades)"| Host["authority: 'host' -> session.commands + assignments"]
 ```
@@ -17,7 +17,7 @@ flowchart TD
 | Channel | Scope & lifetime | Visibility | Payload limit | Rate limit |
 | --- | --- | --- | ---: | ---: |
 | `session.state` | Current room (kept `120 s` after room empties) | Everyone in session (including spectators) | `256 KiB` JSON | `32 / s` |
-| `session.commands` + `assignments` | Current room (`authority: "host"`) | `patch`/`result` public; `assignments[id]` private to that player | `64 KiB` cmd · `256 KiB` assignments | `32` writes/s |
+| `session.commands` + `assignments` | Current room (`authority: "host"`) | `patch` public; `result` returned to the submitting player; `assignments[id]` visible to that player and the current host | `64 KiB` cmd · `256 KiB` assignments | `32` writes/s |
 | `session.send` / `on` | Live connected peers only (best-effort) | Broadcast or unicast (`{ to: playerId }`) | `64 KiB` JSON or bytes | `96 / s` |
 | `session.progress` | Signed-in account across sessions, updates & devices | Private to the signed-in player | `64 KiB` JSON | `32 / s` |
 
@@ -82,6 +82,8 @@ const committedRevision = await session.state.set((current) => {
 ## Host-authoritative games (`authority: "host"`)
 
 Card games, trivia, and turn-based games often need one referee to enforce turn order, shuffle decks, or hold secret answers. Set `"authority": "host"` in `stellarr.json`:
+
+The host runs your rules in their own browser. They can read every hand or secret answer, choose the outcome of a move, and change scores. Other seated players receive only their own assignment. A player promoted to host gains access to the full current checkpoint. Use this mode when everyone trusts whoever may become host.
 
 1. **Automatic election & failover:** Stellarr elects the first connected seated player as `host` (`session.host.get()`). If the host disconnects for more than `graceSeconds` (`10 s`) or calls `await session.host.transfer(nextPlayerId)`, Stellarr promotes the next connected seated player automatically.
 2. **Symmetric handler registration:** Register `session.commands.handle(...)` on **every** client at startup so whichever client is currently host (or becomes host mid-game) can process moves immediately.
@@ -201,6 +203,8 @@ function updateTimer() {
 ---
 
 ## Fast transient events (`session.send` / `session.on`)
+
+Installed activities using the current SDK receive live messages on Stellarr’s authenticated WebSocket. The room wakes the host when a command arrives and the caller when its decision is ready. After reconnection the SDK reads from its last confirmed revision. Packages importing the SDK from Stellarr use the instance’s copy. If you bundled an older SDK, rebuild your package with the updated SDK to receive pushed events. The local simulator and private development preview use polling. Transient messages are best effort and can be lost while disconnected.
 
 Use `send` and `on` for ephemeral updates that do not belong in saved state (mouse pointers, live brush previews, emotes, or real-time physics snapshots):
 

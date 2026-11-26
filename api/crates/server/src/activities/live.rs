@@ -22,7 +22,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
     collections::{HashMap, HashSet},
-    sync::Mutex,
+    sync::{Mutex, RwLock},
     time::{Duration, Instant},
 };
 
@@ -61,11 +61,15 @@ impl Scope {
     }
 }
 type Place = (Id, Scope);
-type Rooms = HashMap<Place, Live>;
+type Rooms = HashMap<Place, Mutex<Live>>;
 #[derive(Default)]
 pub(crate) struct Sessions {
     pub(crate) changes: tokio::sync::RwLock<()>,
-    rooms: Mutex<Rooms>,
+    rooms: RwLock<Rooms>,
+}
+struct RoomStream {
+    connection: String,
+    frame: String,
 }
 struct Lease {
     user: Id,
@@ -79,6 +83,7 @@ struct Lease {
     ticket: Option<Id>,
     cookie: Id,
     touched: Instant,
+    stream: Option<RoomStream>,
 }
 /// A single wildcard-TLS label identifies the ZIP and its installation. Keeping
 /// the version in the origin lets absolute and relative URLs share the ZIP root.
@@ -101,6 +106,7 @@ struct Live {
     host: Id,
     /// How many people have come in, which numbers the next one.
     arrivals: u64,
+    swept: Instant,
 }
 impl Live {
     fn new(installed: Installed, host: Id) -> ApiResult<Live> {
@@ -113,6 +119,7 @@ impl Live {
             used: Instant::now(),
             host,
             arrivals: 0,
+            swept: Instant::now(),
         })
     }
     /// The people inside, in the order they came in.
@@ -141,6 +148,7 @@ impl Live {
     /// Takes out everybody whose lease lapsed or who no longer sits where the
     /// activity runs.
     fn sweep(&mut self, state: &AppState, scope: Scope) {
+        self.swept = Instant::now();
         let departed: Vec<Id> = self
             .leases
             .values()
@@ -181,21 +189,28 @@ fn summary(channel: Id, live: &Live) -> Value {
     })
 }
 /// The activity that runs in a voice channel, with its installation.
-fn voice_room(rooms: &Rooms, channel: Id) -> Option<(Id, &Live)> {
+fn voice_room(rooms: &Rooms, channel: Id) -> Option<(Id, &Mutex<Live>)> {
     rooms
         .iter()
         .find(|((_, scope), _)| *scope == Scope::Voice(channel))
         .map(|((install, _), live)| (*install, live))
 }
 
-/// What a voice channel shows of its activity: which one runs, who hosts it
-/// and who is inside, in order.
-type Shown = (Id, Id, Vec<Id>);
-fn shown(rooms: &Rooms) -> HashMap<Id, Shown> {
+/// Installation, host, arrivals and current count. A join increments arrivals
+/// and a departure reduces the count. Only an announced roster needs sorting.
+type Shown = (Id, Id, u64, usize);
+fn shown(rooms: &mut Rooms, only: Option<Scope>) -> HashMap<Id, Shown> {
     rooms
-        .iter()
-        .filter_map(|((install, scope), live)| match scope {
-            Scope::Voice(channel) => Some((*channel, (*install, live.host, live.participants()))),
+        .iter_mut()
+        .filter(|((_, scope), _)| only.is_none_or(|place| place == *scope))
+        .filter_map(|((install, scope), room)| match scope {
+            Scope::Voice(channel) => {
+                let live = room.get_mut().unwrap();
+                Some((
+                    *channel,
+                    (*install, live.host, live.arrivals, live.leases.len()),
+                ))
+            }
             Scope::Personal(_) => None,
         })
         .collect()
@@ -264,39 +279,36 @@ fn participant(user: &User) -> Value {
 impl Sessions {
     pub(crate) fn update_profile(&self, user: &User) -> ApiResult<()> {
         let person = participant(user);
-        for live in self
-            .rooms
-            .lock()
-            .unwrap()
-            .values()
-            .filter(|live| live.leases.contains_key(&user.id))
-        {
-            live.authority.update_profile(&person)?;
+        for room in self.rooms.read().unwrap().values() {
+            let live = room.lock().unwrap();
+            if live.leases.contains_key(&user.id) {
+                live.authority.update_profile(&person)?;
+            }
         }
         Ok(())
     }
 
     pub(super) fn pinned_digest(&self, id: Id, channel: Scope) -> Option<String> {
         self.rooms
-            .lock()
+            .read()
             .unwrap()
             .get(&(id, channel))
-            .map(|live| live.installed.digest.clone())
+            .map(|room| room.lock().unwrap().installed.digest.clone())
     }
     /// Changes the rooms under their lock and names the voice channels whose
     /// activity looks other than before, for [`announce`] once the lock is
     /// released.
-    fn update<T>(&self, op: impl FnOnce(&mut Rooms) -> T) -> (T, Vec<Change>) {
-        let mut rooms = self.rooms.lock().unwrap();
-        let before = shown(&rooms);
+    fn update<T>(&self, only: Option<Scope>, op: impl FnOnce(&mut Rooms) -> T) -> (T, Vec<Change>) {
+        let mut rooms = self.rooms.write().unwrap();
+        let before = shown(&mut rooms, only);
         let output = op(&mut rooms);
-        let after = shown(&rooms);
+        let after = shown(&mut rooms, only);
         (output, changes(&before, &after))
     }
     fn send_current(&self, state: &AppState, audience: Audience, change: &Change) {
-        let rooms = self.rooms.lock().unwrap();
-        let current =
-            voice_room(&rooms, change.channel).map(|(_, live)| summary(change.channel, live));
+        let rooms = self.rooms.read().unwrap();
+        let current = voice_room(&rooms, change.channel)
+            .map(|(_, live)| summary(change.channel, &live.lock().unwrap()));
         if change.replaced {
             publish_voice_activity(state, audience.clone(), change.channel, None);
         }
@@ -304,15 +316,16 @@ impl Sessions {
     }
     /// Ends every room of an installation that was turned off or removed.
     pub async fn remove(&self, state: &AppState, id: Id) {
-        let (_, changed) =
-            self.update(|rooms| rooms.retain(|(installed, _), _| *installed != id));
+        let (_, changed) = self.update(None, |rooms| {
+            rooms.retain(|(installed, _), _| *installed != id)
+        });
         announce(state, changed).await;
     }
     /// Tells a connection that has just taken a seat what runs in the room:
     /// somebody moved there may not see the channel, and so has not heard.
     pub(crate) fn announce_to_connection(&self, state: &AppState, connection: &str, channel: Id) {
-        let active = voice_room(&self.rooms.lock().unwrap(), channel)
-            .map(|(_, live)| summary(channel, live));
+        let active = voice_room(&self.rooms.read().unwrap(), channel)
+            .map(|(_, live)| summary(channel, &live.lock().unwrap()));
         if active.is_some() {
             publish_voice_activity(
                 state,
@@ -326,8 +339,9 @@ impl Sessions {
     /// runs there, once a seat was freed, handing a host's place on, and tells
     /// everybody who sees the channel.
     pub(crate) async fn sync_voice_channel(&self, state: &AppState, channel: Id) {
-        let (_, changed) =
-            self.update(|rooms| prune(rooms, state, Some(Scope::Voice(channel))));
+        let (_, changed) = self.update(Some(Scope::Voice(channel)), |rooms| {
+            prune(rooms, state, Some(Scope::Voice(channel)))
+        });
         announce(state, changed).await;
     }
 }
@@ -476,6 +490,7 @@ fn prune(rooms: &mut Rooms, state: &AppState, only: Option<Scope>) {
         if only.is_some_and(|only| only != *scope) {
             return true;
         }
+        let live = live.get_mut().unwrap();
         live.sweep(state, *scope);
         live.alive(*scope)
     })
@@ -543,13 +558,13 @@ pub(super) async fn available(
             .collect(),
         Scope::Voice(_) => Vec::new(),
     };
-    let (listed, changed) = state.activities().update(|rooms| -> ApiResult<(Vec<Value>, Option<Value>)> {
-        prune(rooms, &state, None);
+    let (listed, changed) = state.activities().update(Some(channel), |rooms| -> ApiResult<(Vec<Value>, Option<Value>)> {
+        prune(rooms, &state, Some(channel));
         if let Some(active) = input.lease {
             // A static page may never open an SDK connection. Its parent keeps
             // this specific launch alive for as long as the frame is displayed.
             let gone = || ApiError::status(StatusCode::GONE);
-            let live = rooms.get_mut(&(active.install, channel)).ok_or_else(gone)?;
+            let live = rooms.get_mut(&(active.install, channel)).ok_or_else(gone)?.get_mut().unwrap();
             let lease = live
                 .leases
                 .get_mut(&caller.user)
@@ -562,7 +577,8 @@ pub(super) async fn available(
         let rooms: &Rooms = rooms;
         let list:Vec<Value>=all.into_iter().filter(|entry|entry.enabled).filter_map(|entry|{
             let live=rooms.get(&(entry.install,channel));
-            let current=live.map_or(&entry,|room|&room.installed);
+            let guard=live.map(|room| room.lock().unwrap());
+            let current=guard.as_ref().map_or(&entry,|room|&room.installed);
             if !current.manifest.launch_modes.contains(&channel.mode()){ return None; }
             let artwork=super::artwork::urls(current,&format!("/api/activities/{}/art/{}",channel.segment(),entry.install));
             Some(json!({"install":entry.install,"name":current.manifest.name,"version":current.manifest.version,"running":live.is_some(),
@@ -571,7 +587,7 @@ pub(super) async fn available(
                    "permissions":current.manifest.permissions}))
         }).collect();
         let running = match channel {
-            Scope::Voice(room) => voice_room(rooms, room).map(|(_, live)| summary(room, live)),
+            Scope::Voice(room) => voice_room(rooms, room).map(|(_, live)| summary(room, &live.lock().unwrap())),
             Scope::Personal(_) => None,
         };
         Ok((list, running))
@@ -612,12 +628,12 @@ pub(super) async fn launch(
         .read(move |db| User::find(db, caller.user))
         .await?
         .ok_or_else(ApiError::forbidden)?;
-    let (launched, changed) = state.activities().update(|rooms| -> ApiResult<Value> {
+    let (launched, changed) = state.activities().update(None, |rooms| -> ApiResult<Value> {
         prune(rooms, &state, None);
         // A voice channel runs one activity at a time; a person runs as many
         // personal ones as they like.
         let running = match channel {
-            Scope::Voice(room) => voice_room(rooms, room).map(|(install, live)| (install, live.host)),
+            Scope::Voice(room) => voice_room(rooms, room).map(|(install, live)| (install, live.lock().unwrap().host)),
             Scope::Personal(_) => None,
         };
         let (install_id, replaced) = match (input.install, running) {
@@ -650,7 +666,7 @@ pub(super) async fn launch(
                     .map(|c| c.manifest.launch_modes.contains(&channel.mode()))
                     .ok_or(Refusal::NotFound)
             },
-            |room| Ok(room.installed.manifest.launch_modes.contains(&channel.mode())),
+            |room| Ok(room.lock().unwrap().installed.manifest.launch_modes.contains(&channel.mode())),
         )?;
         if !allowed_mode {
             return Err(ApiError::forbidden());
@@ -669,9 +685,9 @@ pub(super) async fn launch(
             if let Some(replaced) = replaced {
                 rooms.remove(&(replaced, channel));
             }
-            rooms.insert(key, started);
+            rooms.insert(key, Mutex::new(started));
         }
-        let live = rooms.get_mut(&key).expect("joined room");
+        let live = rooms.get_mut(&key).expect("joined room").get_mut().unwrap();
         if !live.installed.manifest.supports(&input.device) {
             return Err(Refusal::UnsupportedDevice.into());
         }
@@ -720,6 +736,7 @@ pub(super) async fn launch(
                 cookie: asset_key,
                 parent_origin: origin,
                 touched: Instant::now(),
+                stream: None,
             },
         );
         live.used = Instant::now();
@@ -746,9 +763,9 @@ pub(super) async fn leave(
 ) -> ApiResult<Json<Value>> {
     let channel = Scope::from_path(&path, caller.user)?;
     let key = (input.install, channel);
-    let (still_running, changed) = state.activities().update(|rooms| {
-        prune(rooms, &state, None);
-        if let Some(live) = rooms.get_mut(&key)
+    let (still_running, changed) = state.activities().update(Some(channel), |rooms| {
+        prune(rooms, &state, Some(channel));
+        if let Some(live) = rooms.get_mut(&key).map(|room| room.get_mut().unwrap())
             && live
                 .leases
                 .get(&caller.user)
@@ -781,27 +798,34 @@ pub(super) async fn end(
 ) -> ApiResult<Json<Value>> {
     let channel = Scope::from_path(&path, caller.user)?;
     let only = input.and_then(|Json(end)| end.install);
-    let (ended, changed) = state.activities().update(|rooms| -> ApiResult<()> {
-        prune(rooms, &state, None);
-        let ending: Vec<Place> = rooms
-            .keys()
-            .copied()
-            .filter(|(install, place)| *place == channel && only.is_none_or(|only| only == *install))
-            .collect();
-        if ending.is_empty() {
-            return Err(Refusal::NotFound.into());
-        }
-        if ending.iter().any(|key| rooms[key].host != caller.user) {
-            return Err(Refusal::NotHost.into());
-        }
-        // A room takes its authority with it: every lease, picture and the
-        // session's state are gone, and a frame that still calls is told the
-        // session ended.
-        for key in ending {
-            rooms.remove(&key);
-        }
-        Ok(())
-    });
+    let (ended, changed) = state
+        .activities()
+        .update(Some(channel), |rooms| -> ApiResult<()> {
+            prune(rooms, &state, Some(channel));
+            let ending: Vec<Place> = rooms
+                .keys()
+                .copied()
+                .filter(|(install, place)| {
+                    *place == channel && only.is_none_or(|only| only == *install)
+                })
+                .collect();
+            if ending.is_empty() {
+                return Err(Refusal::NotFound.into());
+            }
+            if ending
+                .iter()
+                .any(|key| rooms[key].lock().unwrap().host != caller.user)
+            {
+                return Err(Refusal::NotHost.into());
+            }
+            // A room takes its authority with it: every lease, picture and the
+            // session's state are gone, and a frame that still calls is told the
+            // session ended.
+            for key in ending {
+                rooms.remove(&key);
+            }
+            Ok(())
+        });
     announce(&state, changed).await;
     ended?;
     Ok(Json(json!({ "ok": true })))
@@ -832,14 +856,14 @@ pub(super) async fn running(
         })
         .await?
         .ok_or_else(ApiError::forbidden)?;
-    let (listed, changed) = state.activities().update(|rooms| {
+    let (listed, changed) = state.activities().update(None, |rooms| {
         prune(rooms, &state, None);
         let rooms: &Rooms = rooms;
         channels
             .iter()
             .filter_map(|channel| {
                 voice_room(rooms, *channel).map(|(_, live)| {
-                    json!({"channelId": channel, "activity": summary(*channel, live)})
+                    json!({"channelId": channel, "activity": summary(*channel, &live.lock().unwrap())})
                 })
             })
             .collect::<Vec<Value>>()
@@ -858,47 +882,201 @@ async fn in_session<T>(
     channel: Scope,
     caller: Caller,
     input: &Action,
+    origin: &str,
     op: impl FnOnce(&mut Live) -> ApiResult<T>,
 ) -> ApiResult<T> {
     let key = (input.install, channel);
-    let (result, changed) = state.activities().update(|rooms| {
-        // Whoever has gone is taken out first, a host handing over: the
-        // people who stay are the ones who keep calling.
-        prune(rooms, state, Some(channel));
-        let result = rooms
+    let sessions = state.activities();
+    // A shared registry guard pins this installation while other rooms run independently.
+    let (result, changed, expired) = {
+        let rooms = sessions.rooms.read().unwrap();
+        let mut live = rooms
+            .get(&key)
+            .ok_or_else(|| ApiError::status(StatusCode::GONE))?
+            .lock()
+            .unwrap();
+        let before = live.leases.len();
+        let sweep =
+            live.swept.elapsed() >= Duration::from_secs(1) || !seated(state, channel, caller.user);
+        let expired = sweep && {
+            live.sweep(state, channel);
+            !live.alive(channel)
+        };
+        let result = if expired {
+            Err(ApiError::status(StatusCode::GONE))
+        } else if let Some(lease) = live.leases.get_mut(&caller.user).filter(|l| {
+            l.account_session == caller.session
+                && l.parent_origin == origin
+                && l.token == input.access
+                && l.touched.elapsed() < Duration::from_secs(60)
+        }) {
+            lease.touched = Instant::now();
+            live.used = Instant::now();
+            op(&mut live)
+        } else {
+            Err(ApiError::forbidden())
+        };
+        let empty = matches!(channel, Scope::Voice(_)) && live.leases.is_empty();
+        (result, before != live.leases.len(), expired || empty)
+    };
+    if expired {
+        let mut rooms = sessions.rooms.write().unwrap();
+        if rooms
             .get_mut(&key)
-            .ok_or_else(|| ApiError::status(StatusCode::GONE))
-            .and_then(|live| {
-                let lease = live
-                    .leases
-                    .get_mut(&caller.user)
-                    .filter(|l| {
-                        l.account_session == caller.session
-                            && l.token == input.access
-                            && l.touched.elapsed() < Duration::from_secs(60)
-                    })
-                    .ok_or_else(ApiError::forbidden)?;
-                lease.touched = Instant::now();
-                live.used = Instant::now();
-                op(live)
-            });
-        // The last person to close a voice activity ends it.
-        if matches!(channel, Scope::Voice(_))
-            && rooms.get(&key).is_some_and(|live| live.leases.is_empty())
+            .is_some_and(|room| !room.get_mut().unwrap().alive(channel))
         {
             rooms.remove(&key);
         }
-        result
-    });
-    announce(state, changed).await;
+    }
+    if (changed || expired)
+        && let Scope::Voice(channel) = channel
+    {
+        announce(
+            state,
+            vec![Change {
+                channel,
+                replaced: false,
+            }],
+        )
+        .await;
+    }
     result
+}
+
+/// The authority selects the recipients. Private state and checkpoints are fetched
+/// with the recipient's own authenticated read. Only live messages travel in events.
+fn run_action(
+    state: &AppState,
+    channel: Scope,
+    live: &mut Live,
+    caller: Caller,
+    person: &Value,
+    input: &Value,
+    connection: Option<&str>,
+) -> ApiResult<Value> {
+    let op = input["op"].as_str().unwrap_or("");
+    let subscribers = if op == "send" {
+        live.leases
+            .values()
+            .filter(|l| l.stream.is_some() && seated(state, channel, l.user))
+            .map(|l| l.user)
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let output = live.authority.run(person, input, &subscribers)?;
+    if output.get("error").is_some() {
+        return Ok(output);
+    }
+    if let Some(lease) = live.leases.get_mut(&caller.user) {
+        if op == "open" || op == "disconnect" {
+            lease.stream = None;
+        } else if op == "read"
+            && input["roomEvents"] == true
+            && let (Some(connection), Some(frame)) = (connection, input["frame"].as_str())
+        {
+            lease.stream = Some(RoomStream {
+                connection: connection.into(),
+                frame: frame.into(),
+            });
+        }
+    }
+    if op == "close" {
+        live.depart(caller.user);
+    }
+    if let Some(hub) = state.realtime() {
+        let recipients: HashSet<Id> = output["recipients"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|id| id.as_str().and_then(Id::parse))
+            .collect();
+        let host = output["host"].as_str().and_then(Id::parse);
+        let changed = matches!(
+            op,
+            "write" | "open" | "close" | "disconnect" | "seat" | "transfer" | "decide"
+        );
+        if changed || host.is_some() || !recipients.is_empty() {
+            for lease in live.leases.values() {
+                let Some(stream) = &lease.stream else {
+                    continue;
+                };
+                let mut event = json!({"frame":stream.frame});
+                if recipients.contains(&lease.user) {
+                    event["message"] = output["message"].clone();
+                } else if changed || host == Some(lease.user) {
+                    if op == "decide"
+                        && input["from"].as_str().and_then(Id::parse) == Some(lease.user)
+                        && output["value"]["conflict"] != true
+                    {
+                        event["settled"] = input["id"].clone();
+                    }
+                } else {
+                    continue;
+                }
+                let message = stellarr_hub::Outbound::single("ActivityRoomUpdate", &event)
+                    .map_err(ApiError::internal)?;
+                hub.hub().send_to_connection(&stream.connection, &message);
+            }
+        }
+    }
+    Ok(output)
+}
+
+pub(super) async fn hub_room(
+    cx: crate::realtime::Context,
+    path: String,
+    input: Action,
+) -> ApiResult<Value> {
+    let caller = Caller {
+        user: cx.user(),
+        session: cx.session(),
+    };
+    let channel = Scope::from_path(&path, caller.user)?;
+    if !matches!(
+        input.action["op"].as_str(),
+        Some(
+            "read"
+                | "send"
+                | "submit"
+                | "decide"
+                | "write"
+                | "sync"
+                | "checkpoint"
+                | "seat"
+                | "transfer"
+                | "close"
+                | "disconnect"
+        )
+    ) {
+        return Err(ApiError::bad_request());
+    }
+    let state = cx.state();
+    let _gate = state.activities().changes.read().await;
+    let mut reply = in_session(state, channel, caller, &input, &cx.who().origin, |live| {
+        run_action(
+            state,
+            channel,
+            live,
+            caller,
+            &json!({"id":caller.user}),
+            &input.action,
+            Some(cx.connection_id()),
+        )
+    })
+    .await?;
+    // Delivery metadata belongs to the authority, never to the initiating frame.
+    if reply.get("error").is_some() {
+        return Ok(reply);
+    }
+    Ok(json!({"value": reply["value"].take()}))
 }
 
 pub(super) async fn room(
     State(state): State<AppState>,
     caller: Caller,
     Path(path): Path<String>,
-    _: ActivityParent,
+    ActivityParent(origin): ActivityParent,
     Json(input): Json<Action>,
 ) -> ApiResult<Response> {
     let channel = Scope::from_path(&path, caller.user)?;
@@ -912,8 +1090,8 @@ pub(super) async fn room(
             .ok_or_else(ApiError::forbidden)?;
         person = participant(&user);
     }
-    let (mut output, progress) = in_session(&state, channel, caller, &input, |live| {
-        let output = live.authority.run(&person, &input.action)?;
+    let (mut output, progress) = in_session(&state, channel, caller, &input, &origin, |live| {
+        let output = run_action(&state, channel, live, caller, &person, &input.action, None)?;
         let progress = matches!(
             input.action["op"].as_str(),
             Some("loadProgress" | "saveProgress")
@@ -923,9 +1101,6 @@ pub(super) async fn room(
             source: live.installed.source.clone(),
             activity: live.installed.manifest.id.clone(),
         });
-        if input.action["op"] == "close" && output.get("error").is_none() {
-            live.depart(caller.user);
-        }
         Ok((output, progress))
     })
     .await?;
@@ -952,6 +1127,7 @@ pub(super) async fn room(
         value["place"] = channel.place();
         value["launchMode"] = json!(channel.mode());
         value["standalone"] = json!(false);
+        value["roomHub"] = json!(state.realtime().is_some());
         value["progress"] = json!(true);
     }
     Ok(Response::builder()
@@ -964,12 +1140,12 @@ pub(super) async fn tile(
     State(state): State<AppState>,
     caller: Caller,
     Path(path): Path<String>,
-    ActivityParent(_): ActivityParent,
+    ActivityParent(origin): ActivityParent,
     Json(input): Json<Action>,
 ) -> ApiResult<Json<Value>> {
     let channel = Scope::from_path(&path, caller.user)?;
     let _gate = state.activities().changes.read().await;
-    in_session(&state, channel, caller, &input, |live| {
+    in_session(&state, channel, caller, &input, &origin, |live| {
         if !live
             .installed
             .manifest
@@ -1117,7 +1293,7 @@ pub(super) async fn asset(
         .ok_or_else(ApiError::not_found)?;
     let avatar = avatar_path(&path)?;
     let (cookie, install, digest, manifest, credential) = {
-        let mut rooms = state.activities().rooms.lock().unwrap();
+        let rooms = state.activities().rooms.read().unwrap();
         let received: HashSet<_> = headers
             .get(header::COOKIE)
             .and_then(|s| s.to_str().ok())
@@ -1129,7 +1305,9 @@ pub(super) async fn asset(
             .collect();
         let ticket = path.strip_prefix("_stellarr/start/").and_then(Id::parse);
         let mut found = None;
-        for ((installation, channel), live) in rooms.iter_mut() {
+        for ((installation, channel), room) in rooms.iter() {
+            let mut guard = room.lock().unwrap();
+            let live = &mut *guard;
             if live.asset_label != label
                 || avatar.is_some_and(|(owner, _)| {
                     !live.leases.contains_key(&owner) || !seated(&state, *channel, owner)
@@ -1326,10 +1504,11 @@ pub(super) async fn sandbox_asset(
     let _gate = state.activities().changes.read().await;
     let avatar = avatar_path(&path)?;
     let (install, digest, manifest, origin, credential) = {
-        let rooms = state.activities().rooms.lock().unwrap();
+        let rooms = state.activities().rooms.read().unwrap();
         rooms
             .iter()
-            .find_map(|((install, scope), live)| {
+            .find_map(|((install, scope), room)| {
+                let live = room.lock().unwrap();
                 let lease = live.leases.values().find(|l| l.cookie == key)?;
                 if avatar.is_some_and(|(owner, _)| {
                     !live.leases.contains_key(&owner) || !seated(&state, *scope, owner)

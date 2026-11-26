@@ -98,6 +98,11 @@ export class DeferredRealtimeClient implements RealtimeClient {
     };
   }
 
+  async activityRoom(place: string, input: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const client = await this.ready();
+    if (!client.activityRoom) throw new Error("Activity room transport unavailable");
+    return client.activityRoom(place, input);
+  }
   setPresence: RealtimeClient["setPresence"] = (presence) => this.ready().then((client) => client.setPresence(presence));
   joinChannel: RealtimeClient["joinChannel"] = (channelId) => this.ready().then((client) => client.joinChannel(channelId));
   sendTyping: RealtimeClient["sendTyping"] = (channelId) => this.ready().then((client) => client.sendTyping(channelId));

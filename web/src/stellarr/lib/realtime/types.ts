@@ -218,6 +218,7 @@ export interface RealtimeEventMap {
   JoinSoundPlayed: SoundboardPlayedEvent;
   SoundboardChanged: SoundboardChangedEvent;
   VoiceActivityChanged: VoiceActivityChangedEvent;
+  ActivityRoomUpdate: { frame: string; message?: Record<string, unknown>; settled?: string };
   /** Friends, requests, blocks or direct-message summary state changed. */
   SocialChanged: Record<string, never>;
   /** The signed-in member's effective role changed. */
@@ -262,6 +263,7 @@ export interface RealtimeClient {
     event: E,
     handler: (payload: RealtimeEventMap[E]) => void,
   ): () => void;
+  activityRoom?(place: string, input: Record<string, unknown>): Promise<Record<string, unknown>>;
   /** Advertises the signed-in user's chosen status to every client. */
   setPresence(presence: Presence): Promise<void>;
   joinChannel(channelId: ChannelId): Promise<void>;

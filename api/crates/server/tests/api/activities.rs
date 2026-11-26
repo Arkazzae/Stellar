@@ -93,6 +93,154 @@ async fn announced(peer: &mut Peer, channel: Id, accept: impl Fn(&Value) -> bool
 }
 
 #[tokio::test]
+async fn room_socket_delivers_to_the_subscribed_connection_and_wakes_host_commands() {
+    use crate::support::{HubClient, upgrade_with};
+    let rig = voice_rig().await;
+    let bob = rig.person("bob").await;
+    install(
+        &rig.server,
+        INSTALL,
+        &json!({"id":"cards","name":"Cards","description":"Table",
+        "version":"1.0.0","protocol":1,"authority":"host","seats":2}),
+    );
+    async fn browser(rig: &Rig, person: &Person) -> Peer {
+        let cookie = format!(
+            "stellarr-dev-session={}",
+            person.client.cookie("stellarr-dev-session").unwrap()
+        );
+        let upgraded = upgrade_with(
+            rig.server.address(),
+            "",
+            Some(&cookie),
+            "chat.test",
+            &[
+                ("Origin", ORIGIN),
+                ("X-Forwarded-Proto", "https"),
+                ("Sec-WebSocket-Protocol", "stellarr.v1"),
+            ],
+        )
+        .await;
+        Peer {
+            hub: HubClient::from_upgrade(upgraded).await,
+        }
+    }
+    let mut alice_ws = browser(&rig, &rig.owner).await;
+    let mut bob_ws = browser(&rig, &bob).await;
+    alice_ws.join(rig.salon).await;
+    bob_ws.join(rig.salon).await;
+    let salon = rig.salon.to_string();
+    let path = format!("/api/activities/{salon}/room");
+    let open = json!({"op":"open","frame":FRAME,"initialState":{}});
+    let mut grants = Vec::new();
+    for person in [&rig.owner, &bob] {
+        let launched = launch_in(
+            person,
+            rig.salon,
+            json!({"device":"desktop","install":INSTALL}),
+        )
+        .await
+        .json::<Value>();
+        let grant = json!({"install":INSTALL,"access":launched["access"]});
+        let mut body = grant.clone();
+        body["action"] = open.clone();
+        let opened = post(person, &path, body).await.json::<Value>();
+        assert_eq!(opened["roomHub"], true);
+        assert!(opened.get("roomEvents").is_none());
+        grants.push(grant);
+    }
+    let args = |who: usize, mut action: Value| {
+        let mut body = grants[who].clone();
+        action["frame"] = json!(FRAME);
+        body["action"] = action;
+        json!([salon, body])
+    };
+    let read = json!({"op":"read","after":0,"roomEvents":true});
+    assert_eq!(
+        bob_ws.ok("ActivityRoom", args(0, read.clone())).await["status"],
+        403
+    );
+    let alice = alice_ws.ok("ActivityRoom", args(0, read.clone())).await;
+    assert_eq!(alice["value"]["host"], json!(rig.owner.id));
+    bob_ws.ok("ActivityRoom", args(1, read.clone())).await;
+    let send = json!({"op":"send","to":bob.id,"kind":"cursor","data":17});
+    let sent = alice_ws.ok("ActivityRoom", args(0, send)).await;
+    assert_eq!(sent, json!({"value":{"accepted":true}}));
+    let event = bob_ws
+        .next_where("ActivityRoomUpdate", |e| e["message"]["kind"] == "cursor")
+        .await;
+    assert_eq!(event["message"]["from"], json!(rig.owner.id));
+    assert_eq!(event["message"]["data"], 17);
+    assert_eq!(
+        bob_ws.ok("ActivityRoom", args(1, read.clone())).await["value"]["messages"],
+        json!([])
+    );
+
+    // A legacy HTTP submitter can wake a host on the hub. A second submit
+    // returns the cached outcome, also after switching transports.
+    let submit = json!({"op":"submit","kind":"guess","id":"turn","data":42});
+    assert_eq!(
+        post(&bob, &path, args(1, submit.clone())[1].clone())
+            .await
+            .json::<Value>()["pending"],
+        true
+    );
+    let wake = alice_ws.next_where("ActivityRoomUpdate", |_| true).await;
+    assert_eq!(wake, json!({"frame":FRAME}));
+    let packet = alice_ws.ok("ActivityRoom", args(0, read.clone())).await;
+    assert_eq!(packet["value"]["command"]["id"], "turn");
+    let decision = json!({"op":"decide","from":bob.id,"id":"turn","epoch":packet["value"]["epoch"],
+        "expected":0,"patch":{"score":1},"assignments":{bob.id.as_str():"secret"},"result":"yes"});
+    assert_eq!(
+        alice_ws.ok("ActivityRoom", args(0, decision)).await["value"]["revision"],
+        1
+    );
+    let settled = bob_ws
+        .next_where("ActivityRoomUpdate", |e| e["settled"] == "turn")
+        .await;
+    assert_eq!(settled, json!({"frame":FRAME,"settled":"turn"}));
+    assert_eq!(
+        bob_ws.ok("ActivityRoom", args(1, submit)).await["value"]["result"],
+        "yes"
+    );
+    assert_eq!(
+        bob_ws.ok("ActivityRoom", args(1, read)).await["value"]["assignment"],
+        "secret"
+    );
+
+    let mut resumed = browser(&rig, &bob).await;
+    let catch_up = resumed
+        .ok(
+            "ActivityRoom",
+            args(1, json!({"op":"read","after":0,"roomEvents":true})),
+        )
+        .await;
+    assert_eq!(catch_up["value"]["changes"][0]["state"]["score"], 1);
+    alice_ws
+        .ok(
+            "ActivityRoom",
+            args(
+                0,
+                json!({"op":"send","to":bob.id,"kind":"after-reconnect","data":1}),
+            ),
+        )
+        .await;
+    resumed
+        .next_where("ActivityRoomUpdate", |e| {
+            e["message"]["kind"] == "after-reconnect"
+        })
+        .await;
+    let retired = bob_ws
+        .hub
+        .quiet_for(std::time::Duration::from_millis(30))
+        .await;
+    assert!(
+        !retired
+            .iter()
+            .any(|e| e["data"]["message"]["kind"] == "after-reconnect")
+    );
+}
+
+#[tokio::test]
 async fn independent_authenticated_personal_sessions_enforce_launch_modes_tokens_and_revocation() {
     let server = Server::start_with(ACTIVITIES).await;
     let alice = server.found("owner").await;

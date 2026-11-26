@@ -191,6 +191,14 @@ export class WebSocketRealtimeClient implements RealtimeClient {
     return value;
   }
 
+  async activityRoom(place: string, input: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const reply = await this.invoke("ActivityRoom", place, input);
+    if (!isRecord(reply)) throw new Error("Invalid activity room response");
+    if (typeof reply.error === "string") throw Object.assign(new Error(reply.error), { status: reply.status });
+    if (!isRecord(reply.value)) throw new Error("Missing activity room response");
+    return reply.value;
+  }
+
   private async command(method: string, ...args: unknown[]): Promise<void> {
     await this.invoke(method, ...args);
   }
@@ -232,7 +240,7 @@ export class WebSocketRealtimeClient implements RealtimeClient {
   private send(connection: Connection, frame: object): void {
     const data = JSON.stringify(frame);
     const byteLength = utf8.encode(data).length;
-    if (byteLength > MAX_FRAME_BYTES) throw new Error("Realtime message is too large");
+    if (byteLength > MAX_FRAME_BYTES) throw Object.assign(new Error("Realtime message is too large"), { code: "frame_too_large" });
     if (connection.socket.bufferedAmount + byteLength > MAX_BUFFERED_BYTES) {
       throw new Error("Realtime send buffer is full");
     }

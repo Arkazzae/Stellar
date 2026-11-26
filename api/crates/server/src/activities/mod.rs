@@ -2,6 +2,7 @@
 mod artwork;
 mod authority;
 mod live;
+pub(crate) mod hub;
 mod progress;
 mod releases;
 

@@ -169,7 +169,7 @@ export function createRoom({ authority = "shared", seats, permissions = [], limi
       changes: [{ revision, state }], ...view(member, time) };
   }
 
-  function message(member, input, time) {
+  function message(member, input, time, delivery) {
     if (!validLabel(input.kind) || input.data === undefined ||
         (input.to !== undefined && !validLabel(input.to))) fail(400, "Invalid message.");
     if (input.binary) {
@@ -183,6 +183,7 @@ export function createRoom({ authority = "shared", seats, permissions = [], limi
     const event = { from: member.id, kind: input.kind, data: input.data, binary: !!input.binary, latest: !!input.latest };
     for (const recipient of members.values()) {
       if (!recipient.connected || (input.to === undefined ? recipient === member : recipient.id !== input.to)) continue;
+      if (delivery?.message(recipient.id, event)) continue;
       if (input.latest) recipient.messages = recipient.messages.filter(old =>
         !(old.latest && old.from === event.from && old.kind === event.kind));
       if (recipient.messages.length >= 32) recipient.messages.shift();
@@ -192,7 +193,7 @@ export function createRoom({ authority = "shared", seats, permissions = [], limi
   }
 
   function commandKey(person, id) { return JSON.stringify([person, id]); }
-  function submit(member, input, time) {
+  function submit(member, input, time, delivery) {
     if (!hosted) fail(400, "Commands require host authority.");
     if (!validLabel(input.id) || !validLabel(input.kind) || input.data === undefined) fail(400, "Invalid command.");
     const dataBytes = byteSize(input.data);
@@ -212,6 +213,7 @@ export function createRoom({ authority = "shared", seats, permissions = [], limi
     ledgerBytes += dataBytes;
     commands.set(key, command);
     pending.set(key, command);
+    delivery?.command(host);
     return { pending: true };
   }
 
@@ -255,7 +257,7 @@ export function createRoom({ authority = "shared", seats, permissions = [], limi
     return { revision, changes: changes(input.expected) };
   }
 
-  function room(person, input) {
+  function room(person, input, delivery) {
     if (ended) fail(410, "The session ended.");
     if (!record(input) || typeof input.frame !== "string" || input.frame.length !== 36) fail(400, "Invalid session request.");
     const time = clock();
@@ -273,7 +275,9 @@ export function createRoom({ authority = "shared", seats, permissions = [], limi
     member.lastSeen = time;
     switch (input.op) {
       case "read": {
-        const response = { ...view(member, time), changes: changes(input.after), messages: member.messages.splice(0) };
+        const metadata = input.roomEvents === true && input.version === version
+          ? { version, epoch, now: time } : view(member, time);
+        const response = { ...metadata, changes: changes(input.after), messages: member.messages.splice(0) };
         if (host === person.id && pending.size) {
           response.command = pending.values().next().value;
           response.commandRevision = revision;
@@ -304,8 +308,8 @@ export function createRoom({ authority = "shared", seats, permissions = [], limi
         member.committedRevision = revision;
         return { revision, changes: changes(input.after) };
       }
-      case "send": return message(member, input, time);
-      case "submit": return submit(member, input, time);
+      case "send": return message(member, input, time, delivery);
+      case "submit": return submit(member, input, time, delivery);
       case "decide": return decide(member, input, time);
       case "transfer":
         requireHost(member, input);
