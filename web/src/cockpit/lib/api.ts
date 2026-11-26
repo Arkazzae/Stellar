@@ -483,7 +483,7 @@ async function readProblem(response: Response): Promise<ProblemDetails> {
   }
 }
 
-async function request<T>(
+export async function cockpitRequest<T>(
   path: string,
   { method = "GET", body }: RequestOptions = {},
   signal?: AbortSignal,
@@ -526,6 +526,7 @@ async function request<T>(
   return (await response.json()) as T;
 }
 
+const request = cockpitRequest;
 const segment = encodeURIComponent;
 
 export const cockpitApi = {

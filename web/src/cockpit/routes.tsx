@@ -1,6 +1,7 @@
 import { defineRoutes } from "@stellarr/router";
 
 import { cockpitHref } from "./lib/paths";
+import { ActivitiesPage } from "./pages/activities-page";
 import { BackupsPage } from "./pages/backups-page";
 import { DashboardPage } from "./pages/dashboard-page";
 import { IntegrationsPage } from "./pages/integrations-page";
@@ -24,6 +25,7 @@ export const routes = defineRoutes({
     { path: cockpitHref("/servers"), page: ServersPage },
     { path: cockpitHref("/runtime"), page: RuntimePage },
     { path: cockpitHref("/logs"), page: LogsPage },
+    { path: cockpitHref("/activities"), page: ActivitiesPage },
     { path: cockpitHref("/backups"), page: BackupsPage },
     { path: cockpitHref("/integrations"), page: IntegrationsPage },
     { path: cockpitHref("/settings"), page: SettingsPage },
