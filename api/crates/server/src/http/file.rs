@@ -158,7 +158,7 @@ fn verdict(headers: &HeaderMap, modified: i64) -> Verdict {
     verdict
 }
 
-enum Range {
+pub(crate) enum Range {
     Whole,
     /// First and last byte, both within the file.
     Part(u64, u64),
@@ -168,6 +168,17 @@ enum Range {
 /// The one range a request asks for. Several ranges, and anything that does
 /// not read as a range, are answered with the whole file.
 fn requested_range(headers: &HeaderMap, modified: i64, length: u64) -> Range {
+    // `If-Range` with a date holds the range to a file that has not changed
+    // since; with an entity tag it has nothing to compare with.
+    if let Some(since) = date_header(headers, header::IF_RANGE)
+        && modified > since
+    {
+        return Range::Whole;
+    }
+    range_for(headers, length)
+}
+
+pub(crate) fn range_for(headers: &HeaderMap, length: u64) -> Range {
     if length == 0 {
         return Range::Whole;
     }
@@ -184,13 +195,6 @@ fn requested_range(headers: &HeaderMap, modified: i64, length: u64) -> Range {
     let Some((from, to)) = parse_range(line) else {
         return Range::Whole;
     };
-    // `If-Range` with a date holds the range to a file that has not changed
-    // since; with an entity tag it has nothing to compare with.
-    if let Some(since) = date_header(headers, header::IF_RANGE)
-        && modified > since
-    {
-        return Range::Whole;
-    }
     match (from, to) {
         (Some(from), to) if from < length => {
             Range::Part(from, to.map_or(length - 1, |to| to.min(length - 1)))

@@ -1,5 +1,6 @@
 groups! {
     account_security,
+    activities,
     accounts,
     administration,
     assets,
