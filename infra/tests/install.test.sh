@@ -117,7 +117,10 @@ listening() {
   [[ -f $state/busy-$proto ]] || return 0
   while IFS= read -r port; do
     case $name in
-      ss) printf 'LISTEN 0 128 0.0.0.0:%s 0.0.0.0:*\n' "$port" ;;
+      ss)
+        [[ $port == *:* ]] || port="0.0.0.0:$port"
+        printf 'LISTEN 0 128 %s 0.0.0.0:*\n' "$port"
+        ;;
       lsof) printf 'proc 1 ada 3u IPv4 0x1 0t0 %s *:%s\n' "$(printf '%s' "$proto" | tr a-z A-Z)" "$port" ;;
       netstat) printf '%s 0 0 0.0.0.0:%s 0.0.0.0:* LISTEN\n' "$proto" "$port" ;;
     esac
@@ -467,7 +470,7 @@ seams() {
     STELLARR_INSTALLER_TEST_HTTP="$http" STELLARR_INSTALLER_TEST_HTTP_LOG="$case_dir/calls"
     STELLARR_INSTALLER_TEST_LOCKS="$scratch/locks")
   if [[ $clock == fast ]]; then seam_env+=(STELLARR_INSTALLER_TEST_CLOCK=fast); fi
-  if [[ -f $state/os ]]; then seam_env+=(STELLARR_INSTALLER_TEST_OS="$(cat "$state/os")"); fi
+  seam_env+=(STELLARR_INSTALLER_TEST_OS="$(cat "$state/os" 2>/dev/null || echo Linux)")
   # A person, not root, unless the case says otherwise.
   seam_env+=(STELLARR_INSTALLER_TEST_UID="$(cat "$state/uid" 2>/dev/null || echo 1000)")
 }
@@ -1364,6 +1367,14 @@ case_ports() {
   # The check comes before the files, so a second run still asks its
   # questions.
   expect_missing "$home/stellarr"
+
+  new_case port-http-on-another-interface
+  echo '172.17.0.1:8888' >"$state/busy-tcp"
+  run --yes --http-port 127.0.0.1:8888 --no-start
+  expect_success
+  run --yes --http-port 172.17.0.1:8888 --no-start
+  expect_failure
+  expect_shown "172.17.0.1:8888 (HTTP), as given"
 
   new_case port-turns
   echo 5349 >"$state/busy-udp"

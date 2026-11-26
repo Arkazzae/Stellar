@@ -19,7 +19,7 @@ use crate::cli::{KEYS, Key, Options, env};
 use crate::envfile;
 use crate::http::Http;
 use crate::install_plan::{self, InstallPlan};
-use crate::ports::{Tool, port_numbers};
+use crate::ports::{Listeners, Tool};
 use crate::sys;
 use crate::ui::{Fd, Stop, Ui};
 
@@ -161,8 +161,8 @@ pub struct Run {
     set_compose_file: String,
     updating: bool,
     ports_result: PortsResult,
-    listen_tcp: BTreeSet<u32>,
-    listen_udp: BTreeSet<u32>,
+    listen_tcp: Listeners,
+    listen_udp: Listeners,
     run_stamp: String,
     override_file: Option<&'static str>,
     existing_env: Vec<u8>,
@@ -295,8 +295,8 @@ impl Run {
             set_compose_file: String::new(),
             updating: false,
             ports_result: PortsResult::Free,
-            listen_tcp: BTreeSet::new(),
-            listen_udp: BTreeSet::new(),
+            listen_tcp: Listeners::default(),
+            listen_udp: Listeners::default(),
             run_stamp: sys::stamp(),
             override_file: None,
             existing_env: Vec::new(),
@@ -1725,15 +1725,17 @@ impl Run {
         } else {
             return false;
         };
-        self.listen_tcp = port_numbers(tool, &tcp);
-        self.listen_udp = port_numbers(tool, &udp);
+        self.listen_tcp = Listeners::from_listing(tool, &tcp);
+        self.listen_udp = Listeners::from_listing(tool, &udp);
         true
     }
 
-    fn port_busy(&self, port: u32, protos: &[&str]) -> bool {
+    fn port_busy(&self, key: Key, port: u32) -> bool {
+        let host = self.set(key).rsplit_once(':').map_or("", |(host, _)| host);
+        let (_, protos) = self.port_role(key);
         protos.iter().any(|proto| match *proto {
-            "tcp" => self.listen_tcp.contains(&port),
-            "udp" => self.listen_udp.contains(&port),
+            "tcp" => self.listen_tcp.busy(port, host),
+            "udp" => self.listen_udp.busy(port, host),
             _ => false,
         })
     }
@@ -1741,8 +1743,7 @@ impl Run {
     /// Whether the port setting `key` can take `port`: free on this machine
     /// for its protocols, and not one of Stellarr's other ports.
     fn port_is_available(&self, key: Key, port: u32) -> bool {
-        let (_, protos) = self.port_role(key);
-        if self.port_busy(port, protos) {
+        if self.port_busy(key, port) {
             return false;
         }
         let taken = self
@@ -1789,13 +1790,12 @@ impl Run {
             .copied()
             .filter(|key| {
                 let port = binding_port(self.set(*key)).parse().unwrap_or(0);
-                self.port_busy(port, self.port_role(*key).1)
+                self.port_busy(*key, port)
             })
             .collect();
         let relay = self.relay_bounds();
-        let relay_busy = relay.is_some_and(|(first, last)| {
-            (first..=last).any(|port| self.listen_udp.contains(&port))
-        });
+        let relay_busy = relay
+            .is_some_and(|(first, last)| (first..=last).any(|port| self.listen_udp.busy(port, "")));
         if busy.is_empty() && !relay_busy {
             return Ok(());
         }
@@ -1902,20 +1902,16 @@ impl Run {
                 continue;
             };
             let address = entry["HostIp"].as_str().unwrap_or_default();
-            let wildcard = address == "0.0.0.0";
             let requested = self.port_keys.iter().any(|&key| {
                 let value = self.set(key);
-                let host = value.rsplit_once(':').map_or("", |(host, _)| host);
                 port_number(binding_port(value)) == Some(port)
                     && self.port_role(key).1.contains(&protocol)
-                    && (wildcard || (!host.is_empty() && host == address))
-            }) || (wildcard
-                && protocol == "udp"
+            }) || (protocol == "udp"
                 && relay.is_some_and(|(first, last)| (first..=last).contains(&port)));
             if requested {
                 let removed = match protocol {
-                    "tcp" => self.listen_tcp.remove(&port),
-                    "udp" => self.listen_udp.remove(&port),
+                    "tcp" => self.listen_tcp.remove_owned(port, address),
+                    "udp" => self.listen_udp.remove_owned(port, address),
                     _ => false,
                 };
                 if removed {
