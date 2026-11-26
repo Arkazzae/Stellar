@@ -1,57 +1,43 @@
-# Stellarr Cockpit
+# Stellarr Cockpit (`web/src/cockpit/`)
 
-Stellarr Cockpit is the instance operator panel served at `/cockpit` on the instance's origin. Its source code lives in `web/src/cockpit/` alongside the web client (`web/src/stellarr/`), and both applications are compiled into static assets by the same `web/` Vite build. Cockpit provides:
+Standalone instance operator SPA served at `/cockpit` on the instance origin and compiled alongside the chat client by the `web/` Vite build. See the [Cockpit administration guide](../../../docs/admin/cockpit.md) for MFA policies and operational workflows.
 
-- **Overview**: Instance activity trends, API uptime, API and SQLite availability windows, request/connection charts, and container service health (polled every 30 s).
-- **Users**: Account directory, active session inspection and revocation, built-in role management, MFA recovery, and OIDC identity unlinking.
-- **Servers**: Instance-wide server list with ownership transfer and deletion.
-- **Runtime**: Process telemetry (requests, errors, CPU, memory, active connections, SQLite latency) and per-minute availability across all supervised container services.
-- **Logs**: Paged, searchable, and filterable in-memory log ring buffer with TSV export.
-- **Backups**: Background SQLite snapshots and full `.zip` backup archives (database, object storage, `keys/master.key`, and instance files) with SHA-256 manifest verification, automated schedules, retention pruning, and staged restores.
-- **Integrations**: Resend email delivery, GIPHY GIF search, per-provider OIDC account creation controls, and Cloudflare R2 offsite backups (Direct S3 or Backup Relay Worker) with live credential tests.
-- **Settings**: Instance name, time zone, telemetry/audit retention windows, SMTP server configuration, instance MFA policy, and Cockpit UI language.
+## Pages and routes (`routes.tsx`)
+
+| Page | Route | Scope |
+| --- | --- | --- |
+| **Overview** | `/cockpit` | Activity trends, API/SQLite availability bars, request/hub charts, and `stellarr-init` service health (`30 s` poll). |
+| **Users** | `/cockpit/users` | Account directory, session revocation, role management, MFA recovery, and OIDC identity unlinking. |
+| **Servers** | `/cockpit/servers` | Instance-wide server list, ownership transfer, and deletion. |
+| **Runtime** | `/cockpit/runtime` | `/proc` telemetry (CPU, RSS/mapped memory, threads, hub sockets, voice rooms, SQLite latency) and per-minute availability. |
+| **Logs** | `/cockpit/logs` | Searchable, filterable 10,000-line in-memory log ring buffer with TSV export. |
+| **Activities** | `/cockpit/activities` | Install static multiplayer activities from GitHub releases, review permissions/external hosts, update/toggle/uninstall, and pair dev previews. |
+| **Backups** | `/cockpit/backups` | Online `.db` snapshots and full `.zip` archives, SHA-256 verification, downloads, and schedules. |
+| **Integrations** | `/cockpit/integrations` | Resend mail, GIPHY key validation, Web Push VAPID status, OIDC invite sign-up toggles, and Cloudflare R2 (`s3` or `worker`). |
+| **Settings** | `/cockpit/settings` | Instance name, time zone, file storage quota, retention windows, SMTP transport, MFA policy, desktop version gates, and UI language. |
 
 > [!NOTE]
-> Secrets saved in Cockpit (SMTP password, Resend API key, GIPHY API key, and R2 credentials) are sealed at rest with AES-256-GCM under keys derived from `/data/stellarr/keys/master.key` (`api/crates/server/src/seal.rs`), override environment variables, and are never returned to the browser.
+> Secrets stored in Cockpit are sealed with AES-256-GCM under `/data/stellarr/keys/master.key`, override `.env` immediately, and are never returned to browsers.
 
-## Build and runtime architecture
+## Architecture and isolation
 
-Cockpit is a standalone single-page application within the `web/` workspace:
-
-- **Entry HTML**: [`web/cockpit/index.html`](../../cockpit/index.html) loads `src/cockpit/main.tsx`. `npm run build` outputs the bundle to `web/dist/cockpit/index.html`, and `npm run dev` serves both the web client (`/`) and Cockpit (`/cockpit`).
-- **Routing**: `routes.tsx` defines the route table on [`@stellarr/router`](../../../packages/stellarr-router/README.md) (`/cockpit`, `/cockpit/users`, `/cockpit/servers`, `/cockpit/runtime`, `/cockpit/logs`, `/cockpit/backups`, `/cockpit/integrations`, `/cockpit/settings`, plus a Cockpit-scoped 404 view). Nginx serves `cockpit/index.html` for all `/cockpit/*` paths.
-- **Strict isolation from the web client**: Cockpit has its own HTML document, Tailwind stylesheet (`src/cockpit/index.css`), localization state, and session gate (`CockpitApp` in `app.tsx`). Navigating between `/cockpit` and `/` triggers a full document load. An ESLint boundary rule in `web/eslint.config.mjs` forbids `src/cockpit/` from importing modules under `src/stellarr/`.
-- **Design system**: UI components are imported from [`@stellarr/ui`](../../../packages/stellarr-ui/README.md) and icons from [`@stellarr/icons`](../../../packages/stellarr-icons/README.md) (wrapped by `components/icons/icon.tsx` for `rem` scaling). `src/cockpit/index.css` maps Cockpit's palette and fluid `--ui-unit: calc(1rem / 16)` scale onto the `--ui-*` token tiers.
-
-### Local development
-
-```bash
-# From the repository root
-npm install
-npm run dev -w stellarr-web
-```
-
-The Vite dev server listens on `http://localhost:3000`, serves Cockpit at `http://localhost:3000/cockpit` with HMR, and proxies `/api`, `/assets`, `/health`, `/hubs`, and `/.well-known/stellarr/client` to `STELLARR_API_ORIGIN` (default `http://127.0.0.1:5000`). All `/api/cockpit/*` endpoints require an authenticated session with the instance `Owner` role.
+- **Separate HTML entry:** [`web/cockpit/index.html`](../../cockpit/index.html) mounts `src/cockpit/main.tsx` (`web/dist/cockpit/index.html`). Nginx serves `cockpit/index.html` for all `/cockpit/*` URLs.
+- **Zero shared app state:** `web/eslint.config.mjs` forbids imports from `src/stellarr/`. Cross-links between `/cockpit` and `/` perform full document navigations on [`@stellarr/router`](../../../packages/stellarr-router/README.md).
+- **Shared design system:** Consumes [`@stellarr/ui`](../../../packages/stellarr-ui/README.md) and [`@stellarr/icons`](../../../packages/stellarr-icons/README.md), mapping Cockpit's palette and fluid `--ui-unit: calc(1rem / 16)` onto `--ui-*` tokens in `src/cockpit/index.css`.
 
 ## Localization
 
-Cockpit supports English (`en`, default) and Polish (`pl`). The active locale is selected under **Cockpit → Settings** and persisted in `localStorage` under `stellarr.cockpit.locale`, independent of the browser's `Accept-Language` header and the web client's locale preference.
+Cockpit supports English (`en`, default) and Polish (`pl`), persisted in `localStorage` (`stellarr.cockpit.locale`) independently of `STELLARR_LANGUAGE` and the chat client. Catalogs in `i18n/en.ts` and `i18n/pl.ts` enforce compile-time key parity.
 
-Translation catalogs in `i18n/en.ts` and `i18n/pl.ts` define identical key sets and are formatted with `t("some.key", { name: value })`.
-
-## Verification
-
-From the repository root:
+## Development and testing
 
 ```bash
-npm run lint:web
-npm run typecheck:web
-npm run test:web
-npm run build:web
-```
+# Start Vite dev server (http://localhost:3000/cockpit -> proxies /api to 127.0.0.1:5000)
+npm run dev -w stellarr-web
 
-Each script checks both the web client and Cockpit. Vitest runs two isolated projects defined in `web/vitest.config.ts` (`web` and `cockpit`); run Cockpit's unit tests alone from `web/` with:
+# Full lint, typecheck, unit tests, and production bundle verification
+npm run lint:web && npm run typecheck:web && npm run test:web && npm run build:web
 
-```bash
-npx vitest run --project cockpit
+# Run Cockpit unit tests in isolation
+npx -w stellarr-web vitest run --project cockpit
 ```

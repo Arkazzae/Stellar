@@ -1,132 +1,155 @@
 # Architecture
 
-Stellarr runs inside a single Docker container backed by one persistent volume (`/data/stellarr`). All HTTP and WebSocket traffic enters through Nginx, while WebRTC voice and video packets flow directly to `stellarr-media` (over UDP or ICE-TCP, or through the optional TURN relay).
+Stellarr runs inside a single Docker container backed by one persistent directory (`/data/stellarr`). Container Nginx terminates TLS and serves static web bundles, `stellarr-api` handles REST and `stellarr.v1` WebSocket traffic over loopback, and `stellarr-media` forwards WebRTC voice and video packets directly over UDP or passive ICE-TCP (or via optional `coturn`).
 
-See [Voice and RTC protocol](./rtc-protocol.md) for client state and hub signaling, and [Stellarr Media](./stellarr-media.md) for the Rust SFU media server.
+See [Voice and RTC protocol](./rtc-protocol.md) for hub signaling and client audio/video pipelines, and [Stellarr Media](./stellarr-media.md) for SFU internals.
 
 ## System overview
 
 ```mermaid
 flowchart TD
-    Browser["Browser / Desktop Client"]
+    Browser["Browser / Installed PWA / Desktop Client"]
 
     subgraph Container["Stellarr Container (/data/stellarr)"]
-        Nginx["Nginx (:443 / :80)"]
+        Nginx["Nginx (:443 TLS / :80 HTTP)"]
         Web["Web client (/)"]
         Cockpit["Stellarr Cockpit (/cockpit)"]
-        Api["Stellarr API & hub (Rust, :5000)"]
+        Api["stellarr-api & hub (Rust, 127.0.0.1:5000)"]
         Sqlite[("SQLite WAL (db/stellarr.db)")]
-        Files[("Object storage (files/)")]
-        Coturn["Optional coturn STUN / TURN (:3478 / :5349)"]
-        Media["Stellarr Media SFU (:49000 UDP/TCP)"]
+        Files[("Object store (files/)")]
+        Coturn["Optional coturn (:3478 / :5349)"]
+        Media["stellarr-media SFU (:49000 UDP + TCP)"]
 
-        Nginx -->|"Static files"| Web
-        Nginx -->|"Static files"| Cockpit
+        Nginx -->|"Pre-compressed static"| Web
+        Nginx -->|"Pre-compressed static"| Cockpit
         Nginx -->|"/api, /hubs/app, /assets"| Api
         Api --> Sqlite
         Api --> Files
         Api -->|"HTTP Control API (127.0.0.1:5200)"| Media
-        Coturn -->|"Internal UDP relay"| Media
+        Coturn -->|"Loopback UDP"| Media
     end
 
     Browser -->|"HTTPS + WebSocket (:443/tcp)"| Nginx
     Browser <-->|"STUN / TURN (:3478, 49160-49200/udp)"| Coturn
-    Browser <-->|"WebRTC RTP / SRTP (:49000 UDP/TCP)"| Media
+    Browser <-->|"WebRTC SRTP (:49000 UDP/TCP)"| Media
 ```
 
 ## Component responsibilities
 
-- **Browser apps (`web/`)**: A single multi-page Vite build emits the web client (`web/index.html`) and Cockpit (`web/cockpit/index.html`) as static files in `web/dist/`, pre-compressed with `gzip -9`. Nginx serves them directly from `/opt/stellarr/web`; no Node.js runtime ships in the production image. Each app has its own `main.tsx`, `routes.tsx` ([`@stellarr/router`](../packages/stellarr-router/README.md)), and `pages/` and imports nothing from the other.
-- **Web client (`web/src/stellarr/`)**: Browser client for text channels, direct messages, voice, and video. Blocking pre-paint scripts apply the saved theme (`web/src/stellarr/design/themeScript.ts`) and locale (`web/src/stellarr/i18n/localeScript.ts`) before first paint (see [Themes and appearance](./themes.md) and [Localization](./localization.md)), while the signed-in application bundle, custom fonts, BetterDiscord theme converter, and language catalog chunks load on demand (enforced by an up-front gzip budget in `web/bundleReport.ts`).
-  - **Service Worker and release tracking (`web/public/stellarr-worker.js`, `web/release.ts`)**: Caches the current release's application shell (`/release.json`) for instant navigation and handles Web Push notifications. Running tabs check `/release.json` on startup, hub reconnect, and tab visibility changes, updating the cached shell and reloading automatically when the server moves to a new release.
-  - **Device message cache (`web/src/stellarr/lib/deviceStore/`)**: Stores the latest message window per channel in browser IndexedDB for immediate rendering on load, reconciled against the server's message change journal (`MessageChanges`) and wiped on sign-out or session revocation.
-- **Stellarr Cockpit (`web/src/cockpit/`)**: Standalone operator SPA at `/cockpit`, backed by `/api/cockpit/*` endpoints restricted to the instance owner role, with its own locale preference.
-- **API (`api/crates/server`, Rust)**: Control plane for authentication, sessions, servers, channels, messages, uploads, link previews, presence, activity notifications, backups, and the realtime hub (`api/crates/hub` speaks the `stellarr.v1` WebSocket protocol used by the web client; `api/crates/server/src/realtime/` holds its methods). Allocates and closes SFU sessions on `stellarr-media` over `127.0.0.1:5200` and relays SDP/ICE negotiation.
-- **Operator CLI (`api/crates/cli`, Rust)**: The `stellarr` binary for inspecting health, editing database settings and encrypted secrets, revoking sessions, issuing MFA recovery credentials, and verifying or staging backup restores directly against `/data/stellarr`. It is built on the server's library, so it reads settings, sealed secrets and recovery the way the server does. See [Operator CLI](./admin/cli.md).
-- **SQLite (`db/stellarr.db`)**: Stores relational state, full-text search indexes (FTS5), and the message change journal in WAL mode. Binary files are never stored in SQLite.
-- **Uploaded files (`files/` and `incoming/`)**: Stored on `/data/stellarr/files/` by object key (or in an S3-compatible bucket when `Storage__Provider=S3`). Incoming multipart uploads stream into `/data/stellarr/incoming/` (cleared on startup), reserve quota/concurrency leases via `admission.rs`, validate magic-byte signatures against declared MIME types (`uploads/inspect.rs`), and move atomically into place:
-  - Standard attachments live under `images/`, `audio/`, `videos/`, and `files/`. Image uploads optionally include a reduced WebP/JPEG preview (`previews/`, up to 1 MiB) and a 32-byte base64 blurred placeholder; video uploads optionally include a poster image (`posters/`, up to 2 MiB); personal app wallpapers (`uploads/profile.rs`) remain private to the uploading account.
-  - End-to-end encrypted direct-message uploads are stored as opaque ciphertext under `encrypted/YYYY/MM/<id>.bin` (`application/octet-stream`).
-  - Every download under `/assets/{id}` is authorized and streamed by the API (`assets/`).
-- **Link previews (`api/crates/embeds`, `api/crates/server/src/link_previews/`)**: Background worker unfurls up to two HTTP(S) links per channel message (`Stellarr__Embeds__Enabled`), blocking loopback, link-local, and private network ranges by default (`AllowPrivateNetworks=false`). Preview thumbnails are downloaded and stored as local attachments so reader browsers never contact external hosts.
-- **Housekeeping (`api/crates/server/src/housekeeping/`)**: Hourly background worker that compacts the `MessageChanges` journal, drains the object deletion queue, sweeps unreferenced orphan uploads, prunes expired local backups and log files per Cockpit retention settings, and purges expired auth challenges, OTP codes, and recovery tokens.
-- **coturn**: Optional STUN server and HMAC-authenticated TURN relay forwarding relayed media allocations to the local `stellarr-media` UDP socket.
-- **Stellarr Init (`init/`, Rust)**: PID 1 process supervisor (`stellarr-init`). Starts container services in dependency order (`media` before `api`), runs periodic readiness probes, restarts exited processes with exponential backoff (1 s to 30 s), kills leftover process groups, reaps zombies, and stops services in reverse order on container shutdown.
-- **Stellarr Media (`media/`, Rust)**: Selective Forwarding Unit (SFU) on UDP and TCP `49000` using `str0m` (ICE-lite, DTLS-SRTP). Forwards microphone, camera, and screen-share RTP packets without transcoding or mixing, with per-leg RTCP feedback and per-receiver GoogCC downlink adaptation.
+| Component | Location | Responsibility |
+| --- | --- | --- |
+| **Static browser build** | `web/` | Single Vite build emitting both `index.html` (web client) and `cockpit/index.html` (Cockpit) into `web/dist/` (`gzip -9`). Served directly by Nginx; no Node.js runtime ships in the image. ESLint enforces zero cross-imports between `src/stellarr/` and `src/cockpit/`. |
+| **Web client** | `web/src/stellarr/` | Channels, DMs, voice/video, activities, offline translation, and themes. Pre-paint `<head>` scripts apply saved theme and locale without flash; signed-in UI, WebRTC, custom fonts, BetterDiscord conversion, and inactive locale chunks load lazily behind a `259,000`-byte gzip entry budget (`web/bundleReport.ts`). |
+| **Service Worker & cache** | `public/stellarr-worker.js`, `lib/deviceStore/` | Caches the active shell keyed by `/release.json` (auto-reloading tabs after upgrades), receives Web Push and OS file shares (`/pwa/share`), and keeps recent channel windows in IndexedDB reconciled against `MessageChanges` (wiped on sign-out/revocation). |
+| **Stellarr Cockpit** | `web/src/cockpit/` | Owner-only operator SPA at `/cockpit` backed by `/api/cockpit/*` with independent locale state. |
+| **API & Hub** | `api/crates/server`, `api/crates/hub` | Rust control plane for auth, sessions, servers, permissions, messages, uploads, activities, notifications, backups, and the `stellarr.v1` WebSocket hub (`/hubs/app`). Brokers SFU sessions over `127.0.0.1:5200`. |
+| **Operator CLI** | `api/crates/cli` (`stellarr`) | Direct `/data/stellarr` inspection, settings/secrets editing, session revocation, MFA recovery, and backup staging built on `stellarr_api` ([Operator CLI](./admin/cli.md)). |
+| **SQLite** | `db/stellarr.db` | Relational state, FTS5 full-text indexes, `OneTimeSteps`, and `MessageChanges` journal in WAL mode. Binary blobs never live in SQLite. |
+| **Object store** | `files/`, `incoming/` | Local filesystem (`/data/stellarr/files/`) or S3 (`Storage__Provider=S3`). Multipart uploads stream to `incoming/` (cleared on boot), reserve quota/disk leases (`admission.rs`), verify magic bytes (`uploads/inspect.rs`), and move atomically into `images/`, `audio/`, `videos/`, `files/`, `previews/`, `posters/`, or `encrypted/YYYY/MM/<id>.bin`. Served via authorized `/assets/{id}` streams. |
+| **Background workers** | `link_previews/`, `housekeeping/`, `delivery/` | Unfurls up to 2 public HTTP(S) URLs per message storing thumbnails locally; runs hourly batched journal compaction, orphan/backup/log pruning, and expired-token cleanup; dispatches queued email and Web Push alerts. |
+| **Stellarr Init** | `init/` (`stellarr-init`) | Rust PID 1 supervisor starting services in dependency order (`media` → `api`), probing health, backing off crashed children (`1–30 s`), reaping orphans, and shutting down in reverse order. |
+| **Stellarr Media** | `media/` (`stellarr-media`) | Rust `str0m` SFU (`:49000` UDP + passive TCP, ICE-lite, DTLS-SRTP) forwarding RTP packets with per-leg RTCP feedback and GoogCC downlink adaptation—no transcoding or mixing. |
+| **coturn** | `/etc/turnserver.conf` | Optional STUN server and HMAC-authenticated TURN relay forwarding relayed UDP packets to `stellarr-media`. |
+
+---
 
 ## End-to-end encrypted direct messages and calls
 
 Direct 1:1 conversations support optional end-to-end encryption (`api/crates/server/src/encryption/`, `web/src/stellarr/lib/e2ee/`):
 
-- **Account and device keys**: Each user generates an X25519 account key pair and an X25519 device key pair per browser sign-in session (up to 10 active devices per account). Device lifecycles bind directly to `UserSessions`: signing out, revoking a session, changing a password, or disabling an account automatically deactivates the corresponding encryption device.
-- **PIN-protected key backup**: The account private key is sealed locally in IndexedDB with a non-extractable WebCrypto AES-256-GCM wrapping key and backed up to the server encrypted under a 6-digit PIN (`PBKDF2-HMAC-SHA256` with 600,000 iterations, expanded via `HKDF-SHA256` into a separate server `authKey` verifier and client-only `encKey`). Ten consecutive wrong PIN attempts permanently delete the server backup. Users can replace their PIN or reset their account key after completing a fresh security proof.
-- **Mutual activation and epochs**: Enabling encryption in a conversation requires a request from one participant and confirmation from the other (`off` → `requested` → `on`). Messages are encrypted under sequential 256-bit conversation epoch keys (`EncryptionEpochs`). Every new epoch key must be wrapped (ephemeral X25519 + HKDF-SHA256 + AES-256-GCM bound to `conversationId|epochId|recipientKeyId`) for both participants' account keys and every active device key of both participants. Adding or revoking a device or resetting an account key triggers automatic epoch rotation on the next message or call.
-- **Encrypted messages and files**: Message payloads (`v: 1`, containing message text and attachment metadata, per-file AES-256-GCM keys, IVs, dimensions, durations, previews, and blurred placeholders) are sealed with AES-256-GCM using `conversationId|epochId|authorId` as associated data. Attached files, video posters, and image previews are each encrypted in the browser with an independent random AES-256-GCM key before uploading to `POST /api/uploads/encrypted`.
-- **1:1 voice and video calls**: Calls in an encrypted conversation encrypt every Opus, VP8, and VP9 media frame end-to-end in a WebRTC Encoded Transform worker using keys derived from the conversation's active epoch key. `stellarr-media` forwards the encrypted RTP payloads without modification or access to the media keys; see [End-to-end encrypted calls](./stellarr-media.md#end-to-end-encrypted-calls).
-- **Safety codes**: Participants can verify each other's identity by comparing a 60-digit safety code (12 groups of 5 digits, computed from the SHA-256 digest of `stellarr/e2ee/safety/v1` and both users' sorted UUIDs and account public keys).
+```mermaid
+flowchart LR
+    PIN["6-digit PIN (PBKDF2 600k + HKDF)"] -->|"Wraps backup"| AccountKey["X25519 Account Key Pair"]
+    Session["UserSession (up to 10/account)"] -->|"Binds lifecycle"| DeviceKey["X25519 Device Key Pair"]
+    Epoch["256-bit Conversation Epoch Key"] -->|"X25519 + HKDF + AES-GCM"| AccountKey
+    Epoch -->|"Wrapped per active device"| DeviceKey
+    Epoch -->|"AES-256-GCM (AAD: conv|epoch|author)"| DM["DM Text & File Keys"]
+    Epoch -->|"HKDF -> SFrame AES-256-GCM"| Call["Opus / VP8 / VP9 Frames"]
+```
 
-## Account security
+- **Device binding:** Sign-out, session revocation, password change, or account disablement immediately deactivates the session's encryption device; any device/key change triggers automatic epoch rotation on the next message or call.
+- **PIN backup protection:** `PBKDF2-HMAC-SHA256` (`600,000` iterations) expands via `HKDF-SHA256` into a server `authKey` verifier and client-only `encKey`; `10` consecutive wrong PIN tries permanently delete the server backup.
+- **Mutual activation & safety codes:** Transitions `off` → `requested` → `on` only when both peers confirm. Participants verify identities via a 60-digit safety code (`SHA-256` over `stellarr/e2ee/safety/v1`, sorted user UUIDs, and account public keys).
+- **1:1 media encryption:** Calls seal Opus, VP8, and VP9 frames in a WebRTC Encoded Transform worker (`SFrame`) while `stellarr-media` forwards opaque ciphertext; see [End-to-end encrypted calls](./stellarr-media.md#end-to-end-encrypted-calls).
 
-- **Unified authentication flow**: Password sign-in, passkey sign-in, invite registration, OIDC single sign-on, and desktop browser handoff resolve through `auth/flow.rs`, issuing either a revocable session or a short-lived browser-bound challenge when a second factor or enrollment is required.
-- **Accounts without a password and sign-in protection**: When an operator enables account creation for an OIDC provider in Cockpit, invited users can register through that provider without setting a local password. `auth/ways_in.rs` prevents users or operators from unlinking or deleting an account's last remaining sign-in method (password, passkey, or active OIDC link).
-- **Session properties**: Sessions track their sign-in origin, latest second-factor timestamp, security version, and absolute expiry. Unchecking **Keep me signed in** issues a session cookie capped at 12 hours server-side.
-- **Second factors and sealed values (`seal.rs`)**: Supports TOTP apps, email codes, passkeys/hardware security keys (`api/crates/webauthn`, validated against `STELLARR_PUBLIC_URL` / `STELLARR_DOMAIN`), and single-use recovery codes. One 32-byte master key (`/data/stellarr/keys/master.key`, mode `0600`) derives per-purpose keys via `HKDF-SHA256` (`"stellarr sealed values v1"`) and seals session tickets, OIDC state, TOTP seeds, email codes, and Cockpit `InstanceSecrets` with `AES-256-GCM` (binding associated data and optional expiry timestamps inside the authenticated tag). Recovery codes and trusted-device tokens are stored only as SHA-256 digests.
-- **High-risk actions and live revocation**: Sensitive account, server, and Cockpit mutations require a second step completed within the last 5 minutes (or a fresh OIDC re-authentication with `auth_time` within 5 minutes for passwordless accounts; trusted devices never qualify). The `realtime-sessions` worker (`realtime/watcher.rs`) polls revocations every second and immediately terminates matching hub connections and media sessions. See [Account security](./admin/account-security.md).
+## Account security and `master.key` sealing
+
+- **Unified auth ceremonies (`auth/flow.rs`, `auth/ceremony.rs`):** Password login, discoverable passkeys, invite sign-ups, OIDC SSO, and desktop handoffs funnel through a single flow issuing either a revocable session (`UserSessions`) or a short-lived browser-bound 2FA/enrollment challenge.
+- **Passwordless guard (`auth/ways_in.rs`):** Invited users can create passwordless accounts through opted-in OIDC providers; `ways_in` blocks removing an account's last remaining login method (`409 last-way-in`).
+- **Master key derivation (`seal.rs`):** One `0600` 32-byte key at `/data/stellarr/keys/master.key` derives domain-separated subkeys via `HKDF-SHA256` (`"stellarr sealed values v1"`) to seal session cookies, OIDC state, TOTP seeds, mailed OTPs, and Cockpit `InstanceSecrets` using `AES-256-GCM` with authenticated AAD and embedded expiry. Recovery codes and trusted-device tokens store `SHA-256` digests only.
+- **5-minute fresh step & 1-second revocation:** High-risk account, primary-server, and Cockpit writes require a real second factor within `5 minutes` (trusted devices excluded). `realtime-sessions` (`realtime/watcher.rs`) polls SQLite every second to sever revoked WebSockets and SFU sessions. See [Account security](./admin/account-security.md).
+
+---
 
 ## Server authorization
 
-HTTP handlers and hub methods evaluate permissions through `permissions::authorization` directly against SQLite on every call, without caching, using `Scope` (server, section, or channel). Missing resources, disabled accounts, and missing memberships always deny access.
+Every HTTP route and hub method evaluates permissions directly against SQLite (`permissions::authorization`) without caching. Missing resources, disabled accounts, and non-members always deny access.
 
-- **Roles**: Every member holds the server's base role (the last system role) without storing it, and any number of other roles in `ServerMemberRoles`. `ServerMembers.RoleId` is the member's top role, the highest one they hold or else the base role; it alone decides rank. The owner role is held by the owner only. Server-wide permissions are the base role's united with every held role's; the owner holds everything. Removing a role from a member, or deleting it, also lifts its overrides' denies for them, as on Discord.
-- **Permissions** (`permissions/privileges.rs`, wire names in `ServerAccess`): eight manage the server (`manageServer`, `manageChannels`, `manageRoles`, `manageMembers`, `manageMessages`, `moderateMembers`, `manageBans`, `viewAuditLog`), `administrator` stands for all of them, `viewChannel` decides whether a channel exists for somebody at all (see [Private channels](#private-channels)), and five are what an ordinary member does. Each ordinary one has exactly one admission point, evaluated at the channel so overrides apply, and a refusal is a localized 403 problem whose `permission` names it:
+### Roles and the 15 permission bits
 
-  | Permission | Admitted in | Needs nothing |
-  | --- | --- | --- |
-  | `sendMessages` | `POST /api/channels/{id}/messages`, replies included (a retry of a send that went through is answered first) | Editing or deleting one's own message |
-  | `attachFiles` | The same post when it carries any attachment, a voice message included | |
-  | `addReactions` | `PUT /api/messages/{id}/reactions/{emoji}` | Taking one's own reaction back |
-  | `connect` | `JoinVoice`, which gives the seat that admits a connection to media (see [Voice seats, `viewChannel` and `connect`](./rtc-protocol.md#voice-seats-viewchannel-and-connect)) | A connection already seated in the room, as one a moderator moved there is |
-  | `createInvite` | `POST /api/admin/invites`: at the channel for a channel invite, server-wide otherwise | Listing, revoking and sending invites stay with `manageServer` |
+- **Role model:** Every member implicitly holds the server's **base role** (`Member`) plus any assigned roles in `ServerMemberRoles`. `ServerMembers.RoleId` tracks their highest-ranked role (lower position numbers outrank higher ones; equal positions do not outrank each other). The **Owner** role is held exclusively by the server owner and bypasses all overrides, as does server-wide `administrator` (`administrator` is rejected with `400` in channel/section overrides, and remains subject to role rank hierarchy).
+- **Permission bits (`permissions/privileges.rs`):**
+  - **Superuser (1):** `administrator`
+  - **Visibility (1):** `viewChannel` (see [Private channels](#private-channels))
+  - **Management (8):** `manageServer`, `manageChannels`, `manageRoles`, `manageMembers`, `manageMessages`, `moderateMembers`, `manageBans`, `viewAuditLog`
+  - **Ordinary member actions (5):** Default on a new server's base role; each has a single admission point returning a localized `403` naming `permission`:
 
-  A new server's base role gets the default member permissions (view, send, attach, react, connect); the owner's stores all permissions.
-- **Evaluation**: `permissions/evaluator.rs` is the one pure function behind every decision; `permissions/snapshot.rs` loads its inputs for one server (roles, the members asked for with what they hold, and the overrides of the sections and channels asked for). For a channel in a section the section level applies first and the channel level second; a channel outside a section has only its own level. Within a level, as on Discord: the base role's override (deny, then allow), then the overrides of the held roles together (the union of their denies is removed, then the union of their allows added, so one role's allow beats another's deny), then the member's own override from `MemberPermissionOverrides` (deny, then allow). Within a single override a bit both allowed and denied stays denied. At a channel, whoever ends up without `viewChannel` holds nothing at all; that rule lives in the evaluator alone, and a section is not held to it. The owner skips every override, and so does anybody whose server-wide permissions include `administrator`: they hold everything everywhere. `administrator` is server-wide only: both override routes refuse it with a 400, and the evaluator ignores it in a stored mask. Rank is not a permission, so an administrator still cannot act on anyone at or above their top role, nor on the owner.
-- **Role hierarchy**: Lower role position values represent higher rank; equal positions do not outrank one another. A member ranks by their top role. The base role ranks below every other role: a new role is placed just above it (`permissions/roles.rs`). The owner role's base permissions are immutable, and nobody, the owner included, edits the overrides of their own role.
-- **Delegation checks**: Managing roles, assigning roles, setting overrides, reparenting channels, and moderating members/voice all enforce both rank hierarchy and possession of every affected permission bit. "Holds" means the actor's server-wide permissions from all their roles, and at a scope their effective permissions there:
+| Permission | Enforced at | Permitted without the bit |
+| --- | --- | --- |
+| `sendMessages` | `POST /api/channels/{id}/messages` (including replies; idempotent retries of an already-stored message return first) | Editing or deleting your own message |
+| `attachFiles` | `POST /api/channels/{id}/messages` carrying attachments or a voice message | — |
+| `addReactions` | `PUT /api/messages/{id}/reactions/{emoji}` | Removing your own reaction |
+| `connect` | `JoinVoice` seat allocation ([Voice seats](./rtc-protocol.md#voice-seats-viewchannel-and-connect)) | Remaining in a room after a moderator moved you there |
+| `createInvite` | `POST /api/admin/invites` (scoped to channel for channel invites, server-wide otherwise) | Listing, revoking, or emailing invites (`manageServer`) |
 
-| Operation | Authorization rules |
+### Pure override evaluator (`permissions/evaluator.rs`)
+
+`permissions/snapshot.rs` loads server roles, member holdings, and relevant section/channel overrides into one pure evaluation pass:
+
+1. Unite the base role with all roles held by the member.
+2. Apply **section** overrides (if any), then **channel** overrides. Within each level:
+   - Base role override (`deny`, then `allow`)
+   - Held role overrides combined (union of `deny` cleared first, then union of `allow` added—so an `allow` on one held role beats a `deny` on another)
+   - Member override in `MemberPermissionOverrides` (`deny`, then `allow`; within a single mask, `deny` wins if both bits are set)
+3. At a channel, if `viewChannel` is absent after step 2, clear the entire effective mask to `0`.
+
+### Delegation and hierarchy rules
+
+All role, override, channel-move, and moderation writes enforce **both** strict rank hierarchy and actor possession of every affected permission bit, committing structured audit diffs (`permissions/audit.rs`) in the same SQLite transaction:
+
+| Operation | Authorization & rank requirements |
 | --- | --- |
-| Create role | Base `manageRoles`; actor must hold every granted bit, so only an administrator grants `administrator` (a new role ranks below the other roles and above the base role). |
-| Reorder roles | `PUT /api/admin/roles/order` with every role between the owner role and the base role, highest first, once each (else 400). Base `manageRoles`; only roles the actor's top role outranks may move, and every other role keeps its place and position, so nothing reaches the actor's top role and ties above it stay ties. Moved roles are numbered after the kept ones, the base role stays last, every top role is worked out again, and `role.reorder` goes to the audit log. |
-| Edit or delete role | Base `manageRoles`; top role must outrank the role; must hold both existing and proposed bits (including live scoped grants). Deletion also checks the fallback role, and each holder's top role moves to the next role they hold. |
-| Give or take roles | Base `manageMembers`; must not be the member, must outrank the member and every role given or taken, and must hold everything each of those roles could grant, override allows included. `PATCH /members/{id}/role` sets exactly one role (the base role's id clears them) and also checks the member's current top role; `PUT /members/{id}/roles` sets the whole list and checks what changes. The owner role is never given or taken this way. |
-| Set or clear role override | Base and scoped `manageRoles`; must outrank the role and hold all bits in both old and new allow/deny masks (including removing a deny). |
-| Set or clear member override | Same as a role override, with the member in place of the role: must outrank the member (never oneself), and nobody sets one on the owner. Routes: `/api/admin/{channels,sections}/{id}/permissions/members[/{userId}]`, beside the role routes. |
-| Move channel across sections | Manage source channel and destination section/server; for every role, and every member with a section override, whose section overrides differ and are not decided by their channel override, enforces full delegation, hierarchy, and bit checks across both contexts. |
-| Kick or ban member | Server permission + lower-ranked target; cannot target self or owner. Held roles and member overrides go with the membership. |
-| Kick or move in voice | Scoped `moderateMembers` + hierarchy; moves validate both source and destination voice channels. |
+| **Create role** | Base `manageRoles` + actor holds every granted bit (only an `administrator` can grant `administrator`). Placed directly above the base role. |
+| **Reorder roles** | `PUT /api/admin/roles/order` listing all custom roles once. Base `manageRoles`; only roles below the actor's top role may move, preserving order and ties above it. Recomputes top roles and logs `role.reorder`. |
+| **Edit or delete role** | Base `manageRoles` + outrank target role + hold all old and new bits (including scoped grants). Deleting recomputes fallback top roles. |
+| **Assign or remove roles** | Base `manageMembers` + not self + outrank target member and every added/removed role + hold every bit/override allow those roles grant (`PATCH .../role` or `PUT .../roles`). Owner role cannot be assigned here; ownership transfers clear the new owner's member overrides. |
+| **Role or member override** | Base and scoped `manageRoles` + outrank target role/member (never self or owner) + hold every bit in old and new allow/deny masks. |
+| **Move channel across sections** | Manage source channel and destination section/server + full rank and bit delegation checks for every role/member whose effective permissions change across the move. |
+| **Kick / ban / voice moderation** | Server `manageMembers`/`manageBans` (or scoped `moderateMembers` in both voice rooms) + strictly outrank target (never self or owner). |
 
-`PermissionsChanged` carries each recipient's own server-wide permissions, so a change to the base role reaches every member. A handover moves the owner role; both people keep their other roles, and the successor's member overrides are removed.
+### Schema initialization and `OneTimeSteps`
 
-**One-time data steps.** There is no migration machinery: a database that already has the schema is opened as it is, and an empty one is given `database/schema.sql` (`database/schema.rs`). A change to the data that must happen once, such as `ordinary-permissions` (a server from before the ordinary permissions gets the base role defaults, `createInvite` for every role with `manageServer`, and the new everything for the owner role) or `view-channel` (a server from before `viewChannel` gets it for its base role, and the new everything for its owner role), has its name in the `OneTimeSteps` table. A new database has no data for a step to change, so it only records that both have run; the writers of new data (`instance::starter`, the test fixtures, `scripts/seed-dev.py`) write what the steps would have, and what an administrator takes away afterwards stays away across restarts. The table lives in the database file, so a backup carries it. The CLI's schema check needs nothing, because the CLI never changes what the steps change.
+Empty databases initialize directly from `database/schema.sql` (`database/schema.rs`) without an incremental migration runner. One-off data backfills (such as `ordinary-permissions` and `view-channel`) record completion in the `OneTimeSteps` table inside `stellarr.db` so fresh databases mark them done immediately, backups carry them automatically, and permissions later revoked by an admin stay revoked across restarts.
 
-Mutations commit together with structured audit records (`permissions/audit.rs`, recording both a localized summary and structured `ChangesJson` field diffs) in a single SQLite transaction before emitting hub events. On the primary instance server, role and override changes also require a fresh second step under the active MFA policy.
+---
 
 ### Private channels
 
-A channel is private when somebody is denied `viewChannel` there; it is made so through the override editor, by denying it to the base role and allowing it to a role. A channel a member does not view does not exist for them (`permissions/visibility.rs`):
+Denying `viewChannel` on the base role and allowing it on specific roles/members makes a channel private (`permissions/visibility.rs`). To anyone without `viewChannel`, the channel behaves as if it does not exist:
 
-- **Answers**: every route and hub method that takes a channel, a message, an attachment or a section answers a non-viewer exactly as for an id that does not exist (404, a 400 where an unknown id is a validation error, `"Unknown channel."` or `"Unknown voice room."` in the hub) and returns nothing from it. Where a permission check follows, it reads what the member holds in the channel once and decides view from it; this check comes before any 403, which would say the channel is there. Integration tests in `api/crates/server/tests/api/` walk every route and hub method that names such an id.
-- **Lists**: the bootstrap carries the channels the caller sees, their read markers, the first page of the first of them and their voice rooms. A section is listed for a member who sees a channel in it, holds `manageChannels` there, or, when it has no channels, holds `viewChannel` there, so an empty section stays where everybody sees it on a server where nobody is denied view. Both reorders take exactly what the caller sees and leave the rest in their places. The server's muted channels and the invite list leave out, or unname, the channels the caller does not see, and a save keeps them.
-- **Managing** a channel starts with seeing it; a section must be listed. Voice moderation needs to see both rooms.
-- **Voice**: joining needs `viewChannel` and `connect`. Whenever roles, role/member overrides, channel sections, memberships, or server ownership change, `voice::enforce` re-evaluates seated participants and immediately evicts anyone who no longer holds both `viewChannel` and `connect` (closing their SFU session and sending `VoiceChannelKicked`). A moderator move seats a connection even without `viewChannel` or `connect`, and that seat lasts until the user leaves or until the next access mutation on the server re-runs `voice::enforce`. Typing needs `viewChannel` and `sendMessages`, so every notice evaluates the typist at the channel, on an open server too.
-- **Notifications**: a mention writes an inbox entry, and queues e-mail and push, only for those who see the message, and the dispatcher checks view again before it sends. Entries already in an inbox about a channel the member no longer sees stay there; nothing new is written.
-- **Attachments**: a message's attachment, or the picture of one of its cards, is for whoever sees a channel it is posted in; its uploader keeps it.
-- **Invites**: one to a channel the newcomer would not see, holding the base role alone, lands them in the server without naming the channel, in the preview and in the answer to joining; the welcome notice goes to the first text channel they will see. A member is told the channel when they see it.
-- **Cockpit** is the operator's panel and keeps seeing everything.
+| Surface | Behavior for non-viewers |
+| --- | --- |
+| **HTTP routes & Hub calls** | Returns `404` (or `400` where an unknown ID is invalid, `"Unknown channel."` / `"Unknown voice room."` on the hub) **before** any `403` check. |
+| **Bootstrap, lists & reorders** | Omitted from `/api/bootstrap`, muted-channel lists, and invite tables. Sections appear if the caller sees at least one child channel, holds `manageChannels` there, or (when empty) holds `viewChannel`. Reorder calls move visible items while keeping hidden items in place. |
+| **Realtime fan-out** | Open channels broadcast to `server:{id}` with zero extra queries. Restricted channels snapshot viewers and publish only to each viewer's `server:{id}:user:{id}` group. Access changes diff viewer sets before/after and emit `ChannelAccessChanged` (`{ serverId }`) to affected clients. |
+| **Voice enforcement (`voice::enforce`)** | Any role, override, section, channel, membership, or ownership mutation re-checks seated callers and immediately evicts anyone missing `viewChannel` or `connect` (closing SFU media + sending `VoiceChannelKicked`). |
+| **Mentions, uploads & invites** | Mentions notify viewers only (re-checked before email/push send); attachments stay restricted to channel viewers and their uploader; channel invites joined by non-viewers omit the private channel name and land in the first visible text channel. |
+| **Cockpit** | Instance owner panel retains full visibility across all channels. |
 
-**Realtime.** No group stands for who may see something. An event about a channel (created, edited and deleted messages, reactions, embeds, typing, voice occupancy) asks when it is sent whether anybody is denied view there: the base role's mask and the deny masks of the role and member overrides at the channel and its section, in one query. When nobody is, it goes to the server's group, as it always has, with nothing evaluated. Otherwise one permission snapshot of every member at the channel says who views it, and the event goes to each viewer's `server:{id}:user:{id}` group, which a connection joins beside the server's and which leaves out the account's tabs on other servers. Nothing is remembered, so whoever loses view stops receiving with the next event. `ChannelLayoutChanged` and `SectionOrderChanged` carry each recipient the channels and sections they see. A change that may show or hide a channel, of roles, role permissions, overrides, a channel's section or the owner, made on the server or in Cockpit, reads what everybody sees before and after it and sends `ChannelAccessChanged` (`{ serverId }`) to those whose view it altered; their client fetches its own channels again from the bootstrap.
+> [!NOTE]
+> **Known side-channel boundaries:** Audit logs name private channels to readers with `viewAuditLog`; server-wide unique channel names, non-empty section delete checks, and duplicate `clientMessageId` checks still return `409`; global channel position numbers contain gaps where private channels sit; and permission evaluation adds a small timing delta over an unknown UUID.
 
-**What a non-viewer can still learn.** The audit log names private channels and sections to whoever may read it. Channel names are unique on a server, so creating or renaming a channel to a private one's name is refused with 409; deleting the last channel of a kind counts private ones, and deleting a section whose only channels are private is refused with 409 as for any section with channels. A send whose `clientMessageId` is already a message's, anywhere, is a 409. A layout event says, by arriving, that something was reordered. Channels and sections carry their positions, numbered across the whole server, so the gaps say how many private ones there are and where. A private channel takes an evaluation to be answered for and an unknown id does not, so the time an answer takes can tell them apart. Inbox entries written before somebody lost view keep their text.
+---
 
 ## Single-container deployment
 
@@ -134,65 +157,63 @@ A channel is private when somebody is denied `viewChannel` there; it is made so 
 
 | Path | Contents |
 | --- | --- |
-| `db/stellarr.db` | Primary SQLite database in WAL mode (`-wal`, `-shm`), FTS5 search indexes, and `MessageChanges` journal |
-| `files/` | Uploaded attachments, previews, posters, avatars, wallpapers, custom emojis, soundboard clips, and `encrypted/` DM blobs |
-| `incoming/` | Temporary upload staging directory, emptied automatically on API startup |
-| `keys/master.key` | `0600` 32-byte master key used by `seal.rs` (`HKDF-SHA256` + `AES-256-GCM`) for cookies, TOTP seeds, and Cockpit secrets |
-| `secrets/` | Auto-generated internal bearer secrets (`turn-shared-secret`, `media-control-secret`) |
-| `tls/` | Self-signed or mounted CA-signed `fullchain.pem` and `privkey.pem` |
-| `releases/` | Optional desktop and Android client release artifacts served by `releases/` |
-| `backups/` | Completed `.db` snapshots and full `.zip` backup archives (`automatic-backup.json` sits beside it) |
-| `restore/` | Staged `staged.zip` archive, `last-restore.json` status, and `previous-<timestamp>/` rollback directories |
-| `instance-id` | Auto-generated UUID persisted when `STELLARR_INSTANCE_ID` is unset |
-
-`stellarr-init` supervises `media`, `api`, `nginx`, and `tls-maintenance` behind `/data/stellarr`. It also supervises `turn` when the relay is enabled. See [`init/README.md`](../init/README.md) for the control socket wire protocol.
+| `db/stellarr.db` | Primary SQLite database in WAL mode (`-wal`, `-shm`), FTS5 tables, and `MessageChanges` journal |
+| `files/` | Attachments, previews, posters, avatars, private wallpapers, custom emojis, soundboard clips, and `encrypted/` DM blobs |
+| `incoming/` | Multipart upload staging folder, cleared automatically on API startup |
+| `keys/master.key` | `0600` 32-byte master key (`HKDF-SHA256` + `AES-256-GCM`) sealing cookies, TOTP seeds, and Cockpit secrets |
+| `secrets/` | Auto-generated internal bearer tokens (`media-control-secret`, `turn-shared-secret`) |
+| `tls/` | Container-managed self-signed or operator-mounted `fullchain.pem` and `privkey.pem` |
+| `releases/` | Optional desktop and mobile client release artifacts |
+| `backups/` | Online `.db` snapshots and full `.zip` archives (`automatic-backup.json` sits alongside) |
+| `restore/` | Staged `staged.zip`, `last-restore.json` status, and `previous-<timestamp>/` rollback directories |
+| `instance-id` | Persistent instance UUID generated when `STELLARR_INSTANCE_ID` is unset |
 
 ### Container services (`stellarr-init`)
 
+`stellarr-init` runs as PID 1, supervising `media`, `api`, `nginx`, `tls-maintenance`, and (when enabled) `turn` ([`init/README.md`](../init/README.md)):
+
 ```bash
 docker compose exec stellarr stellarr-init status          # state, PID, restarts, uptime
-docker compose exec stellarr stellarr-init status --json   # JSON output for scripts
-docker compose exec stellarr stellarr-init health          # exits 0 only when all critical services are ready
-docker compose exec stellarr stellarr-init restart api     # restart one service immediately
-docker compose exec stellarr stellarr-init reload nginx    # send SIGHUP to reload Nginx config and TLS cert
+docker compose exec stellarr stellarr-init status --json   # machine-readable JSON
+docker compose exec stellarr stellarr-init health          # exits 0 when all critical services are ready
+docker compose exec stellarr stellarr-init restart api     # restart a single service
+docker compose exec stellarr stellarr-init reload nginx    # send SIGHUP to reload TLS/config
 ```
 
 | State | Meaning |
 | --- | --- |
-| `waiting` | Waiting for a dependency to reach `ready` (`api` waits for `media`). |
-| `starting` | Process spawned; initial readiness probe has not yet passed. |
-| `ready` | Process running and passing readiness probes (polled every 10 s). |
-| `failing` | Missed three consecutive readiness probes (~45 s); marks container unhealthy without killing a slow process. |
-| `backoff` | Process exited; waiting before restart (exponential backoff from 1 s to 30 s). |
-| `stopping`, `stopped` | Shutting down or stopped during restart or container exit. |
-
-All service logs stream to container stdout/stderr (`docker compose logs`), including `stellarr-init:` state changes. Routine health probes are suppressed from API logs, and Nginx disables access logging because API requests are logged under the target `Stellarr.Api.Requests`.
+| `waiting` | Waiting for an upstream dependency (`api` waits for `media` to reach `ready`). |
+| `starting` | Process spawned; initial readiness probe (`500 ms` interval) has not yet passed. |
+| `ready` | Passing steady-state liveness probes (every `10 s`). |
+| `failing` | Missed 3 consecutive probes (~`45 s`); marks container `unhealthy` **without** killing the live process. |
+| `backoff` | Exited; waiting to restart with exponential backoff (`1 s` to `30 s`, reset after `60 s` uptime). |
+| `stopping` / `stopped` | Ordered reverse-dependency shutdown (`60 s` supervisor deadline; `75 s` container stop grace). |
 
 ### Nginx routing and cache policy
 
-Nginx terminates TLS (or accepts plain HTTP from a trusted reverse proxy sending `X-Forwarded-Proto: https`), proxies `/api/`, `/assets/`, `/health`, `/hubs/`, and `/.well-known/stellarr/client` to the API (`127.0.0.1:5000`), and serves `/stellarr-instance.js` plus static files from `/opt/stellarr/web`:
+Nginx listens on `:443` (TLS) and `:80` (redirecting to HTTPS unless a listed `STELLARR_TRUSTED_PROXIES` peer sends `X-Forwarded-Proto: https`):
 
-- **Static asset directories** (`/audio/`, `/bergamot-models/`, `/codecs/`, `/fonts/`, `/identity/`, `/mascot/`, `/sounds/`, `/static/`) and any path with a file extension in its final segment return a plain `404` when missing, never an HTML fallback.
-- **Cockpit routes** (`/cockpit` and `/cockpit/*`) serve `/opt/stellarr/web/cockpit/index.html`.
-- **Web client routes** (`/`, `/login`, `/register`, `/setup`, `/forgot-password`, `/reset-password`, `/confirm-email`, `/link-account`, `/invite/<code>`, matching `web/src/stellarr/routes.tsx` and verified by `web/documents.test.ts`) serve `/opt/stellarr/web/index.html` with HTTP `200`.
-- **Unknown paths** return `/opt/stellarr/web/index.html` with HTTP `404` so the web client renders its not-found page while HTTP monitors still observe status `404`.
-- **Caching**: Content-hashed bundles under `/static/` and fonts under `/fonts/` are served with `Cache-Control: public, max-age=31536000, immutable` and `gzip_static on`. `/stellarr-instance.js` is served with `public, max-age=3600, must-revalidate`. All other files under `/opt/stellarr/web/` (`index.html`, `cockpit/index.html`, `/release.json`, `/stellarr-worker.js`, audio worklets, WASM binaries, translation models, and sounds) use `Cache-Control: no-cache` so browsers always revalidate stable URLs across releases.
+| Path pattern | Target | Cache / status policy |
+| --- | --- | --- |
+| `/api/`, `/assets/`, `/health`, `/.well-known/stellarr/` | `http://127.0.0.1:5000` | Upstream headers (`128m` max body) |
+| `/hubs/` | `http://127.0.0.1:5000` (WebSocket) | `Upgrade` / `Connection` forwarded (`75s` read timeout) |
+| `/static/`, `/fonts/`, `/typefaces/` | `/opt/stellarr/web` (`gzip_static on`) | `public, max-age=31536000, immutable` on `200`/`206`/`304`; missing files return plain `404` |
+| `/stellarr-instance.js` | `/run/stellarr/stellarr-instance.js` | `public, max-age=3600, must-revalidate` |
+| `/audio/`, `/bergamot-models/`, `/codecs/`, `/identity/`, `/mascot/`, `/pwa/`, `/sounds/`, or `*.ext` | `/opt/stellarr/web` | `no-cache`; missing files always return plain `404` (never HTML) |
+| `/pwa/share` (when Service Worker is inactive) | `303 /?share=error` | Redirects safely into the web client |
+| `/cockpit`, `/cockpit/*` | `/opt/stellarr/web/cockpit/index.html` | `no-cache`, HTTP `200` |
+| Web client routes (`/`, `/login`, `/register`, `/setup`, `/forgot-password`, `/reset-password`, `/confirm-email`, `/link-account`, `/invite/*`) | `/opt/stellarr/web/index.html` | `no-cache`, HTTP `200` (enforced against `routes.tsx` by `web/documents.test.ts`) |
+| Any other unmatched path | `/opt/stellarr/web/index.html` | `no-cache`, HTTP `404` (renders themed not-found UI while monitors see `404`) |
+
+---
 
 ## Architectural invariants and trade-offs
 
-- **Single container, single writer on `/data/stellarr`**: SQLite runs in WAL mode (`db/stellarr.db`) alongside an in-process backup lock (`BackupJobs`) and local filesystem object storage (`files/`). Never mount `/data/stellarr` across multiple running API containers concurrently; horizontal scaling is intentionally traded away in favor of zero external service dependencies (no Postgres, Redis, or external SFU) and single-folder backup/restore.
-- **No permission or session caching on the authorization path**: `permissions::authorization` evaluates membership, role hierarchy, and section/channel override masks directly against SQLite on every HTTP request and hub invocation. Role changes, permission revocations, kicks, bans, and session revocations (the `realtime-sessions` worker) take effect immediately without cache-invalidation windows.
-- **Deleting a server or a channel deletes what was written in it, in the same statement**: A channel has no foreign key to its server and a message none to its channel, and an existing SQLite table cannot be given one, so triggers (`database/schema.sql`) cascade instead, whichever code issues the delete: a server takes its channels, and a channel takes its messages, with their attachment links, reactions, link cards, pins, catalogue and full-text rows, and its message journal. The uploads those messages, the server icon and soundboard clips used are then unreferenced, and the maintenance sweep deletes them with their files once the orphan retention has passed, while automatic cleanup is on; an emoji's image is queued for deletion when its row goes. Mention notifications stay in their recipients' inboxes without the channel, and channel permission overrides stay until their server goes. Neither rewrites existing backups, nor the freed database pages and full-text segments that still hold deleted text until SQLite reuses or merges them.
-- **Static multi-page build with strict app isolation and up-front gzip budget**:
-  - `web/` compiles both the web client (`index.html`) and Cockpit (`cockpit/index.html`) once during the image build into `BUILD_DIRECTORY = "static"` (never Vite's default `assets/`, because Nginx proxies `/assets/` to the API for user attachment downloads).
-  - `web/bundleReport.ts` fails the build if the static import closure and CSS of `index.html` exceed `UP_FRONT_BUDGET_GZIP` (`259,000` gzipped bytes); the signed-in application shell, realtime WebSocket client, WebRTC/voice, custom theme fonts, BetterDiscord converter, and non-selected language catalogs remain behind dynamic `import()` boundaries so `/login`, `/setup`, and `/invite/<code>` stay light on first load.
-  - `web/release.ts` computes a 20-character SHA-256 release ID over all emitted files and writes it to `/release.json` and `<meta name="stellarr-release">` in `index.html` (never inside a JS chunk, which would alter the chunk's own content hash).
-  - Adding a top-level route in `web/src/stellarr/routes.tsx` requires updating the matching route rule in `infra/nginx.conf` (enforced by `web/documents.test.ts`).
-  - An ESLint boundary rule (`web/eslint.config.mjs`) forbids imports between `src/stellarr/` and `src/cockpit/`.
-- **Full DOM retention with CSS containment in the chat transcript**: Loaded transcript messages remain in the DOM without windowing/virtualization or `content-visibility: auto` (which caused multi-second offscreen layout stalls and inaccurate scroll jumps in [`web/bench/transcript/`](../web/bench/README.md)). Instead, `.transcript-inner > [data-row-id]` applies `contain: layout style` (omitting `paint` so the floating action toolbar can overhang its row) paired with structural memoization in `createTranscriptPresenter`, preserving native browser find-in-page (`Ctrl+F`) and full accessibility-tree inspection.
-- **Liveness probe failures do not restart running processes**: In `stellarr-init`, a service that misses three consecutive liveness probes transitions to `failing` (marking the container `unhealthy`) but is not killed. Automatically restarting a slow process under host CPU or disk contention would drop in-flight requests and trigger cascading restart loops.
-- **Dedicated `sendonly` transceivers for SFU publishing**: Browser clients must publish media tracks via `addTransceiver(track, { direction: "sendonly", streams: [stream] })` and never via `addTrack`, which browsers can attach to a server-created receiving m-line that `stellarr-media` answers as `recvonly` or `inactive`.
-- **Automated contract guards (Docs-as-Code)**:
-  - `infra/tests/setting-names.test.sh`: Verifies that every `STELLARR_*` variable read by the API, container scripts (`infra/{entrypoint,settings,tls-maintenance}.sh`), or `docker-compose.yml` matches `.env.example` and the tables in [`docs/install/configuration.md`](./install/configuration.md) (and ensures `.env.example` contains only commented-out `STELLARR_*` lines so the installer can safely append it to `.env`).
-  - `npm run tokens:check -w @stellarr/ui`: Verifies that every `--ui-*` CSS custom property read by `@stellarr/ui` is defined by consuming apps and documented in [`packages/stellarr-ui/README.md`](../packages/stellarr-ui/README.md).
-  - `web/documents.test.ts` and `web/src/stellarr/lib/artifacts.test.ts`: Verify route parity between `routes.tsx`, `infra/nginx.conf`, and `infra/entrypoint.sh`, and the installed npm runtime files against the hashes in `artifacts/manifest.json`.
+1. **Single container, single writer on `/data/stellarr`:** SQLite WAL (`db/stellarr.db`), backup locks (`BackupJobs`), and local object storage assume exclusive ownership. Horizontal multi-container scaling is traded away for ~35 MiB idle RAM, zero external services, and single-directory backups.
+2. **Uncached SQLite authorization:** Evaluating permissions and sessions directly against SQLite eliminates stale-permission windows after kicks, bans, role edits, or session revocations.
+3. **Trigger-driven relational cascades:** Deleting a server or channel cascades synchronously via SQLite triggers (`database/schema.sql`) across channels, messages, attachment links, reactions, embeds, pins, FTS5 rows, and `MessageChanges`, leaving unreferenced blobs for the hourly orphan sweep.
+4. **Strict app isolation & `259,000`-byte gzip entry budget:** Bundled chunks live under `static/` (leaving `/assets/` for API downloads), `/release.json` hashes all emitted files outside JS chunks, and heavy signed-in subsystems stay behind dynamic `import()`.
+5. **Full DOM transcript with CSS containment (`contain: layout style`):** Avoids scroll-jump jitter from virtualization or `content-visibility: auto` while keeping native `Ctrl+F` search, full accessibility tree access, and overhanging hover toolbars fast up to 10,000+ messages ([benchmarks](../web/bench/README.md)).
+6. **Non-destructive liveness probes:** `stellarr-init` marks slow services `failing` without killing them so transient host CPU/IO contention cannot drop in-flight requests or cause restart storms.
+7. **Dedicated `sendonly` WebRTC transceivers:** Clients publish tracks exclusively via `addTransceiver(track, { direction: "sendonly", streams: [stream] })`—never `addTrack`, which browsers can bind to `recvonly` server m-lines.
+8. **Automated Docs-as-Code contracts:** CI enforces parity across `STELLARR_*` variables (`setting-names.test.sh`), `--ui-*` CSS tokens (`tokens:check`), Nginx/client routes and WASM SHA-256 digests (`documents.test.ts`, `artifacts.test.ts`), and VitePress links (`docs/` test & build).
