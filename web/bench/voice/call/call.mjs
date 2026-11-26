@@ -150,6 +150,20 @@ const voiceSettings = (who) =>
     return key ? JSON.parse(localStorage.getItem(key)) : "defaults (nothing stored)";
   })()`);
 
+async function chooseFilter(who, filter, origin) {
+  if (!["speex", "rnnoise", "gtcrn"].includes(filter)) throw new Error("Unknown test filter: " + filter);
+  const page = people[who].page;
+  const { body } = await api(page, "GET", "/api/session");
+  const id = JSON.parse(body).user.id;
+  const key = "stellarr.voice.settings.user." + encodeURIComponent(id);
+  await page.eval(`localStorage.setItem(${JSON.stringify(key)}, JSON.stringify({
+    ...JSON.parse(localStorage.getItem(${JSON.stringify(key)}) || "{}"),
+    version: 1, noiseSuppression: ${JSON.stringify(filter)}
+  }))`);
+  await page.goto(origin + "/");
+  await page.waitFor('document.querySelector("button.channel-main")');
+}
+
 const joinLounge = (who) =>
   people[who].page.eval(`(() => {
     const button = [...document.querySelectorAll("button.channel-main")]
@@ -263,12 +277,19 @@ try {
   await signIn(options.origin, "guest", { inviteCode: code });
 
   for (const who of Object.keys(people)) {
+    if (process.env.STELLARR_CALL_FILTER) await chooseFilter(who, process.env.STELLARR_CALL_FILTER, options.origin);
     result[who] = { settings: await voiceSettings(who) };
     if (!(await joinLounge(who))) throw new Error(`${who}: no voice channel to join`);
     await sleep(3000);
   }
   await sleep(4000);
 
+  if (process.env.STELLARR_CALL_FILTER) {
+    const path = "/audio/" + process.env.STELLARR_CALL_FILTER + ".wasm";
+    for (const { page } of Object.values(people)) {
+      await page.waitFor(`performance.getEntriesByName(location.origin + ${JSON.stringify(path)}).length > 0`);
+    }
+  }
   const before = { owner: await rtp("owner"), guest: await rtp("guest") };
   const [ownerHeard, guestHeard] = await Promise.all([watch("owner"), watch("guest")]);
   const after = { owner: await rtp("owner"), guest: await rtp("guest") };
