@@ -195,15 +195,20 @@ export function VoiceMicrophoneSection({
   );
 }
 
-/** Whether the microphone works: the test, its level meter and its verdict. */
-export function MicrophoneCheck({ mic }: { mic: MicTest }) {
+/**
+ * Whether the microphone works: the test, its level meter and its verdict.
+ * In push to talk speech goes out only while the key is held, so the verdict
+ * says that rather than that it would be sent.
+ */
+export function MicrophoneCheck({ mic, pushToTalk = false }: { mic: MicTest; pushToTalk?: boolean }) {
   const { t } = useLanguage();
   const level = Math.round(mic.level * 100);
 
   let status = "";
   if (mic.error === null) {
     if (!mic.running) status = t("voice.testOff");
-    else status = mic.speaking ? t("voice.hearYou") : t("voice.silence");
+    else if (!mic.speaking) status = t("voice.silence");
+    else status = pushToTalk ? t("voice.hearYouPushToTalk") : t("voice.hearYou");
   }
 
   return (
