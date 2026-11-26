@@ -4,7 +4,7 @@ import type { ChannelMenuActions } from "@/components/shell/rail/ChannelMenu";
 import { Rail } from "@/components/shell/rail/Rail";
 import type { ChannelThreadVM, TextChannelVM, VoiceChannelVM } from "@/components/view-models";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
-import { isFull, type ActivitySummary } from "@/lib/activities/api";
+import type { ActivitySummary } from "@/lib/activities/api";
 import {
   useAccount,
   useActivities,
@@ -35,32 +35,16 @@ function unreadCounter() {
 }
 
 /**
- * Puts what runs on each voice channel on its row, handing back the same
- * object while neither the activity nor your place in it moved, so one
- * channel's activity renders that channel alone.
+ * Puts what runs on each voice channel on it, for the marks after the names
+ * of the people inside, handing back the same object while the activity did
+ * not change, so one channel's activity renders that channel alone.
  */
 function activityAttacher() {
-  const shown = new WeakMap<
-    VoiceChannelVM,
-    { summary: ActivitySummary; inside: boolean; joining: boolean; failure: string | null; value: VoiceChannelVM }
-  >();
-  return (
-    channel: VoiceChannelVM,
-    summary: ActivitySummary | undefined,
-    inside: boolean,
-    joining: boolean,
-    failure: string | null,
-  ) => {
+  const shown = new WeakMap<VoiceChannelVM, { summary: ActivitySummary; value: VoiceChannelVM }>();
+  return (channel: VoiceChannelVM, summary: ActivitySummary | undefined) => {
     if (summary === undefined) return channel;
     const before = shown.get(channel);
-    if (
-      before?.summary === summary &&
-      before.inside === inside &&
-      before.joining === joining &&
-      before.failure === failure
-    ) {
-      return before.value;
-    }
+    if (before?.summary === summary) return before.value;
     const value: VoiceChannelVM = {
       ...channel,
       activity: {
@@ -68,14 +52,9 @@ function activityAttacher() {
         name: summary.name,
         icon: summary.icon,
         participants: summary.participants,
-        seats: summary.seats,
-        inside,
-        joining,
-        full: !inside && isFull(summary),
-        failure,
       },
     };
-    shown.set(channel, { summary, inside, joining, failure, value });
+    shown.set(channel, { summary, value });
     return value;
   };
 }
@@ -129,20 +108,12 @@ export const RailContainer = memo(function RailContainer() {
   // What runs on each channel, for everyone who sees the channel, sitting in
   // it or not.
   const [withActivity] = useState(activityAttacher);
-  const { live, voice: mine, joining, joinFailure, join } = activities;
+  const { live } = activities;
   const voices = useMemo<VoiceChannelVM[]>(
-    () =>
-      voiceChannels.map((channel) =>
-        withActivity(
-          channel,
-          live.get(channel.id),
-          mine?.place === channel.id,
-          joining === channel.id,
-          joinFailure?.channelId === channel.id ? joinFailure.text : null,
-        ),
-      ),
-    [voiceChannels, live, mine, joining, joinFailure, withActivity],
+    () => voiceChannels.map((channel) => withActivity(channel, live.get(channel.id))),
+    [voiceChannels, live, withActivity],
   );
+
 
   const threadRows = useMemo<Record<string, ChannelThreadVM[]>>(
     () =>
@@ -221,8 +192,6 @@ export const RailContainer = memo(function RailContainer() {
         ui.selectTextChannel(channelId);
       }}
       onJoinVoiceChannel={ui.joinVoiceChannel}
-      onJoinActivity={join}
-      onOpenActivity={ui.returnToChannel}
       onEditServer={() => ui.openModal("settings")}
       onInvite={() => ui.openModal("invite")}
       onMoveChannel={moveChannel}
