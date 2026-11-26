@@ -1,0 +1,117 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { connect } from "../client.js";
+import { createRoom } from "../dev/room.js";
+
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+async function eventually(predicate) {
+  const until = Date.now() + 4000;
+  while (!predicate() && Date.now() < until) await sleep(25);
+  assert.ok(predicate(), "The client did not observe the expected room update");
+}
+
+test("two embedded SDK clients handle packet loss, ordered state, private messages, commands and teardown", async t => {
+  const room = createRoom({ authority: "host", seats: 2 });
+  const ports = new Set(), sessions = [];
+  const previousWindow = globalThis.window;
+  const page = new EventTarget();
+  globalThis.window = page;
+  t.after(async () => {
+    await Promise.allSettled(sessions.map(session => session.close()));
+    for (const port of ports) port.close();
+    if (previousWindow) globalThis.window = previousWindow;
+    else delete globalThis.window;
+  });
+  let dropWrite = true, dropDecision = true, dropResult = true;
+  async function join(id) {
+    page.parent = { postMessage(kind, _, [port]) {
+      ports.add(port);
+      if (kind !== "stellarr:dev-connect:v1") return;
+      port.onmessage = ({ data: { id: serial, input } }) => {
+        try {
+          const value = room({ id, name: id }, input);
+          if (input.op === "open") Object.assign(value, { standalone: true, volume: 0.4 });
+          if (input.op === "write" && dropWrite) { dropWrite = false; throw new Error("Lost write reply"); }
+          if (input.op === "decide" && dropDecision) { dropDecision = false; throw new Error("Lost decision reply"); }
+          if (input.op === "submit" && value.result && dropResult) { dropResult = false; throw new Error("Lost result reply"); }
+          port.postMessage({ id: serial, value });
+        } catch (error) { port.postMessage({ id: serial, error: error.message, status: error.status ?? 0 }); }
+      };
+    } };
+    const session = await connect({ initialState: { score: 0 } });
+    sessions.push(session);
+    return session;
+  }
+  const alice = await join("alice"), bob = await join("bob");
+  assert.equal(alice.context.standalone, true);
+  assert.equal(alice.context.launchMode, "voice");
+  assert.equal(alice.media.volume.get(), 0.4);
+  assert.ok(Math.abs(alice.now() - Date.now()) < 1000);
+  const revisions = [];
+  alice.state.subscribe((state, revision) => revisions.push([state.score, revision]));
+  assert.equal(await alice.state.set(state => ({ score: state.score + 1 })), 1);
+  const handler = (data, { from }, state, privateState) => {
+    assert.equal(from, "bob");
+    assert.deepEqual(privateState.assignments, {});
+    return { patch: { score: state.score + data }, result: "accepted", assignments: { bob: "for-bob" } };
+  };
+  alice.commands.handle("score", handler);
+  const result = await bob.commands.submit("score", 2, { id: "turn-1" });
+  assert.equal(result, "accepted");
+  assert.equal(bob.state.get().score, 3);
+  assert.deepEqual(revisions, [[0, 0], [1, 1], [3, 2]]);
+  assert.equal(bob.assignments.get(), "for-bob");
+  assert.equal(alice.assignments.get(), null);
+  const viewer = await join("viewer");
+  assert.deepEqual(viewer.seats.get(), ["alice", "bob"]);
+  assert.equal(viewer.assignments.get(), null);
+  await assert.rejects(viewer.commands.submit("score", 2), /seat/);
+  const delivered = [], leaked = [];
+  bob.on("binary", (value, { from }) => delivered.push([Array.from(value), from]));
+  viewer.on("binary", value => leaked.push(value));
+  assert.ok(alice.send("binary", new Uint8Array([0, 255]), { to: "bob" }));
+  await eventually(() => delivered.length === 1);
+  assert.deepEqual(delivered, [[[0, 255], "alice"]]);
+  assert.deepEqual(leaked, []);
+  await alice.host.transfer("bob");
+  await eventually(() => bob.host.get() === "bob");
+  assert.equal(await bob.commands.submit("score", 2, { id: "turn-1" }), "accepted");
+  assert.deepEqual(await bob.assignments.checkpoint(), { revision: 2, state: { score: 3 }, assignments: { bob: "for-bob" } });
+  bob.commands.handle("reject", () => { throw new Error("Round is over"); });
+  await assert.rejects(alice.commands.submit("reject", false), /Round is over/);
+  await viewer.close();
+  assert.equal(viewer.connection.get(), "closed");
+  assert.equal(viewer.send("x", true), false);
+  await eventually(() => bob.participants.get().length === 2);
+  room.revoke("alice");
+  await eventually(() => alice.connection.get() === "closed");
+  assert.equal(alice.send("x", true), false);
+});
+
+test("the browser SDK exposes a personal instance session with no voice place", async t => {
+  const room = createRoom();
+  const previousWindow = globalThis.window;
+  const page = new EventTarget();
+  let bridge;
+  let session;
+  globalThis.window = page;
+  t.after(async () => {
+    await session?.close();
+    bridge?.close();
+    if (previousWindow) globalThis.window = previousWindow;
+    else delete globalThis.window;
+  });
+  page.parent = { postMessage(kind, _, [port]) {
+    if (kind !== "stellarr:dev-connect:v1") return;
+    bridge = port;
+    port.onmessage = ({ data: { id, input } }) => {
+      const value = room({ id: "alice", name: "Alice" }, input);
+      if (input.op === "open") Object.assign(value, { launchMode: "personal" });
+      port.postMessage({ id, value });
+    };
+  } };
+  session = await connect();
+  assert.equal(session.context.launchMode, "personal");
+  assert.equal(session.context.standalone, false);
+  assert.equal(session.context.place, null);
+});
