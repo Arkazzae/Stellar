@@ -13,7 +13,6 @@ use crate::seal::Sealer;
 use crate::settings::Settings;
 use crate::testing::TempDir;
 
-#[allow(dead_code)]
 #[path = "../../../discord/tests/support/mod.rs"]
 mod discord;
 use discord::guild::{Ch, FakeGuild, ID, Msg};
