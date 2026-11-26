@@ -12,8 +12,8 @@ use std::time::{Duration, Instant};
 
 use crate::checks::{
     binding_port, exact_version, is_address, is_exact_version, is_hostname, is_http_binding,
-    is_ipv4, is_language_code, is_local_address, is_port, normalize_address, port_number, release_series,
-    version_older,
+    is_ipv4, is_language_code, is_local_address, is_port, normalize_address, port_number,
+    release_series, version_older,
 };
 use crate::cli::{KEYS, Key, Options, env};
 use crate::envfile;
