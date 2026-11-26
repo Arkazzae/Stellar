@@ -19,6 +19,7 @@ import { ProfileProvider } from "@/state/ProfileProvider";
 import { UiProvider } from "@/state/UiProvider";
 import { VoiceProvider } from "@/state/VoiceProvider";
 
+import { ActivityPicker } from "./ActivityPicker";
 import { AppAppearance } from "./AppAppearance";
 import { ClientSettingsSync } from "./ClientSettingsSync";
 import { DmCallChatContainer } from "./DmCallChatContainer";
@@ -145,6 +146,7 @@ function Shell({ entry, onEntryHandled }: LaunchProps) {
       {/* Outside the grid: the dialogs are fixed overlays, and mounting them
           inside `.app` would put them under the shell's stacking context. */}
       <ModalsContainer />
+      <ActivityPicker />
       {/* Above the shell and beside the dialogs: these are raised from inside
           any of them and have to outlive whatever raised them. */}
       <UserSettingsContainer />
