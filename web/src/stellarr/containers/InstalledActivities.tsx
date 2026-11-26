@@ -9,6 +9,7 @@ import { request } from "@/lib/api/transport";
 import type { VoiceActivitySummary } from "@/lib/realtime/types";
 import { useLanguage } from "@/state/LanguageProvider";
 import { useOptionalRealtime } from "@/state/PortsProvider";
+import { detectDevice } from "../../../../sdk/client.js";
 import { ActivityFrame } from "./ActivityFrame";
 
 interface Entry {
@@ -59,11 +60,6 @@ interface ActivityScope {
 type Selection =
   | { install?: string; request: AbortController; session?: Launch }
   | { install: string; session: Launch; request?: undefined };
-
-function deviceClass() {
-  if (!window.matchMedia?.("(pointer: coarse)").matches) return "desktop";
-  return Math.min(screen.width, screen.height) >= 600 ? "tablet" : "phone";
-}
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -275,7 +271,7 @@ function ActivitiesForScope({
       let next = 10000;
       try {
         const lease = selection?.session && { install: selection.session.install, access: selection.session.access };
-        const list = await call<Entry[]>(channel, "list", { device: deviceClass(), lease }, controller.signal);
+        const list = await call<Entry[]>(channel, "list", { device: detectDevice(), lease }, controller.signal);
         if (!relevant()) return;
         setEntries(list);
         setLoadFailed(false);
@@ -362,7 +358,7 @@ function ActivitiesForScope({
     select(pending);
     setProblem(null);
     try {
-      const device = deviceClass();
+      const device = detectDevice();
       let opened: LaunchReply;
       try {
         opened = await call<LaunchReply>(
@@ -473,7 +469,7 @@ function ActivitiesForScope({
     const personalPlayer = session && (
       <>
         <button type="button" className="st-chip st-button" onClick={leave}>{t("stage.leaveActivity")}</button>
-        <ActivityFrame {...session} room={room} tile={tile} onLost={lost} muted={muted} cameraOn={cameraOn} />
+        <ActivityFrame key={session.src} {...session} room={room} tile={tile} onLost={lost} muted={muted} cameraOn={cameraOn} />
       </>
     );
     return <section aria-label={t("stage.personalActivities")}>{personalPlayer ?? personalLibrary}{notice}</section>;
@@ -553,7 +549,7 @@ function ActivitiesForScope({
     <>
       {session && (
         <section className="voice-activity-stage" aria-label={session.title} data-view={showPeople ? "people" : "activity"}>
-          <ActivityFrame {...session} room={room} tile={tile} onLost={lost} muted={muted} cameraOn={cameraOn} hidden={showPeople}>
+          <ActivityFrame key={session.src} {...session} room={room} tile={tile} onLost={lost} muted={muted} cameraOn={cameraOn} hidden={showPeople}>
             <div className="activity-stage-switch" role="group" aria-label={t("stage.callView")}>
               <button type="button" aria-pressed={!showPeople} onClick={() => setShowPeople(false)}>
                 <Icon name="game" size={16} /><span>{session.title}</span>

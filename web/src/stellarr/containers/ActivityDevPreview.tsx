@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { detectDevice } from "../../../../sdk/client.js";
 import { ActivityFrame } from "./ActivityFrame";
 import { request } from "@/lib/api/transport";
 import { useLanguage } from "@/state/LanguageProvider";
@@ -40,7 +41,7 @@ export function ActivityDevPreview({ channel, muted = false, cameraOn = false }:
     setBusy(true);
     setProblem(false);
     try {
-      const result = await previewCall("launch", { channel, code: code.trim() }, controller.signal);
+      const result = await previewCall("launch", { channel, code: code.trim(), device: detectDevice() }, controller.signal);
       setDraft({ access: result.access, src: result.src, title: result.title, code: code.trim(), permissions: result.permissions ?? [] });
     } catch {
       if (!controller.signal.aborted) setProblem(true);

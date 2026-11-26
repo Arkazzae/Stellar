@@ -1,5 +1,9 @@
 import { createServer } from "node:http";
-import { createHash, randomBytes, createHmac } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync, renameSync, writeFileSync, rmSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { previewProgress } from "./progress.js";
 import { readFile, realpath } from "node:fs/promises";
 import { createRoom, fail } from "./room.js";
 import { isSdkPath, localAsset, localManifest, roomOptions, serveAsset } from "./files.js";
@@ -13,7 +17,7 @@ const parentFiles = new Map([
 ]);
 const maxPersonalRooms = 128;
 
-export async function startLocal(root, port = 4174, { mode, clock = Date.now } = {}) {
+export async function startLocal(root, port = 4174, { mode, clock = Date.now, progressDir = join(homedir(), ".stellarr-preview", "progress") } = {}) {
   root = await realpath(root);
   const manifest = await localManifest(root);
   if (mode !== undefined && !["voice", "personal"].includes(mode))
@@ -36,7 +40,7 @@ export async function startLocal(root, port = 4174, { mode, clock = Date.now } =
     for (const id of personal.keys()) activePersonalRoom(id);
   }
 
-  const secret = randomBytes(32);
+  const project = createHash("sha256").update(JSON.stringify([root, manifest.id])).digest("hex");
   const hostname = "game-" + createHash("sha256").update(root).digest("hex").slice(0,12) + ".localhost";
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error("Invalid port.");
   const server = createServer(async (req, res) => {
@@ -53,6 +57,7 @@ export async function startLocal(root, port = 4174, { mode, clock = Date.now } =
         return await serveAsset(res, name, isSdkPath(name) ? null : await localAsset(root, name), manifest, origin, req);
       }
       if (host !== origin) fail(403, "Unexpected host.");
+      if (read && isSdkPath(path)) return await serveAsset(res, path, null, manifest, origin, req);
       if (read && parentFiles.has(path)) {
         const bytes = await readFile(new URL("../host/" + parentFiles.get(path), import.meta.url));
         res.writeHead(200, { "Content-Type": path === "/" ? "text/html" : "text/javascript",
@@ -60,12 +65,12 @@ export async function startLocal(root, port = 4174, { mode, clock = Date.now } =
           "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
         return res.end(bytes);
       }
-      if (read && path === "/_stellarr/config") return json(res, { name: manifest.name, permissions: manifest.permissions ?? [], frame });
+      if (read && path === "/_stellarr/config") return json(res, { name: manifest.name, permissions: manifest.permissions ?? [], devices: manifest.devices, frame });
       if (!["/_stellarr/dev/room", "/_stellarr/dev/tile"].includes(path)) fail(404, "File not found.");
       if (req.method !== "POST" || req.headers.origin !== origin) fail(403, "Unexpected origin.");
       const { token, action } = await readJson(req);
       if (typeof token !== "string" || !/^[a-f0-9-]{36}$/.test(token)) fail(400, "Invalid player token.");
-      const id = createHmac("sha256", secret).update(token).digest("hex").slice(0,24);
+      const id = createHash("sha256").update(project + token).digest("hex").slice(0,24);
       const tile = path.endsWith("/tile");
       const opening = !tile && action?.op === "open";
       if (tile && !manifest.permissions?.includes("media.cameraTile")) fail(403, "Camera not declared.");
@@ -79,7 +84,23 @@ export async function startLocal(root, port = 4174, { mode, clock = Date.now } =
       if (tile) return json(res, scope.tiles(id, action));
       const response = scope.room({ id, name: "Player " + id.slice(0,4) }, action);
       if (!existing) personal.set(id, scope);
-      return json(res, opening ? { ...response, launchMode } : response);
+      if (action.op === "loadProgress" || action.op === "saveProgress") {
+        // Each listener owns its port. Keep saves outside the published project directory.
+        const folder = join(progressDir, project, String(listenPort));
+        const file = join(folder, id + ".json");
+        let stored;
+        try { stored = JSON.parse(readFileSync(file, "utf8")); }
+        catch (error) { if (error.code !== "ENOENT") throw error; }
+        return json(res, previewProgress(stored, action, next => {
+          mkdirSync(folder, { recursive: true, mode: 0o700 });
+          const temp = join(folder, randomUUID() + ".tmp");
+          try {
+            writeFileSync(temp, JSON.stringify(next), { flag: "wx", mode: 0o600 });
+            renameSync(temp, file);
+          } finally { rmSync(temp, { force: true }); }
+        }));
+      }
+      return json(res, opening ? { ...response, launchMode, progress: true } : response);
     } catch (error) { problem(res, error); }
   });
   await new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, "127.0.0.1", resolve); });

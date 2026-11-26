@@ -12,8 +12,10 @@ function embeddedTransport() {
   channel.port1.onmessage = ({ data }) => {
     const call = pending.get(data?.id);
     if (!call) return;
-    if (data.error) call.reject(Object.assign(new Error(data.error), { status: data.status }));
-    else call.resolve(data.value);
+    if (typeof data.error === "string") {
+      const message = data.error || `Activity request failed (HTTP ${data.status}).`;
+      call.reject(Object.assign(new Error(message), { status: data.status }));
+    } else call.resolve(data.value);
   };
   connectPort("stellarr:dev-connect:v1", channel.port2);
   const send = input => new Promise((resolve, reject) => {
@@ -62,6 +64,12 @@ function observable(initial) {
   };
 }
 
+/** Classify the primary pointer and the physical screen, even inside a narrow frame. */
+export function detectDevice() {
+  if (!window.matchMedia?.("(pointer: coarse)").matches) return "desktop";
+  return Math.min(window.screen.width, window.screen.height) >= 600 ? "tablet" : "phone";
+}
+
 function deviceTheme(dark) {
   return { mode: dark ? "dark" : "light", colors: dark
     ? { background: "#17191d", surface: "#24272d", text: "#f2f3f5", muted: "#b1b7c2", accent: "#90b8ff", border: "#474c55" }
@@ -93,7 +101,9 @@ export async function connect({ initialState = {} } = {}) {
   const launchMode = opened.launchMode === "personal" ? "personal" : "voice";
   const context = { standalone: opened.standalone ?? false, me: opened.me, sessionId: opened.sessionId,
     launchMode, place: launchMode === "personal" ? null : opened.place ?? null,
-    locale: opened.locale ?? navigator.language };
+    locale: opened.locale ?? navigator.language, device: opened.device ?? detectDevice() };
+  const locale = observable(context.locale);
+  const device = observable(context.device);
   const { limits, permissions = [] } = opened;
   const hosted = opened.authority === "host";
   const me = context.me.id;
@@ -127,6 +137,7 @@ export async function connect({ initialState = {} } = {}) {
     if (result.version >= version) {
       version = result.version;
       epoch = result.epoch;
+      context.me = result.participants.find(person => person.id === me) ?? context.me;
       participants.update(result.participants);
       seats.update(result.seats);
       assignment.update(result.assignment);
@@ -202,6 +213,10 @@ export async function connect({ initialState = {} } = {}) {
       if (closed) return;
       clockOffset = packet.now - (began + performance.now()) / 2;
       connection.update("connected");
+      context.locale = packet.locale ?? opened.locale ?? navigator.language;
+      context.device = packet.device ?? detectDevice();
+      locale.update(context.locale);
+      device.update(context.device);
       apply(packet);
       for (const message of packet.messages ?? []) {
         const value = message.binary ? Uint8Array.from(atob(message.data), char => char.charCodeAt(0)) : message.data;
@@ -291,7 +306,17 @@ export async function connect({ initialState = {} } = {}) {
 
   const session = {
     context, limits, capabilities: ["context", "state", "theme", "participants", "messages", "clock", "seats",
-      ...(hosted ? ["host", "commands", "assignments"] : []), ...permissions],
+      ...(opened.progress ? ["progress"] : []), ...(hosted ? ["host", "commands", "assignments"] : []), ...permissions],
+    locale: locale.api, device: device.api,
+    progress: {
+      load() { return retry({ op: "loadProgress" }); },
+      async save(data, expectedRevision) {
+        // Capture the exact JSON once. A serialization error must reach the caller before network retries.
+        const snapshot = JSON.parse(JSON.stringify(data));
+        const reply = await retry({ op: "saveProgress", data: snapshot, expected: expectedRevision });
+        return reply.revision;
+      },
+    },
     now: () => performance.now() + clockOffset, send, on,
     close: () => depart("close"), connection: connection.api, theme: theme.api, participants: participants.api,
     seats: { ...seats.api, claim: () => updateSeat(true), release: () => updateSeat(false) },

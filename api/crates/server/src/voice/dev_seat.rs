@@ -14,6 +14,8 @@ use crate::values::Id;
 pub(super) struct DevParticipant {
     id: Id,
     name: String,
+    username: String,
+    avatar: Option<String>,
 }
 
 pub(super) async fn authorize_author(
@@ -42,12 +44,15 @@ pub(super) async fn participant(
     {
         return Err(ApiError::forbidden());
     }
-    let name = state
+    let user = state
         .database()
-        .read(move |db| User::display_name(db, caller.user))
-        .await?;
+        .read(move |db| User::find(db, caller.user))
+        .await?
+        .ok_or_else(ApiError::forbidden)?;
     Ok(Json(DevParticipant {
         id: caller.user,
-        name,
+        name: user.display_name,
+        username: user.username,
+        avatar: user.avatar_url.filter(|url| url.starts_with("/assets/")),
     }))
 }

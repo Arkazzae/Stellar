@@ -9,10 +9,13 @@ export interface Observable<T> {
 }
 export interface Participant {
   id: string;
+  username?: string;
   name: string;
   avatar: string | null;
   connected: boolean;
 }
+export type DeviceClass = "desktop" | "tablet" | "phone";
+export function detectDevice(): DeviceClass;
 export interface ActivityContext {
   standalone: boolean;
   launchMode: "voice" | "personal";
@@ -20,6 +23,7 @@ export interface ActivityContext {
   me: Participant;
   place: { id: string } | null;
   locale: string;
+  device: DeviceClass;
 }
 export interface ActivityTheme {
   mode: "light" | "dark";
@@ -47,6 +51,12 @@ export interface DevSession<S extends ActivityState> {
   close(): Promise<void>;
   connection: Observable<"connected" | "reconnecting" | "closed">;
   theme: Observable<ActivityTheme>;
+  locale: Observable<string>;
+  device: Observable<DeviceClass>;
+  progress: {
+    load(): Promise<{ revision: number; data: ActivityState | null }>;
+    save(data: ActivityState, expectedRevision: number): Promise<number>;
+  };
   media: ActivityMedia;
   participants: Observable<Participant[]>;
   send(kind: string, data: JsonValue | ArrayBuffer | ArrayBufferView, options?: { to?: string; latest?: boolean }): boolean;

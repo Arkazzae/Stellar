@@ -1,10 +1,17 @@
-import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { Icon } from "@stellarr/icons";
+import { Avatar } from "@/components/primitives/Avatar";
+import { detectDevice, type Participant } from "../../../../sdk/client.js";
 import { useLanguage } from "@/state/LanguageProvider";
 import { bindMediaHost, type HostMediaControls } from "../../../../sdk/host/media-host.js";
 
 type Action = Record<string, unknown>;
+function framePortrait(person: Participant, base: string): Participant {
+  return person.avatar?.startsWith("/_stellarr/avatars/")
+    ? { ...person, avatar: new URL(person.avatar.slice(1), base).href } : person;
+}
+
 interface ActivityFrameProps {
   children?: ReactNode;
   hidden?: boolean;
@@ -20,7 +27,7 @@ interface ActivityFrameProps {
 }
 
 export function ActivityFrame({ children, hidden = false, src, title, permissions, youtube, muted = false, cameraOn, room, tile, onLost }: ActivityFrameProps) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const target = useMemo(() => {
     const url = new URL(src, window.location.href);
     const local = url.origin === window.location.origin;
@@ -28,6 +35,9 @@ export function ActivityFrame({ children, hidden = false, src, title, permission
     if (nonce) url.hash = "stellarr=" + nonce;
     return { src: url.href, origin: local ? "null" : url.origin, nonce };
   }, [src]);
+  const language = useRef(locale);
+  useEffect(() => { language.current = locale; }, [locale]);
+  const [players, setPlayers] = useState<Participant[]>([]);
   const frame = useRef<HTMLIFrameElement>(null);
   const volume = useRef<HTMLInputElement>(null);
   const controls = useRef<HTMLSpanElement>(null);
@@ -40,8 +50,10 @@ export function ActivityFrame({ children, hidden = false, src, title, permission
     if (!volume.current || !controls.current || !frame.current) return;
     const controller = new AbortController();
     const { origin, nonce } = target;
+    // Local installations serve frame assets below the launch-specific directory.
+    const portraitBase = nonce ? target.src : origin + "/";
     media.current = bindMediaHost({ frame: frame.current, origin, nonce, youtube, title, permissions, controls: controls.current,
-      volume: volume.current, language: document.documentElement.lang, muted: () => callMuted.current,
+      volume: volume.current, language: () => language.current ?? document.documentElement.lang, muted: () => callMuted.current,
       tile: action => tile(action, controller.signal) });
     let frameId: string | undefined;
     let connected: MessagePort | undefined;
@@ -53,16 +65,33 @@ export function ActivityFrame({ children, hidden = false, src, title, permission
       connected?.close();
       connected = event.ports[0];
       const port = connected;
+      let rosterVersion = -1;
+      let rosterSignature = "";
       const id = frameId = crypto.randomUUID();
       port.onmessage = async ({ data }) => {
         if (!data || !Number.isSafeInteger(data.id) || !data.input) return;
         try {
           const value = await room({ ...data.input, frame: id }, controller.signal);
+          if (controller.signal.aborted || port !== connected) return;
+          if (data.input.op === "open" || data.input.op === "read") {
+            value.locale = language.current || document.documentElement.lang || navigator.language;
+            value.device = detectDevice();
+            if (typeof value.version === "number" && value.version > rosterVersion && Array.isArray(value.participants)) {
+              rosterVersion = value.version;
+              const signature = JSON.stringify(value.participants);
+              if (signature !== rosterSignature) {
+                rosterSignature = signature;
+                setPlayers(value.participants);
+              }
+            }
+          }
+          if (Array.isArray(value.participants)) value.participants = value.participants.map(person => framePortrait(person, portraitBase));
+          if (value.me) value.me = framePortrait(value.me as Participant, portraitBase);
           if (data.input.op === "open") {
             value.volume = Number(volume.current?.value ?? 100) / 100;
             value.youtube = Boolean(nonce && youtube);
           }
-          if (!controller.signal.aborted) port.postMessage({ id: data.id, value });
+          port.postMessage({ id: data.id, value });
         } catch (error) {
           if (controller.signal.aborted) return;
           const status = error instanceof Error && "status" in error ? error.status : 0;
@@ -82,7 +111,21 @@ export function ActivityFrame({ children, hidden = false, src, title, permission
     };
   }, [target, title, permissions, youtube, room, tile, onLost]);
 
+  const names = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const player of players) {
+    if (names.has(player.name)) duplicates.add(player.name);
+    names.add(player.name);
+  }
+
   return <>
+    {!hidden && players.length > 0 && <ul className="activity-players" aria-label={t("stage.activityPlayers")}>
+      {players.map(person => <li key={person.id}>
+        <Avatar id={person.id} displayName={person.name} size="xs" offline={!person.connected}
+          avatarUrl={person.avatar?.replace(/^\/_stellarr\/avatars\/[^/]+\//, "/assets/")} />
+        <span>{person.name}{duplicates.has(person.name) && person.username && " (@" + person.username + ")"}{!person.connected && " · " + t("stage.activityDisconnected")}</span>
+      </li>)}
+    </ul>}
     <div className="activity-frame-controls">
       {children}
       <label className="activity-volume" title={t("stage.gameAudio")}>

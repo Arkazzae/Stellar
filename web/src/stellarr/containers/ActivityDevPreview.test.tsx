@@ -19,7 +19,7 @@ it("opens the poll in a frame that can submit votes and keeps the invite in the 
   fireEvent.click(screen.getByRole("button", { name: "stage.openPreview" }));
   const frame = await screen.findByTitle("Shared Poll");
   expect(fetch).toHaveBeenCalledWith("/_stellarr/dev/launch", expect.objectContaining({
-    body: JSON.stringify({ channel: "voice-room", code: "private-code" }),
+    body: JSON.stringify({ channel: "voice-room", code: "private-code", device: "desktop" }),
   }));
   expect(frame).toHaveAttribute("src", src);
   expect(frame.getAttribute("sandbox")?.split(" ")).toContain("allow-forms");

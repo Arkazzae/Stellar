@@ -4,8 +4,7 @@ import { createYouTubeHost } from "./youtube.js";
 
 const kinds = ["microphoneLevel", "cameraTile"];
 export function bindMediaHost({ frame, origin, nonce, youtube, title, permissions = [], controls, tile, volume, muted = () => false, fixtures = false, language = "en" }) {
-  const pl = language.startsWith("pl");
-  const words = (en, polish) => pl ? polish : en;
+  const words = (en, polish) => (typeof language === "function" ? language() : language).startsWith("pl") ? polish : en;
   const deviceName = kind => kind === "microphoneLevel" ? words("Microphone", "Mikrofon") : words("Camera", "Kamera");
   const deviceFiles = new Map(), active = new Map(), mounts = new Map();
   let port, prompt, simMuted = false, disposed = false, requestingImages = false;

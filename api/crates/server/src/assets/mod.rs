@@ -98,7 +98,7 @@ async fn find_readable(state: &AppState, user: Id, id: Id) -> Result<Option<Row>
         .await?)
 }
 
-async fn download(
+pub(crate) async fn download(
     State(state): State<AppState>,
     caller: Caller,
     Path(id): Path<Id>,

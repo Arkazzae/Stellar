@@ -2,6 +2,7 @@
 mod artwork;
 mod authority;
 mod live;
+mod progress;
 mod releases;
 
 use axum::extract::{Request, State};

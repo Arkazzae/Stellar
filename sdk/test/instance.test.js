@@ -30,7 +30,7 @@ function visit(url, { method = "GET", headers, body }) {
   });
 }
 
-async function instance(t, { development = true } = {}) {
+async function instance(t, { development = true, avatar = null } = {}) {
   let seated = true;
   let now = 1000;
   const origin = "http://localhost:3000";
@@ -41,8 +41,12 @@ async function instance(t, { development = true } = {}) {
       return res.end();
     }
     const allowed = ownerCheck ? req.headers.cookie === "session=owner" : seated && req.headers.cookie === "session=alice";
+    if (allowed && avatar && req.url === avatar) {
+      res.writeHead(200, { "content-type": "image/png", "content-length": 4 });
+      return res.end("face");
+    }
     res.writeHead(allowed ? 200 : 403);
-    res.end(JSON.stringify({ id: "alice", name: "Alice" }));
+    res.end(JSON.stringify({ id: "alice", name: "Alice", username: "alice", avatar }));
   });
   const preview = previewMiddleware({ origin, domain: "activity.localhost", apiOrigin, clock: () => now });
   t.after(preview.close);
@@ -173,4 +177,31 @@ test("a draft and launch ticket have independent expiry", async t => {
   advance(2 * 60 * 60 * 1000);
   assert.equal((await call("launch", { channel, code }, tester)).status, 404);
   assert.equal((await call("drafts", { files }, auth)).status, 403);
+});
+
+test("a private tester resumes across uploads and sees the avatar through the game origin", async t => {
+  const { target, call, files, author, tester } = await instance(t, { avatar: "/assets/" + randomUUID() });
+  const auth = await author();
+  const channel = randomUUID();
+  const manifest = JSON.parse(Buffer.from(files["stellarr.json"], "base64"));
+  files["stellarr.json"] = Buffer.from(JSON.stringify({ ...manifest, devices: ["tablet"] })).toString("base64");
+  async function openDraft() {
+    const { code } = await (await call("drafts", { files }, auth)).json();
+    assert.equal((await call("launch", { channel, code, device: "phone" }, tester)).status, 400);
+    const { access, src } = await (await call("launch", { channel, code, device: "tablet" }, tester)).json();
+    const url = new URL(src);
+    const fetch = (path, cookie = "") => visit(target + path, { headers: { host: url.host, cookie } });
+    const cookie = (await fetch(url.pathname + url.search)).headers.get("set-cookie").split(";")[0];
+    const frame = randomUUID();
+    const action = async input => (await call("room", { channel, code, access, action: { ...input, frame } }, tester)).json();
+    const { me, progress } = await action({ op: "open", initialState: {} });
+    assert.equal(progress, true);
+    assert.equal((await fetch(me.avatar)).status, 403);
+    assert.equal(await (await fetch(me.avatar, cookie)).text(), "face");
+    return action;
+  }
+  const first = await openDraft();
+  assert.deepEqual(await first({ op: "saveProgress", expected: 0, data: { level: 3 } }), { revision: 1 });
+  const next = await openDraft();
+  assert.deepEqual(await next({ op: "loadProgress" }), { revision: 1, data: { level: 3 } });
 });

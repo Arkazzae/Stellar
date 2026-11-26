@@ -2,6 +2,7 @@ import { randomBytes, createHash } from "node:crypto";
 import { createRoom, fail, record } from "./room.js";
 import { json, problem, readJson } from "./http.js";
 import { isSdkPath, roomOptions, serveAsset, unpack, uploadLimit } from "./files.js";
+import { previewProgress } from "./progress.js";
 import { createTileRelay } from "./tiles.js";
 
 const secret = () => randomBytes(18).toString("hex");
@@ -111,7 +112,7 @@ export function previewMiddleware({ origin, domain, apiOrigin, clock = Date.now 
     const token = secret();
     const expiresAt = clock() + duration.author;
     const authorId = digest(token);
-    authors.set(authorId, { id: authorId, until: expiresAt });
+    authors.set(authorId, { id: authorId, until: expiresAt, progress: new Map() });
     return json(res, { token, expiresAt });
   }
 
@@ -168,6 +169,12 @@ export function previewMiddleware({ origin, domain, apiOrigin, clock = Date.now 
     const cookie = req.headers.cookie?.split(/;\s*/).find(pair => pair.startsWith("__Host-stellarr-preview="))?.split("=")[1];
     if (!(draft.leases.get(cookie)?.until > clock())) fail(403, "Open the activity from your voice channel.");
     const path = decodeURIComponent(url.pathname);
+    if (path.startsWith("/_stellarr/avatars/")) {
+      const photo = [...draft.leases.values()].find(lease => lease.avatar?.path === path)?.avatar;
+      if (!photo?.bytes) fail(404, "Unknown participant avatar.");
+      res.writeHead(200, { "Content-Type": photo.type, "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
+      return res.end(photo.bytes);
+    }
     const sdk = isSdkPath(path);
     const name = sdk ? path : path.slice(1) || "index.html";
     const bytes = draft.assets.get(name);
@@ -195,6 +202,8 @@ export function previewMiddleware({ origin, domain, apiOrigin, clock = Date.now 
       fail(404, "Unknown or expired invite code.");
     if (draft.channel && draft.channel !== input.channel) fail(403, "The preview belongs to another voice channel.");
     if (path === "launch") {
+      if (draft.manifest.devices && !draft.manifest.devices.includes(input.device ?? "desktop"))
+        fail(400, "This release does not support this device.");
       if (draft.manifest.launchModes?.includes("voice") === false)
         fail(400, "This activity supports personal launches. Run stellarr dev locally to preview it.");
       for (const [access, previous] of draft.leases) if (previous.person === person.id) removeLease(draft, access, false);
@@ -214,7 +223,30 @@ export function previewMiddleware({ origin, domain, apiOrigin, clock = Date.now 
       if (!draft.manifest.permissions?.includes("media.cameraTile")) fail(403, "This activity did not request camera tiles.");
       return json(res, draft.tiles(person.id, input.action));
     }
+    const asset = typeof person.avatar === "string" && /^\/assets\/([a-f0-9-]{36})$/i.exec(person.avatar);
+    if (!asset) {
+      delete lease.avatar;
+      person.avatar = null;
+    } else {
+      const path = "/_stellarr/avatars/" + person.id + "/" + asset[1];
+      if (lease.avatar?.path !== path || (!lease.avatar.bytes && clock() >= lease.avatar.retryAt)) {
+        const photo = lease.avatar = { path, retryAt: clock() + 5000 };
+        const image = await instanceRequest(req, person.avatar, "web", "2.0.0").catch(() => null);
+        if (image?.ok && /^image\/(png|jpeg|gif|webp)$/.test(image.headers.get("content-type")) &&
+            Number(image.headers.get("content-length") ?? Infinity) <= 4 * 1024 * 1024) {
+          photo.bytes = Buffer.from(await image.arrayBuffer());
+          photo.type = image.headers.get("content-type");
+        } else await image?.body?.cancel();
+        if (draft.leases.get(input.access) !== lease || drafts.get(input.code) !== draft) fail(403, "Preview closed.");
+      }
+      person.avatar = lease.avatar?.bytes ? path : null;
+    }
     const response = draft.room(person, input.action);
+    if (input.action.op === "saveProgress" || input.action.op === "loadProgress") {
+      const saves = draft.author.progress;
+      return json(res, previewProgress(saves.get(person.id), input.action, next => saves.set(person.id, next)));
+    }
+    if (input.action.op === "open") response.progress = true;
     if (input.action?.op === "close") removeLease(draft, input.access, true);
     return json(res, { ...response, launchMode: "voice", place: { id: draft.channel } });
   }

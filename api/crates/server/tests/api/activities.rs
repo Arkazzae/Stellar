@@ -392,7 +392,8 @@ async fn a_static_activity_checks_its_own_launch_even_after_the_installation_is_
 }
 
 #[tokio::test]
-async fn voice_channel_runs_at_most_one_activity_joins_directly_and_clears_when_last_person_leaves() {
+async fn voice_channel_runs_at_most_one_activity_joins_directly_and_clears_when_last_person_leaves()
+{
     let rig = crate::voice::Rig::start_with(&[
         ("STELLARR_ACTIVITY_DOMAIN", "games.test"),
         ("STELLARR_ACTIVITY_ORIGIN", ORIGIN),
@@ -433,7 +434,9 @@ async fn voice_channel_runs_at_most_one_activity_joins_directly_and_clears_when_
     assert_eq!(alice_session["install"], INSTALL);
 
     let started = bob_ws
-        .next_where("VoiceActivityChanged", |d| d["channelId"] == salon.as_str() && !d["activity"].is_null())
+        .next_where("VoiceActivityChanged", |d| {
+            d["channelId"] == salon.as_str() && !d["activity"].is_null()
+        })
         .await;
     assert_eq!(started["activity"]["install"], INSTALL);
     assert_eq!(started["activity"]["name"], "Demo");
@@ -456,10 +459,57 @@ async fn voice_channel_runs_at_most_one_activity_joins_directly_and_clears_when_
     let bob_session = bob_launch.json::<Value>();
     assert_eq!(bob_session["install"], INSTALL);
 
+    let room_path = format!("/api/activities/{salon}/room");
+    let op = |session: &Value, mut action: Value| {
+        action["frame"] = json!(FRAME);
+        json!({"install":INSTALL, "access":session["access"], "action":action})
+    };
+    let open = json!({"op":"open", "initialState":{}});
+    assert_eq!(
+        post(&rig.owner, &room_path, op(&alice_session, open.clone()))
+            .await
+            .status,
+        200
+    );
+    let peers = post(&bob, &room_path, op(&bob_session, open.clone()))
+        .await
+        .json::<Value>();
+    assert_eq!(peers["participants"][0]["username"], rig.owner.username);
+    let personal = launch(&rig.owner, INSTALL).await.json::<Value>();
+    let access = &personal["access"];
+    assert_eq!(room(&rig.owner, access, open).await.status, 200);
+    let voice_save = op(
+        &alice_session,
+        json!({"op":"saveProgress", "expected":0, "data":{"mode":"voice"}}),
+    );
+    let solo_save = json!({"op":"saveProgress", "expected":0, "data":{"mode":"solo"}});
+    let (v, s) = tokio::join!(
+        post(&rig.owner, &room_path, voice_save),
+        room(&rig.owner, access, solo_save)
+    );
+    let mut statuses = [v.status.as_u16(), s.status.as_u16()];
+    statuses.sort();
+    assert_eq!(statuses, [200, 409]);
+    let load = json!({"op":"loadProgress"});
+    let shared = post(&rig.owner, &room_path, op(&alice_session, load.clone()))
+        .await
+        .json::<Value>();
+    assert_eq!(shared["revision"], 1);
+    assert_eq!(
+        shared,
+        room(&rig.owner, access, load.clone()).await.json::<Value>()
+    );
+    let visitor = post(&bob, &room_path, op(&bob_session, load))
+        .await
+        .json::<Value>();
+    assert!(visitor["data"].is_null());
+
     // Someone joining the voice channel later is immediately told about the live activity.
     carol_ws.join(rig.salon).await;
     let announced = carol_ws
-        .next_where("VoiceActivityChanged", |d| d["channelId"] == salon.as_str() && !d["activity"].is_null())
+        .next_where("VoiceActivityChanged", |d| {
+            d["channelId"] == salon.as_str() && !d["activity"].is_null()
+        })
         .await;
     assert_eq!(announced["activity"]["install"], INSTALL);
 
@@ -484,7 +534,9 @@ async fn voice_channel_runs_at_most_one_activity_joins_directly_and_clears_when_
     assert_eq!(bob_left.json::<Value>()["running"], false);
 
     let cleared = alice_ws
-        .next_where("VoiceActivityChanged", |d| d["channelId"] == salon.as_str() && d["activity"].is_null())
+        .next_where("VoiceActivityChanged", |d| {
+            d["channelId"] == salon.as_str() && d["activity"].is_null()
+        })
         .await;
     assert!(cleared["activity"].is_null());
 
@@ -503,13 +555,20 @@ async fn voice_channel_runs_at_most_one_activity_joins_directly_and_clears_when_
 
 #[tokio::test]
 async fn installed_packages_share_the_instance_address_with_isolated_revocable_assets() {
-    let server = Server::start().await;
+    let server = crate::uploads::started(&[]).await;
     let owner = server.found("owner").await;
     seed(&server, INSTALL, true);
-    server.database().execute(
-        "INSERT INTO ActivityFiles(Install,Digest,Path,Content) VALUES(?1,?2,'index.html',?3)",
-        params![INSTALL.to_uppercase(), "b".repeat(64), b"<p>Custom activity</p>".as_slice()],
-    ).unwrap();
+    server
+        .database()
+        .execute(
+            "INSERT INTO ActivityFiles(Install,Digest,Path,Content) VALUES(?1,?2,'index.html',?3)",
+            params![
+                INSTALL.to_uppercase(),
+                "b".repeat(64),
+                b"<p>Custom activity</p>".as_slice()
+            ],
+        )
+        .unwrap();
     let launched = launch(&owner, INSTALL).await;
     assert_eq!(launched.status, 200, "{}", launched.text());
     let body = launched.json::<Value>();
@@ -531,7 +590,278 @@ async fn installed_packages_share_the_instance_address_with_isolated_revocable_a
     let sdk = browser.get("/_stellarr/sdk/v1.js").await;
     assert_eq!(sdk.status, 200);
     assert_eq!(sdk.header("access-control-allow-origin"), Some("*"));
-    let disabled = post(&owner, &format!("/api/cockpit/activities/{INSTALL}/manage"), json!({"action":"disable"})).await;
+    let photo = owner
+        .client
+        .send(crate::uploads::image("face.png").post("/api/me/images/avatar"))
+        .await;
+    assert_eq!(photo.status, 201);
+    let opened = room(
+        &owner,
+        &body["access"],
+        json!({"op":"open","initialState":{}}),
+    )
+    .await
+    .json::<Value>();
+    let portrait = opened["me"]["avatar"].as_str().unwrap();
+    let image_url = format!("{}{}", path.strip_suffix("/index.html").unwrap(), portrait);
+    assert_eq!(
+        browser.get(&image_url).await.body.as_ref() as &[u8],
+        crate::uploads::PNG
+    );
+    let saved = room(
+        &owner,
+        &body["access"],
+        json!({"op":"saveProgress","expected":0,"data":{"level":3}}),
+    )
+    .await;
+    assert_eq!(saved.status, 200);
+    assert_eq!(
+        room(&owner, &body["access"], json!({"op":"loadProgress"}))
+            .await
+            .json::<Value>()["data"]["level"],
+        3
+    );
+    let disabled = post(
+        &owner,
+        &format!("/api/cockpit/activities/{INSTALL}/manage"),
+        json!({"action":"disable"}),
+    )
+    .await;
     assert_eq!(disabled.status, 200);
     assert_eq!(browser.get(path).await.status, 403);
+    assert_eq!(browser.get(&image_url).await.status, 403);
+}
+
+#[tokio::test]
+async fn private_progress_survives_a_release_and_server_restart_on_a_second_device() {
+    let folder = crate::support::TempDir::new();
+    let env = [
+        ("STELLARR_ACTIVITY_DOMAIN", "games.test"),
+        ("STELLARR_ACTIVITY_ORIGIN", ORIGIN),
+    ];
+    let server = Server::start_in(folder.path(), &env).await;
+    let mut alice = server.found("owner").await;
+    let bob = server.register("visitor").await;
+    seed(&server, INSTALL, true);
+    let phone = post(
+        &alice,
+        "/api/activities/personal/launch",
+        json!({"install":INSTALL,"device":"phone"}),
+    )
+    .await
+    .json::<Value>();
+    let access = &phone["access"];
+    let open = json!({"op":"open","initialState":{}});
+    let load = json!({"op":"loadProgress"});
+    assert_eq!(room(&alice, access, load.clone()).await.status, 403);
+    let first = room(&alice, access, open.clone()).await.json::<Value>();
+    assert_eq!(first["progress"], true);
+    let save = |level| json!({"op":"saveProgress","expected":0,"data":{"level":level}});
+    let (one, two) = tokio::join!(room(&alice, access, save(7)), room(&alice, access, save(9)));
+    let (level, other) = if one.status == 200 {
+        (7, two)
+    } else {
+        assert_eq!(two.status, 200);
+        (9, one)
+    };
+    assert_eq!(other.status, 409);
+    assert_eq!(
+        room(&alice, access, save(level)).await.json::<Value>()["revision"],
+        1
+    );
+    assert_eq!(
+        room(
+            &alice,
+            access,
+            json!({"op":"saveProgress","expected":1,"data":{"x":"a".repeat(65536)}})
+        )
+        .await
+        .status,
+        413
+    );
+    let bob_launch = launch(&bob, INSTALL).await.json::<Value>();
+    let bob_open = room(&bob, &bob_launch["access"], open.clone())
+        .await
+        .json::<Value>();
+    assert!(bob_open.get("data").is_none());
+    assert_eq!(
+        room(&bob, &bob_launch["access"], load.clone())
+            .await
+            .json::<Value>(),
+        json!({"revision":0,"data":null})
+    );
+    assert_eq!(room(&bob, access, load.clone()).await.status, 403);
+
+    let second = "c".repeat(64);
+    {
+        let db = server.database();
+        db.execute("INSERT INTO ActivityVersions SELECT Install,?2,'v2','release2',json_set(Manifest,'$.version','2.0.0'),Bytes FROM ActivityVersions WHERE Install=?1", params![INSTALL.to_uppercase(), second]).unwrap();
+        db.execute(
+            "UPDATE ActivityInstalls SET Digest=?2 WHERE Id=?1",
+            params![INSTALL.to_uppercase(), second],
+        )
+        .unwrap();
+    }
+    assert!(server.stop().await);
+    let server = Server::start_in(folder.path(), &env).await;
+    alice.client = server.sign_in(&alice).await;
+    let desktop = launch(&alice, INSTALL).await.json::<Value>();
+    assert_ne!(
+        phone["src"].as_str().unwrap().split('/').nth(2),
+        desktop["src"].as_str().unwrap().split('/').nth(2)
+    );
+    let opened = room(&alice, &desktop["access"], open).await.json::<Value>();
+    assert_ne!(opened["sessionId"], first["sessionId"]);
+    assert_eq!(opened["me"]["id"], first["me"]["id"]);
+    let saved = json!({"revision":1,"data":{"level":level}});
+    assert_eq!(
+        room(&alice, &desktop["access"], load.clone())
+            .await
+            .json::<Value>(),
+        saved
+    );
+    assert_eq!(
+        post(
+            &alice,
+            &format!("/api/cockpit/activities/{INSTALL}/manage"),
+            json!({"action":"uninstall"})
+        )
+        .await
+        .status,
+        200
+    );
+    seed(&server, VOICE_ONLY, true);
+    let reinstalled = launch(&alice, VOICE_ONLY).await.json::<Value>();
+    let in_reinstall = |action: Value| json!({"install":VOICE_ONLY,"access":reinstalled["access"],"action":action});
+    let route = "/api/activities/personal/room";
+    assert_eq!(
+        post(
+            &alice,
+            route,
+            in_reinstall(json!({"op":"open","initialState":{},"frame":FRAME}))
+        )
+        .await
+        .status,
+        200
+    );
+    assert_eq!(
+        post(
+            &alice,
+            route,
+            in_reinstall(json!({"op":"loadProgress","frame":FRAME}))
+        )
+        .await
+        .json::<Value>(),
+        saved
+    );
+    assert_eq!(
+        post(
+            &alice,
+            &format!("/api/cockpit/activities/{VOICE_ONLY}/manage"),
+            json!({"action":"uninstall"})
+        )
+        .await
+        .status,
+        200
+    );
+    seed(&server, INSTALL, true);
+    server
+        .database()
+        .execute(
+            "UPDATE ActivityInstalls SET Source='https://github.com/unrelated/demo' WHERE Id=?1",
+            [INSTALL.to_uppercase()],
+        )
+        .unwrap();
+    let unrelated = launch(&alice, INSTALL).await.json::<Value>();
+    assert_eq!(
+        room(
+            &alice,
+            &unrelated["access"],
+            json!({"op":"open","initialState":{}})
+        )
+        .await
+        .status,
+        200
+    );
+    assert_eq!(
+        room(&alice, &unrelated["access"], load)
+            .await
+            .json::<Value>(),
+        json!({"revision":0,"data":null})
+    );
+}
+
+#[tokio::test]
+async fn activity_profiles_refresh_and_the_frame_can_load_a_members_current_avatar() {
+    let server = crate::uploads::started(&[
+        ("STELLARR_ACTIVITY_DOMAIN", "games.test"),
+        ("STELLARR_ACTIVITY_ORIGIN", ORIGIN),
+    ])
+    .await;
+    let alice = server.found("owner").await;
+    seed(&server, INSTALL, true);
+    let launch = launch(&alice, INSTALL).await.json::<Value>();
+    let access = &launch["access"];
+    let initial = room(&alice, access, json!({"op":"open","initialState":{}}))
+        .await
+        .json::<Value>();
+    assert!(initial["me"]["avatar"].is_null());
+    let photo = alice
+        .client
+        .send(crate::uploads::image("face.png").post("/api/me/images/avatar"))
+        .await;
+    assert_eq!(photo.status, 201, "{}", photo.text());
+    assert_eq!(
+        alice
+            .client
+            .send(Request::new(Method::PATCH, "/api/me").json(&json!({"displayName":"New Name"})))
+            .await
+            .status,
+        200
+    );
+    let latest = room(&alice, access, json!({"op":"read"}))
+        .await
+        .json::<Value>();
+    let player = &latest["participants"][0];
+    assert_eq!(player["name"], "New Name");
+    let avatar = player["avatar"].as_str().unwrap();
+    let src = launch["src"]
+        .as_str()
+        .unwrap()
+        .strip_prefix("https://")
+        .unwrap();
+    let (host, start) = src.split_once('/').unwrap();
+    let get = |path: &str, cookie: &str| {
+        let request = format!(
+            "GET /_activity-files/{path} HTTP/1.1\r\nHost: {host}\r\nCookie: {cookie}\r\nConnection: close\r\n\r\n"
+        );
+        let address = server.address();
+        async move { crate::support::raw_request(address, request.as_bytes()).await }
+    };
+    let started = get(start, "").await;
+    let cookie = started
+        .header("set-cookie")
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap();
+    let path = avatar.trim_start_matches('/');
+    let picture = get(path, cookie).await;
+    assert_eq!(picture.status, 200);
+    assert_eq!(picture.header("content-type"), Some("image/png"));
+    assert_eq!(picture.body.as_slice(), crate::uploads::PNG);
+    assert_eq!(get(path, "").await.status, 403);
+    assert_eq!(
+        alice
+            .client
+            .send(Request::new(Method::DELETE, "/api/me/images/avatar"))
+            .await
+            .status,
+        200
+    );
+    let removed = room(&alice, access, json!({"op":"read"}))
+        .await
+        .json::<Value>();
+    assert!(removed["participants"][0]["avatar"].is_null());
+    assert_eq!(get(path, cookie).await.status, 403);
 }

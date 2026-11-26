@@ -229,3 +229,31 @@ test("camera relay clears expired and stopped images", () => {
   tile("bob", { op: "clear" });
   assert.equal(tile("alice", { op: "get", ids: ["bob"] }).bob, null);
 });
+
+test("a local preview restores the player's private save after restarting the CLI", async t => {
+  const folder = await mkdtemp(join(tmpdir(), "activity-save-"));
+  t.after(() => rm(folder, { recursive: true, force: true }));
+  const project = join(folder, "project");
+  const progressDir = join(folder, "saves");
+  await mkdir(project);
+  await writeFile(join(project, "index.html"), "<title>Save test</title>");
+  await writeFile(join(project, "stellarr.json"), JSON.stringify(manifest));
+  const token = randomUUID();
+  let frame = randomUUID();
+  let sim = await startLocal(project, 0, { progressDir });
+  const port = sim.server.address().port;
+  const action = input => localRequest(sim.origin, token, { ...input, frame });
+  t.after(() => new Promise(resolve => sim.server.close(resolve)));
+  const first = await (await action({ op: "open", initialState: {} })).json();
+  const save = { op: "saveProgress", expected: 0, data: { level: 7 } };
+  assert.deepEqual(await (await action(save)).json(), { revision: 1 });
+  assert.deepEqual(await (await action(save)).json(), { revision: 1 });
+  assert.equal((await action({ ...save, data: { level: 8 } })).status, 409);
+  await new Promise(resolve => sim.server.close(resolve));
+  sim = await startLocal(project, port, { progressDir });
+  frame = randomUUID();
+  const next = await (await action({ op: "open", initialState: {} })).json();
+  assert.equal(next.me.id, first.me.id);
+  assert.notEqual(next.sessionId, first.sessionId);
+  assert.deepEqual(await (await action({ op: "loadProgress" })).json(), { revision: 1, data: { level: 7 } });
+});

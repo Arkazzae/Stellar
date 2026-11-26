@@ -63,7 +63,7 @@ The proposed v1 core is a session with participants, shared state and messages. 
 | Operation | What an author can rely on |
 | --- | --- |
 | `connect({ initialState })` | Resolves to the session API (including `context` and `state`) after loading the current state and revision. Concurrent first joins initialize the state once. |
-| `context`, `theme`, `participants` | Context identifies the session, person, place, locale and standalone mode for the life of the page. Theme exposes light or dark mode and six palette colours. Theme and participant changes can be observed. Everyone sees participants in the same join order. |
+| `context`, `locale`, `device`, `theme`, `participants` | Context identifies the session, current person, place, interface language and device class. Language and device subscriptions follow changes during play. Theme exposes light or dark mode and six palette colours. Theme and participant changes can be observed. Everyone sees participants in the same join order. |
 | `state.get()`, `state.subscribe(listener)` | `get()` returns the last confirmed state object. A subscription calls `listener(state, revision)` immediately and then in revision order. After a gap the listener receives a fresh snapshot before later changes. |
 | `state.set(patch)` | Replaces the specified top-level keys atomically and resolves with the committed revision. |
 | `state.set(change)` | Computes the patch from the current revision and retries on conflict. The function must be free of side effects. Returning nothing cancels the change. Throwing leaves state unchanged. |
@@ -74,7 +74,7 @@ The proposed v1 core is a session with participants, shared state and messages. 
 
 - A participant is a person, not a tab. The id stays the same after a reload and on another device.
 - An id is an opaque text. An activity may compare ids and must not read anything into their shape.
-- A participant has an id, a name, an avatar address served by the instance, and a `connected` flag.
+- A participant has an id, display name, optional account username, a nullable avatar address and a `connected` flag. Profile edits update the roster during play.
 - A person has one active frame per session. Opening the activity elsewhere retires the previous frame. Its pending traffic can no longer act for that participant.
 - Someone whose page reloads or whose connection drops keeps their place for `graceSeconds`, shown as not connected.
 
@@ -173,7 +173,7 @@ The SDK supplies the listener's current level when the activity opens and report
 | `version` | The author's release version in SemVer 2.0.0 format, independent of `protocol`. |
 | `icon` | Required for publishing, installing or updating a release. Relative path to a packaged PNG, JPEG or WebP image, up to 512 KiB. A local or private prototype can omit it. |
 | `cover` | Optional background illustration in the same formats, up to 2 MiB. If omitted, Cockpit displays the activity icon on the current theme’s background. |
-| `devices` | Optional list of supported device classes. Proposed values are `desktop`, `tablet` and `phone`. Omitting the field declares support for all three. |
+| `devices` | Optional list of supported device classes. Accepted values are `desktop`, `tablet` and `phone`. Omitting the field declares support for all three. |
 | `launchModes` | Optional list containing `voice`, `personal`, or both. Defaults to `["voice"]`. The instance only offers modes declared by the installed release. |
 | `authority` | Optional. `shared` allows shared-state patches. `host` gives the current host authority to commit game decisions. |
 | `seats` | Optional limit on players, from 1 to 128. Additional participants can spectate. |
@@ -200,6 +200,7 @@ The second file is `index.html`. The proposed module address `/_stellarr/sdk/v1.
 <!doctype html>
 <html lang="en">
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Shared Poll</title>
 <form>
   <fieldset disabled>
@@ -359,7 +360,7 @@ The earlier Stellarr had this mechanism working. Its pack format and cache behav
 | Collaborative documents | Edits to different items survive concurrent writes and reconnects. A late joiner gets the document and its embedded content. The earlier Excalidraw integration allowed 16 MiB including images. The merge rule for edits to the same item and retention beyond a session are open. |
 | Fast live updates | A late joiner can obtain a current snapshot. A slow recipient can skip obsolete values without holding up other recipients. Section 14 proposes a workload to evaluate the core message API under these conditions. |
 | Private session data | A participant can recover a private assignment after reconnecting. A new host can recover the last confirmed public state and matching private checkpoint together. Only the current host may fetch the private checkpoint. |
-| Saved progress | A person can resume on another device. Concurrent writes and a retry after a lost reply must preserve progress. |
+| Saved progress (implemented) | `progress.load()` returns the account’s private JSON object and revision. `progress.save(data, expectedRevision)` replaces it atomically and resolves to the committed revision. A stale revision returns 409. The save is scoped to the account, release source and activity ID and survives room expiry, release updates and instance restarts. |
 | Instance-wide data | A shared listing can be claimed once when two people act at the same time. The earlier marketplace was optional. |
 | Other requests | Activities have also asked for full-screen notifications and access to outside services via the instance. Their interfaces are open. Section 5 covers activity playback volume. |
 
