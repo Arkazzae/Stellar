@@ -1,0 +1,56 @@
+name: GitHub release
+
+# Mirrors a published server release onto the repository's Releases page, with
+# the installers install.sh downloads; scripts/release/github-release.sh has
+# the checks. release.yml calls it for each server-v* tag. Run it by hand to
+# add or refresh the release of an earlier version.
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Server version, such as 0.2.1; by default the version of the server-v tag that started the run
+        type: string
+        default: ""
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Server version, such as 0.2.1
+        type: string
+        required: true
+      dry-run:
+        description: Download and verify only, and leave the release as it is
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  github-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      attestations: read
+    concurrency:
+      group: github-release-${{ inputs.version && format('server-v{0}', inputs.version) || github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Verify the published installers and mirror them to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          version=$VERSION
+          # release.yml passes no version: it releases the tag it runs for.
+          if [[ -z $version && $GITHUB_REF == refs/tags/server-v* ]]; then
+            version=${GITHUB_REF#refs/tags/server-v}
+          fi
+          if [[ $DRY_RUN == true ]]; then
+            bash scripts/release/github-release.sh --dry-run "$version"
+          else
+            bash scripts/release/github-release.sh "$version"
+          fi
