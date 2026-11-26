@@ -12,6 +12,7 @@ import {
 } from "react";
 
 import type { MessageKey, Translator } from "@/i18n";
+import { dismissActivityNotifications } from "@/lib/platform/badge";
 import { clearAll as clearTranslations } from "@/lib/chatTranslation/translationCache";
 import { wipeAll as wipeStoredMessages, wipeServer as wipeStoredServer } from "@/lib/messageStore/messageStore";
 import type { Account, AuthResult, ConnectionStatus, Presence, User } from "@/ports";
@@ -356,6 +357,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // session binding is what decides delivery; this only frees the device.
   useEffect(() => {
     if (boot.phase !== "anonymous" && boot.phase !== "revoked") return;
+    void navigator.clearAppBadge?.().catch(() => undefined);
+    void dismissActivityNotifications().catch(() => undefined);
     void ports.notificationDelivery.releaseDevice().catch(() => undefined);
   }, [boot.phase, ports]);
 

@@ -30,7 +30,7 @@ async fn inbox() -> Inbox {
     let (home, channel): (Id, Id) = server
         .database()
         .query_row(
-            "SELECT \"Id\", (SELECT \"Id\" FROM \"Channels\" WHERE \"ServerId\" = \"Servers\".\"Id\" LIMIT 1) FROM \"Servers\" LIMIT 1",
+            "SELECT \"Id\", (SELECT \"Id\" FROM \"Channels\" WHERE \"ServerId\" = \"Servers\".\"Id\" AND \"Kind\" = 0 LIMIT 1) FROM \"Servers\" LIMIT 1",
             [],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
@@ -141,6 +141,35 @@ async fn the_inbox_is_paged_newest_first_and_private_to_its_owner() {
     assert_eq!(bens["unreadCount"], 50);
     assert!(ids(&bens).iter().all(|id| !seen.contains(id)));
     assert_eq!(list(&i.ben.client, "?beforeSequence=1").await["items"], json!([]));
+}
+
+#[tokio::test]
+async fn app_badge_combines_private_messages_and_mentions_for_this_viewer() {
+    let i = inbox().await;
+    let path = "/api/me/app-badge";
+    i.plain(&i.ada, "ordinary notification");
+    let mention = i.put(Row { server: i.home, user: &i.ada, title: "mentioned", at: "2026-03-01 10:00:00",
+        channel: Some(i.channel), invite: None, source: "system" });
+    i.server.database().execute(
+        r#"UPDATE "UserNotifications" SET "SourcePackageId" = 'stellarr.mention' WHERE "Id" = ?1"#,
+        [mention],
+    ).unwrap();
+    let conversation = i.ben.client.post_json("/api/social/conversations", &json!({"userId": i.ada.id})).await.json::<Value>();
+    let conversation = conversation["id"].as_str().unwrap();
+    for content in ["first", "second"] {
+        let response = i.ben.client.post_json(&format!("/api/social/conversations/{conversation}/messages"), &json!({ "content": content })).await;
+        assert_eq!(response.status, 201);
+    }
+    let response = i.ada.client.get(path).await;
+    assert_eq!(response.header("cache-control"), Some("no-store"));
+    assert_eq!(response.json::<Value>(), json!({"unread": 3}));
+    assert_eq!(i.ben.client.get(path).await.json::<Value>(), json!({"unread": 0}));
+    assert_eq!(status(&i.ada.client, Method::POST, &format!("/api/social/conversations/{conversation}/read")).await, 204);
+    assert_eq!(i.ada.client.get(path).await.json::<Value>(), json!({"unread": 1}));
+    assert_eq!(status(&i.ada.client, Method::PUT, &format!("/api/channels/{}/read", i.channel)).await, 200);
+    assert_eq!(i.ada.client.get(path).await.json::<Value>(), json!({"unread": 0}));
+    assert_eq!(status(&i.ada.client, Method::PUT, &format!("/api/notifications/{mention}/read")).await, 200);
+    assert_eq!(i.ada.client.get(path).await.json::<Value>(), json!({"unread": 0}));
 }
 
 #[tokio::test]

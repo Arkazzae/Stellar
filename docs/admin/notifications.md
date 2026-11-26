@@ -29,6 +29,8 @@ Email notifications require:
 
 Web Push delivers notifications through the browser's push service (`web/public/stellarr-worker.js`) even when all Stellarr tabs are closed. Each received push displays a system notification, including when a Stellarr window has focus. Opening it takes the signed-in recipient to the DM or channel message after the server checks current access. Deleted or inaccessible targets open the notifications inbox.
 
+The installed app counts unread direct messages and unread inbox mentions across the channels the account can access. Opening the app or receiving a push refreshes the count from the instance. On iOS, displaying a number on the Home Screen requires notification permission. Android launchers can show an indicator for outstanding system notifications.
+
 Web Push remains disabled until you configure a persistent VAPID key pair in `.env` and users opt in under **Settings → Notifications**.
 
 Check **Cockpit → Integrations → Web Push** for the instance's VAPID configuration status. On iPhone and iPad, first add the instance to the Home Screen, launch it from its icon, then enable push for the account and enroll the device in **Settings → Notifications**.
