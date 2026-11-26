@@ -26,6 +26,11 @@ export interface VoiceStageProps extends ParticipantTilesProps {
    * shell's business, so the flag is passed in rather than owned here.
    */
   cinema?: boolean;
+  /**
+   * An activity has the stage: the tiles line up in one row under it, and
+   * none of them takes the focus.
+   */
+  underActivity?: boolean;
 }
 
 /** How long an ended share keeps its tile to say so. */
@@ -110,6 +115,7 @@ export function VoiceStage({
   onStopWatchingShare,
   onStopSharing,
   cinema = false,
+  underActivity = false,
   people,
   ...sources
 }: VoiceStageProps) {
@@ -125,8 +131,8 @@ export function VoiceStage({
     ...ended.map((share): StageTile => ({ kind: "screen", key: share.key, share, ended: true })),
     ...people.map((person): StageTile => ({ kind: "person", key: personKey(person.id), person })),
   ];
-  const focused = tiles.find((tile) => tile.key === focusKey) ?? null;
-  const layout = focused === null ? "grid" : "focus";
+  const focused = underActivity ? null : (tiles.find((tile) => tile.key === focusKey) ?? null);
+  const layout = underActivity ? "strip" : focused === null ? "grid" : "focus";
   const grid = useTileGrid(layout === "grid" ? tiles.length : 1);
 
   const toggleStrip = useCallback(() => {
@@ -183,7 +189,7 @@ export function VoiceStage({
               onStopSharing={tile.share.local ? onStopSharing : undefined}
               onWatch={() => watch(tile.key)}
               onStopWatching={stopWatching}
-              onFocus={() => focus(tile.key)}
+              onFocus={underActivity ? undefined : () => focus(tile.key)}
               onShowGrid={showGrid}
             />
           ) : (
@@ -191,7 +197,7 @@ export function VoiceStage({
               key={tile.key}
               {...participantTileProps(tile.person, sources)}
               focused={tile === focused}
-              onFocus={() => focus(tile.key)}
+              onFocus={underActivity ? undefined : () => focus(tile.key)}
             />
           ),
         )}

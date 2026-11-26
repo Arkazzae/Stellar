@@ -1,6 +1,7 @@
 import { useState, useSyncExternalStore } from "react";
 
 import { Icon } from "@stellarr/icons";
+import { ActivityIcon } from "@/components/activities/ActivityIcon";
 import type { PopoverTriggerProps } from "@/components/primitives/Popover";
 import type { Sound, SoundboardLive, SuppressorDownload, VoiceSettings } from "@/ports";
 import { useLanguage } from "@/state/LanguageProvider";
@@ -32,11 +33,25 @@ function CaretButton({ label, ...trigger }: PopoverTriggerProps & { label: strin
   );
 }
 
-export interface LiveVoiceActivity {
-  install: string;
-  name: string;
-  icon: string | null;
-}
+/**
+ * The bar's activity slot. Nothing runs: it opens the picker. Something runs
+ * and you are outside: one click joins it, unless it is full, which the slot
+ * then says instead. Inside, there is no slot; the activity's own bar has it all.
+ */
+export type BarActivity =
+  | { kind: "pick"; onOpen: () => void }
+  | {
+      kind: "join";
+      install: string;
+      name: string;
+      icon: string | null;
+      busy: boolean;
+      /** Why there is no seat, when it is full; null while there is one. */
+      full: string | null;
+      /** Why the last join failed, said beside the slot. */
+      error: string | null;
+      onJoin: () => void;
+    };
 
 export interface VoiceControlBarProps {
   muted: boolean;
@@ -76,12 +91,8 @@ export interface VoiceControlBarProps {
   onToggleCamera: () => void;
   onSelectMicrophone: () => void;
   onSelectCamera: () => void;
-  liveActivity?: LiveVoiceActivity | null;
-  activityJoined?: boolean;
-  activityBusy?: boolean;
-  onOpenActivities?: () => void;
-  onJoinActivity?: () => void;
-  onLeaveActivity?: () => void;
+  /** Absent where the call has no activities, or while you are inside one. */
+  activity?: BarActivity;
   onToggleShare: () => void;
   /** Absent where the call has no soundboard, which is a private one. */
   onPlaySound?: (soundId: string) => void;
@@ -123,12 +134,7 @@ export function VoiceControlBar({
   onToggleCamera,
   onSelectMicrophone,
   onSelectCamera,
-  liveActivity = null,
-  activityJoined = false,
-  activityBusy = false,
-  onOpenActivities,
-  onJoinActivity,
-  onLeaveActivity,
+  activity,
   onToggleShare,
   onPlaySound,
   onInvite,
@@ -265,60 +271,7 @@ export function VoiceControlBar({
               )}
             />
           </div>
-          {activityJoined ? (
-            <button
-              type="button"
-              className="vc-btn on"
-              aria-pressed={true}
-              aria-label={t("stage.leaveActivity")}
-              title={
-                liveActivity
-                  ? `${t("stage.leaveActivity")}: ${liveActivity.name}`
-                  : t("stage.leaveActivity")
-              }
-              onClick={onLeaveActivity ?? onOpenActivities}
-            >
-              <Icon name="game" size={20} />
-            </button>
-          ) : liveActivity !== null && onJoinActivity !== undefined ? (
-            <>
-              <span className="vc-act-sep" aria-hidden="true" />
-              <button
-                type="button"
-                className="vc-btn vc-act-join"
-                aria-label={`${t("stage.joinActivity")}: ${liveActivity.name}`}
-                title={`${t("stage.joinActivity")}: ${liveActivity.name}`}
-                aria-busy={activityBusy || undefined}
-                disabled={activityBusy}
-                onClick={onJoinActivity}
-              >
-                {liveActivity.icon ? (
-                  <img className="vc-act-ico" src={liveActivity.icon} alt="" />
-                ) : (
-                  <span className="vc-act-ico vc-act-fallback" aria-hidden="true">
-                    <Icon name="game" size={16} />
-                  </span>
-                )}
-                <span className="vc-act-txt">
-                  <span className="vc-act-name">{liveActivity.name}</span>
-                  <span className="vc-act-sub">{t("stage.liveJoinSub")}</span>
-                </span>
-              </button>
-            </>
-          ) : (
-            onOpenActivities && (
-              <button
-                type="button"
-                className="vc-btn"
-                aria-haspopup="dialog"
-                aria-label={t("friends.tabActivities")}
-                title={t("friends.tabActivities")}
-                onClick={onOpenActivities}
-              >
-                <Icon name="game" size={20} />
-              </button>
-            )
-          )}
+          {activity === undefined ? null : <ActivitySlot activity={activity} />}
         </div>
 
         {onPlaySound === undefined ? null : (
@@ -425,5 +378,49 @@ export function VoiceControlBar({
         )}
       </div>
     </div>
+  );
+}
+
+/** The activity slot beside screen sharing; see `BarActivity`. */
+function ActivitySlot({ activity }: { activity: BarActivity }) {
+  const { t } = useLanguage();
+  if (activity.kind === "pick") {
+    return (
+      <button
+        type="button"
+        className="vc-btn vc-act"
+        aria-haspopup="dialog"
+        aria-label={t("activities.title")}
+        title={t("activities.title")}
+        onClick={activity.onOpen}
+      >
+        <Icon name="game" size={20} />
+      </button>
+    );
+  }
+  const { name, busy, full, error } = activity;
+  const label = full !== null ? t("activities.full") : busy ? t("activities.joining") : t("activities.join");
+  return (
+    <span className="vc-act vc-act-wrap">
+      <span className="vc-act-sep" aria-hidden="true" />
+      <button
+        type="button"
+        className="vc-btn vc-act-join"
+        aria-label={full ?? (busy ? t("activities.joining") : t("activities.joinNamed", { name }))}
+        title={full ?? t("activities.joinNamed", { name })}
+        aria-disabled={full !== null || busy || undefined}
+        aria-busy={busy || undefined}
+        data-full={full === null ? undefined : ""}
+        onClick={full === null && !busy ? activity.onJoin : undefined}
+      >
+        <ActivityIcon className="vc-act-ico" install={activity.install} name={name} icon={activity.icon} size={26} />
+        <span className="vc-act-txt">{label}</span>
+      </button>
+      {error === null ? null : (
+        <span className="vc-act-error" role="alert">
+          {error}
+        </span>
+      )}
+    </span>
   );
 }

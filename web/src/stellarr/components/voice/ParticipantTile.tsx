@@ -1,6 +1,7 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 
 import { Icon } from "@stellarr/icons";
+import { ActivityIcon } from "@/components/activities/ActivityIcon";
 import { Avatar } from "@/components/primitives/Avatar";
 import { useContextMenu } from "@/components/primitives/ContextMenu";
 import { UserMenu } from "@/components/roster/UserMenu";
@@ -36,6 +37,8 @@ export interface ParticipantTileProps {
   focused?: boolean;
   /** Give the tile the stage, or take it back when it has it. Absent: no such click. */
   onFocus?: () => void;
+  /** The activity this person is inside, marked after their name. */
+  activity?: { install: string; name: string; icon: string | null };
 }
 
 /** The latest clip this person played that is still under way, the same object while it plays. */
@@ -85,6 +88,7 @@ export function ParticipantTile({
   onOpenProfile,
   focused = false,
   onFocus,
+  activity,
 }: ParticipantTileProps) {
   const video = useRef<HTMLVideoElement>(null);
   const menu = useContextMenu();
@@ -191,6 +195,11 @@ export function ParticipantTile({
       <span className="t-name">
         <span>{label ?? person.displayName}</span>
         {soundPlays === undefined ? null : <TileSound live={soundPlays} person={person} />}
+        {activity === undefined ? null : (
+          <span className="t-act" role="img" aria-label={t("activities.inActivity", { name: activity.name })} title={t("activities.inActivity", { name: activity.name })}>
+            <ActivityIcon install={activity.install} name={activity.name} icon={activity.icon} size={14} />
+          </span>
+        )}
       </span>
       <span className="t-mic" aria-hidden="true">
         <Icon name="micSlash" size={14} />

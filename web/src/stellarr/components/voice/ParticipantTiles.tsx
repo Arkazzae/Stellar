@@ -22,6 +22,16 @@ export interface ParticipantTilesProps {
   /** The board's clips under way, so whoever played one wears its emoji while it plays. */
   soundPlays?: SoundboardLive;
   onOpenProfile?: OpenProfile;
+  /** The activity running on the channel, whose mark follows the names of the people inside it. */
+  activityMark?: ActivityMark;
+}
+
+/** An activity's mark, and who is inside it. */
+export interface ActivityMark {
+  install: string;
+  name: string;
+  icon: string | null;
+  people: ReadonlySet<string>;
 }
 
 /** What feeds the tiles of a call, by person: everything but the people. */
@@ -46,6 +56,7 @@ export function participantTileProps(
     onParticipantSuppressionChange,
     soundPlays,
     onOpenProfile,
+    activityMark,
   }: ParticipantTileSources,
 ): ParticipantTileProps {
   return {
@@ -65,6 +76,7 @@ export function participantTileProps(
       ((suppressed) => onParticipantSuppressionChange(person.id, suppressed)),
     soundPlays,
     onOpenProfile,
+    ...(activityMark?.people.has(person.id) ? { activity: activityMark } : {}),
   };
 }
 

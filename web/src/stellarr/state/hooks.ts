@@ -19,6 +19,7 @@ export {
 } from "./AccountProvider";
 export {
   useActivitiesContext as useActivities,
+  useActivitySlot,
   type ActivitiesValue,
   type ActivitySession,
   type PickerRequest,
