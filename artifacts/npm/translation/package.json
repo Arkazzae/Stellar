@@ -1,0 +1,19 @@
+{
+  "name": "@stellarr/translation",
+  "version": "0.1.0",
+  "description": "Stellarr browser translation engine and language models",
+  "license": "SEE LICENSE IN NOTICES",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Arkazzae/Stellarr.git",
+    "directory": "artifacts/npm/translation"
+  },
+  "files": [
+    "dist/",
+    "manifest.json",
+    "NOTICES"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

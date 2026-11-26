@@ -1,0 +1,19 @@
+{
+  "name": "@stellarr/audio-filters",
+  "version": "0.1.0",
+  "description": "Stellarr browser noise suppression worklets and WebAssembly filters",
+  "license": "SEE LICENSE IN NOTICES",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Arkazzae/Stellarr.git",
+    "directory": "artifacts/npm/audio-filters"
+  },
+  "files": [
+    "dist/",
+    "manifest.json",
+    "NOTICES"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
