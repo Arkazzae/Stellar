@@ -329,6 +329,77 @@
   }
 }
 
+/*
+ * The text's rhythm. Outfit reads loose at the theme's 28 px leading, so body
+ * text is 16/26 and list items sit 6 px apart. A heading has more room above
+ * it than below, so it reads with the text it opens.
+ */
+:root .Layout .vp-doc p,
+:root .Layout .vp-doc li {
+  line-height: 26px;
+}
+
+/* Callouts are set at 14 px and keep the theme's 24 px leading. */
+:root .Layout .vp-doc .custom-block :is(p, li) {
+  line-height: 24px;
+}
+
+:root .Layout .vp-doc li + li,
+:root .Layout .vp-doc li > ul,
+:root .Layout .vp-doc li > ol {
+  margin-top: 6px;
+}
+
+:root .Layout .vp-doc h2 {
+  margin: 40px 0 0;
+  padding-top: 24px;
+}
+
+:root .Layout .vp-doc h3 {
+  margin: 32px 0 0;
+}
+
+:root .Layout .vp-doc h4 {
+  margin: 24px 0 0;
+}
+
+:root .Layout .vp-doc :is(h1, h2, h3, h4) + :not(h2, h3, h4, h5, h6) {
+  margin-top: 10px;
+}
+
+:root .Layout .vp-doc table {
+  margin: 16px 0;
+}
+
+/* Table cells have 16 px at their sides, and the header row is small grey labels. */
+:root .Layout .vp-doc th,
+:root .Layout .vp-doc td {
+  padding: 9px 16px;
+  line-height: 22px;
+}
+
+:root .Layout .vp-doc th {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Inline code keeps 4 px of tint at its sides, so brackets and commas sit close to it. */
+:root .Layout .vp-doc :not(pre) > code {
+  padding: 2px 4px;
+}
+
+:root .Layout .VPDocFooter {
+  margin-top: 48px;
+}
+
+:root .Layout .VPDocFooter .edit-info {
+  padding-bottom: 12px;
+}
+
+:root .Layout .VPDocFooter .prev-next {
+  padding-top: 16px;
+}
+
 /* Callout blocks aligned with Cockpit's card radius. */
 :root .vp-doc .custom-block {
   border-radius: 10px;
