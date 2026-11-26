@@ -4,6 +4,7 @@ import { initials } from "@/lib/format/format";
 import {
   useDirectory,
   useFriends,
+  usePorts,
   useSession,
   useUi,
 } from "@/state/hooks";
@@ -14,6 +15,7 @@ export function ServerRailContainer() {
   const friends = useFriends();
   const ui = useUi();
   const session = useSession();
+  const ports = usePorts();
 
   const activateServer = (serverId: string) => {
     directory.selectServer(serverId);
@@ -45,6 +47,7 @@ export function ServerRailContainer() {
       onOpenServer={ui.openServer}
       onSelectServer={activateServer}
       unread={friends.unread}
+      onOpenClient={ports.desktop ? undefined : () => ui.openModal("client")}
       onCreateServer={() => ui.openModal("server-create")}
       onDiscoverServers={() => ui.openModal("server-discover")}
     />

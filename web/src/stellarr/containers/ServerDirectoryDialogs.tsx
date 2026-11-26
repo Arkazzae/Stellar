@@ -10,6 +10,7 @@ import {
 } from "@/components/settings/server/ServerDirectoryModals";
 import { discordImport } from "@/lib/api/calls/discordImport";
 import { getClientReleases } from "@/lib/platform/desktopRelease";
+import { offerInstallAfterInvite, takeInstallOffer } from "@/lib/platform/install";
 import { ApiError, describeError } from "@/lib/api/errors";
 import { useDirectory, useLanguage, usePorts, useSession, useUi } from "@/state/hooks";
 
@@ -73,7 +74,7 @@ export function ServerDirectoryDialogs() {
   const directory = useDirectory();
   const session = useSession();
   const ui = useUi();
-  const { admin } = usePorts();
+  const { admin, desktop } = usePorts();
   const { t } = useLanguage();
 
   // Only the server the session came back on counts: a remembered id it did
@@ -91,6 +92,9 @@ export function ServerDirectoryDialogs() {
   // The fresh app knows of no open dialog; the invite screen is one, so the
   // shortcuts and drawers underneath stay out of its way.
   const { openModal } = ui;
+  useEffect(() => {
+    if (!desktop && takeInstallOffer()) openModal("client");
+  }, [desktop, openModal]);
   const createdKey = created?.id ?? null;
   useEffect(() => {
     if (createdKey !== null) openModal("server-create");
@@ -172,7 +176,9 @@ export function ServerDirectoryDialogs() {
   const joinInvitedServer = useCallback(
     async (invite: string) => {
       try {
-        activateServer((await directory.joinInvite(inviteCodeOf(invite))).id);
+        const server = await directory.joinInvite(inviteCodeOf(invite));
+        offerInstallAfterInvite();
+        activateServer(server.id);
       } catch (cause) {
         throw new Error(
           cause instanceof ApiError && cause.status === 404
@@ -190,6 +196,7 @@ export function ServerDirectoryDialogs() {
         open={ui.modal === "client"}
         onClose={ui.closeModal}
         loadReleases={getClientReleases}
+        onNotifications={() => openModal("notification-settings")}
       />
       <ServerCreateModal
         open={ui.modal === "server-create" || created !== null}

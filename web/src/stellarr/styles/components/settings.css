@@ -858,7 +858,7 @@
   @media (max-width:560px){
     .client-option{align-items:flex-start;flex-wrap:wrap;--ui-button-min-height:44px}
     .client-option-text{flex-basis:calc(100% - 52px)}
-    .client-option > a{margin-left:52px}
+    .client-option > a,.client-option > button{margin-left:52px}
     .client-option.current{align-items:center;flex-wrap:nowrap}
     .client-option.current .client-option-text{flex-basis:auto}
   }

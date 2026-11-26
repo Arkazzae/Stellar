@@ -1,3 +1,5 @@
+import { useSyncExternalStore } from "react";
+import { installationMode, subscribeInstallation } from "@/lib/platform/install";
 import { Icon } from "@stellarr/icons";
 import { RailLauncher, type RailLauncherItem } from "@/components/shell/rail/RailLauncher";
 import { useLanguage } from "@/state/hooks";
@@ -31,6 +33,7 @@ export interface ServerRailProps {
    * The next two are rows of the launcher at the foot of the column. An absent
    * one renders disabled rather than hidden, so the menu says what will be there.
    */
+  onOpenClient?: () => void;
   onCreateServer?: () => void;
   onDiscoverServers?: () => void;
 }
@@ -53,11 +56,13 @@ export function ServerRail({
   onOpenServer,
   onSelectServer,
   unread,
+  onOpenClient,
   onCreateServer,
   onDiscoverServers,
 }: ServerRailProps) {
   const { t } = useLanguage();
 
+  const install = useSyncExternalStore(subscribeInstallation, installationMode);
   const launcherItems: RailLauncherItem[] = [
     {
       key: "create",
@@ -74,6 +79,14 @@ export function ServerRail({
       onSelect: onDiscoverServers,
     },
   ];
+  if (onOpenClient) {
+    launcherItems.push({
+      key: "client",
+      icon: "mobile",
+      label: t(install === "installed" ? "client.title" : "pwa.install"),
+      onSelect: onOpenClient,
+    });
+  }
   const shownServers: RailServer[] = servers ?? [
     { id: activeServerId ?? "active", name, mark, iconUrl },
   ];

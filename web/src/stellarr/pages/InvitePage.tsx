@@ -8,6 +8,7 @@ import { Face, ServerTile } from "@/components/auth/Faces";
 import { ServerUnreachable } from "@/components/auth/Outcomes";
 import { AppSkeleton } from "@/components/shell/AppSkeleton";
 import { useSignInProviders } from "@/hooks/useInstanceFacts";
+import { offerInstallAfterInvite } from "@/lib/platform/install";
 import { ApiError } from "@/lib/api/errors";
 import { pendingInvite, rememberPendingInvite, takePendingInvite } from "@/lib/auth/invites";
 import { formatDate } from "@/lib/format/format";
@@ -178,6 +179,7 @@ export default function InvitePage() {
       const server = await ports.directory.joinInvite(code);
       if (current.signal.aborted) return;
       forget();
+      offerInstallAfterInvite();
       ports.directory.selectServer(server.id);
       router.replace("/");
       reload();

@@ -1,10 +1,11 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState, useSyncExternalStore } from "react";
 
 import { Button } from "@stellarr/ui";
 import { Icon, type IconName } from "@stellarr/icons";
 import { Modal } from "@/components/primitives/Modal";
 import { DialogHeader } from "@/components/settings/DialogHeader";
 import type { ClientRelease } from "@/lib/platform/desktopRelease";
+import { installationMode, promptInstallation, subscribeInstallation } from "@/lib/platform/install";
 import { formatBytes } from "@/lib/format/format";
 import { safeAssetUrl } from "@/lib/format/safeUrl";
 import { useLanguage } from "@/state/hooks";
@@ -12,6 +13,7 @@ import { useLanguage } from "@/state/hooks";
 export interface ClientDownloadModalProps {
   open: boolean;
   onClose(): void;
+  onNotifications?: () => void;
   loadReleases(signal?: AbortSignal): Promise<ClientRelease[]>;
 }
 
@@ -72,9 +74,11 @@ function ReleaseOption({
  *
  * Never opened by the desktop client: it is the download.
  */
-export function ClientDownloadModal({ open, onClose, loadReleases }: ClientDownloadModalProps) {
+export function ClientDownloadModal({ open, onClose, loadReleases, onNotifications }: ClientDownloadModalProps) {
   const { locale, t } = useLanguage();
   const titleId = useId();
+  const mode = useSyncExternalStore(subscribeInstallation, installationMode);
+  const [promptFailed, setPromptFailed] = useState(false);
   // Only written from the request's own callbacks, so opening the dialog again
   // shows the last answer while the next one is fetched instead of blanking.
   const [state, setState] = useState<Releases>({ status: "loading" });
@@ -120,6 +124,22 @@ export function ClientDownloadModal({ open, onClose, loadReleases }: ClientDownl
         />
 
         <div className="dlg-body client-list">
+          <article className="client-option">
+            <img src="/pwa/icon-192.png" width="44" height="44" alt="" />
+            <div className="client-option-text">
+              <b>{mode === "installed" ? t("pwa.installed") : window.location.host}</b>
+              <span>{t(mode === "installed" ? "pwa.current" : promptFailed ? "pwa.menu" : `pwa.${mode}`)}</span>
+            </div>
+            {mode === "prompt" && (
+              <Button size="sm" onClick={() => {
+                setPromptFailed(false);
+                void promptInstallation().catch(() => setPromptFailed(true));
+              }}>{t("pwa.install")}</Button>
+            )}
+            {mode === "installed" && onNotifications && (
+              <Button size="sm" onClick={onNotifications}>{t("pwa.notifications")}</Button>
+            )}
+          </article>
           {state.status === "loading" ? (
             <p className="desktop-release-state" role="status">
               {t("desktopRelease.loading")}
@@ -138,7 +158,7 @@ export function ClientDownloadModal({ open, onClose, loadReleases }: ClientDownl
 
           {/* The browser stays in the same list so the dialog answers both
               questions at once: what can be installed and what is running. */}
-          <article className="client-option current">
+          {mode !== "installed" && <article className="client-option current">
             <span className="client-option-ico" aria-hidden="true">
               <Icon name="board" size={20} />
             </span>
@@ -147,7 +167,7 @@ export function ClientDownloadModal({ open, onClose, loadReleases }: ClientDownl
               <span>{t("client.webDetail")}</span>
             </div>
             <span className="client-option-tag">{t("client.inUse")}</span>
-          </article>
+          </article>}
 
           {releases.some((release) => release.platform === "android") ? (
             <p className="set-note">{t("client.androidInstall")}</p>

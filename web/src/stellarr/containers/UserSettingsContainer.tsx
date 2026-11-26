@@ -132,7 +132,7 @@ export function UserSettingsContainer() {
   // The account row, "edit profile" on the card and the voice bar's device
   // pickers all land in this one dialog.
   const open =
-    ui.modal === "account" || ui.modal === "profile" || ui.modal === "voice";
+    ui.modal === "notification-settings" || ui.modal === "account" || ui.modal === "profile" || ui.modal === "voice";
   const notificationDelivery = useNotificationDelivery(open);
 
   // Opening a device is a transport, and a component may not reach past
@@ -154,7 +154,7 @@ export function UserSettingsContainer() {
         onClose={ui.closeModal}
         // Only the voice bar lands on a different pane: the profile is the
         // account pane.
-        initialPane={ui.modal === "voice" ? "glos" : "konto"}
+        initialPane={ui.modal === "notification-settings" ? "powiadomienia" : ui.modal === "voice" ? "glos" : "konto"}
         account={account.account}
         accountPane={{
           customEmoji,
