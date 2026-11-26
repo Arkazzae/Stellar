@@ -1,6 +1,6 @@
 # Stellarr installer
 
-`stellarr-installer` installs Stellarr with Docker Compose on a Linux or macOS host, and updates an installation it made. The root [`install.sh`](../../install.sh), served at `https://stellarr.online/install.sh`, is a short POSIX script that downloads the installer for the machine from a single GitHub release, checks it against that release's `stellarr-installer.sha256`, and runs it with the same options.
+`stellarr-installer` installs Stellarr with Docker Compose on a Linux or macOS host, and updates an installation it made. The root [`install.sh`](../../install.sh), served at `https://stellarr.online/install.sh`, is a short POSIX script that downloads the installer for the machine from the versioned server endpoint on `stellarr.online`, checks it against the bundle's `stellarr-installer.sha256`, and runs it with the same options.
 
 ```bash
 curl -fsSL https://stellarr.online/install.sh | bash -s -- --help
@@ -54,4 +54,4 @@ bash ../../infra/tests/install.test.sh
 
 The crate builds on Unix only. [`infra/tests/install.test.sh`](../../infra/tests/install.test.sh) builds it with the `test-seams` feature, which answers HTTPS from files and lets a case choose the OS, the user id and a clock that does not wait, then runs it and `install.sh` against stub commands. A release build never has that feature.
 
-The release workflow builds installer binaries for `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`, `x86_64-apple-darwin` and `aarch64-apple-darwin` and attaches them, with their sums, when it creates the GitHub release.
+The release workflow builds installer binaries for `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`, `x86_64-apple-darwin` and `aarch64-apple-darwin` and publishes them with their sums as a versioned OCI artifact in GHCR. Push a `server-vX.Y.Z` Git tag to publish a server. After testing the pinned installation, the workflow promotes the image and installer to the stable series and latest channels. The site serves downloads under `/server-downloads/`. GitHub Releases is reserved for client applications.

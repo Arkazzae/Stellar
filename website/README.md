@@ -59,6 +59,8 @@ npm run build
 npx wrangler pages deploy dist --project-name stellarr --branch main
 ```
 
+The Pages Function under `functions/server-downloads/` resolves server release channels and serves native installer downloads from the public GHCR bundle. It requires no registry credentials.
+
 The Vite build copies the root [`../install.sh`](../install.sh) script into `dist/install.sh` so `https://stellarr.online/install.sh` always serves the current installer as `text/plain`.
 
 Because the build reads files from `../branding/` and `../install.sh`, always build from a full repository checkout.

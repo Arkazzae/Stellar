@@ -105,7 +105,7 @@ sha256() {
 }
 
 release_failed() {
-  fail "$1" "Check that this machine reaches stellarr.online and GitHub’s container registry. Use curl or GNU wget for HTTPS downloads." '' \
+  fail "$1" "Check that this machine reaches stellarr.online and the GitHub container registry. Use curl or GNU wget for HTTPS downloads." '' \
     "If no release carries the installer yet, run from a Stellarr checkout with Rust's cargo:" \
     "  cargo run --locked --manifest-path init/installer/Cargo.toml -- --dir . --build"
 }

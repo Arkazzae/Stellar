@@ -333,6 +333,8 @@ jobs:
           cache: npm
           cache-dependency-path: website/package-lock.json
       - run: npm ci
+      - run: node --test test/server-downloads.test.js
+      - run: ./node_modules/.bin/wrangler pages functions build --outdir "$RUNNER_TEMP/server-downloads-worker"
       - run: npm run build
       # The site serves the repository's installer as it is.
       - run: cmp dist/install.sh ../install.sh
