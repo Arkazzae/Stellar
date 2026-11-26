@@ -28,7 +28,12 @@ FROM --platform=linux/amd64 debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc5
 COPY artifacts/recipes/bergamot/toolchain.sh /src/recipe/
 RUN sh /src/recipe/toolchain.sh
 ADD --checksum=sha256:1cbb917909a1830bce3c3ee4b65c0dd4e17bf913d07c3428b57d0023e110f2b8 https://github.com/Arkazzae/Stellarr/releases/download/npm-sources-1/bergamot-sources.tar.gz /src/source.tar.gz
-RUN mkdir -p /builds/worker/checkouts && tar -xzf /src/source.tar.gz --strip-components=1 -C /builds/worker/checkouts
+# Marian watches the reflog timestamp and reads the revision from Git HEAD.
+# The source snapshot omits workstation reflogs.
+RUN mkdir -p /builds/worker/checkouts \
+    && tar --no-same-owner --warning=no-unknown-keyword -xzf /src/source.tar.gz --strip-components=1 -C /builds/worker/checkouts \
+    && mkdir -p /builds/worker/checkouts/.git/logs \
+    && touch /builds/worker/checkouts/.git/logs/HEAD
 COPY artifacts/recipes/bergamot/build.sh /src/recipe/
 RUN --network=none sh /src/recipe/build.sh /out
 
