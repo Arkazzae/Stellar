@@ -39,6 +39,25 @@ test('sections follow the documentation map and appear once they have a page', (
   )
 })
 
+test('the Activity SDK section sits between Administration and Reference when present', (t) => {
+  const docs = docsWith(t, {
+    'README.md': '# Documentation\n- [Getting started](sdk/getting-started.md)\n',
+    'admin/cockpit.md': '# Stellarr Cockpit\n',
+    'architecture.md': '# Architecture\n',
+    'sdk/api-reference.md': '# API and CLI reference\n',
+    'sdk/getting-started.md': '# Getting started\n',
+  })
+
+  assert.deepEqual(
+    buildNavigation(docs).sidebar.map((group) => [group.text, group.items?.map((i) => i.link)]),
+    [
+      ['Administration', ['/admin/cockpit']],
+      ['Activity SDK', ['/sdk/getting-started', '/sdk/api-reference']],
+      ['Reference', ['/architecture']],
+    ],
+  )
+})
+
 test('pages are ordered as the map links to them, then alphabetically', (t) => {
   const docs = docsWith(t, {
     'README.md': [
