@@ -46,7 +46,7 @@ Every `Observable<T>` provides `get(): T` (returns a `structuredClone` snapshot)
 | `participants` | `Participant[]` | Ordered roster: `{ id, name, username?, avatar: string \| null, connected }`. |
 | `seats` | `Observable<string[]> & { claim(): Promise<void>; release(): Promise<void> }` | IDs of seated players (`claim()` takes a free seat or rejects `409`; `release()` steps down to spectator and clears the caller's secret assignment). |
 | `host` | `Observable<string \| null> & { transfer(id: string): Promise<void> }` | Current host ID (`null` under `"shared"` authority). `transfer(id)` hands host control to another connected seated player. |
-| `assignments` | `Observable<JsonValue> & { checkpoint(): Promise<{ revision: number; state: S; assignments: Record<string, JsonValue> }> }` | Caller's private assignment (`null` if none or spectator). `checkpoint()` is callable only by the current host. |
+| `assignments` | `Observable<JsonValue> & { checkpoint(): Promise<{ revision: number; state: S; assignments: Record<string, JsonValue> }> }` | The player sees their own assignment (`null` if none or spectator). The current host can read every assignment through `checkpoint()`, including after a host transfer. |
 
 ### State, commands, messages, and progress
 

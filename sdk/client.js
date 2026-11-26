@@ -1,6 +1,8 @@
 import { connectPort, createMedia } from "./media.js";
 
 const pollInterval = 200;
+// Room presence expires after five seconds without a call.
+const heartbeatInterval = 2000;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const transient = error => !error.status || error.status >= 500;
 const clone = value => structuredClone(value);
@@ -10,6 +12,7 @@ function embeddedTransport() {
   const pending = new Map();
   let serial = 0;
   channel.port1.onmessage = ({ data }) => {
+    if (data?.update) { send.onUpdate?.(data.update); return; }
     const call = pending.get(data?.id);
     if (!call) return;
     if (typeof data.error === "string") {
@@ -96,7 +99,7 @@ export async function connect({ initialState = {} } = {}) {
   const request = input => transport({ ...input, frame });
   const started = performance.now();
   let opened;
-  try { opened = await request({ op: "open", initialState }); }
+  try { opened = await request({ op: "open", initialState, roomEvents: true }); }
   catch (error) { transport.close?.(); throw error; }
   const launchMode = opened.launchMode === "personal" ? "personal" : "voice";
   const context = { standalone: opened.standalone ?? false, me: opened.me, sessionId: opened.sessionId,
@@ -126,7 +129,11 @@ export async function connect({ initialState = {} } = {}) {
   const outbox = [];
   let timer;
   let closed = false;
-  let sending = false;
+  let reading = false;
+  let immediateRead = false;
+  let readAgain = false;
+  const settlements = new Set();
+  let sendsInFlight = 0;
   let deciding = false;
   let sequence = 0;
   let writes = Promise.resolve();
@@ -134,7 +141,7 @@ export async function connect({ initialState = {} } = {}) {
 
   function apply(result) {
     if (closed) return;
-    if (result.version >= version) {
+    if (result.version >= version && Array.isArray(result.participants)) {
       version = result.version;
       epoch = result.epoch;
       context.me = result.participants.find(person => person.id === me) ?? context.me;
@@ -156,6 +163,7 @@ export async function connect({ initialState = {} } = {}) {
     if (closed) return;
     closed = true;
     clearTimeout(timer);
+    for (const notify of settlements) notify();
     window.removeEventListener("pagehide", onHide);
     scheme?.removeEventListener("change", onScheme);
     media?.dispose?.();
@@ -189,6 +197,7 @@ export async function connect({ initialState = {} } = {}) {
   async function processCommand(packet) {
     if (deciding || !packet.command || packet.commandRevision !== revision || packet.epoch !== epoch) return;
     deciding = true;
+    let answered = false;
     const { from, id, kind, data } = packet.command;
     const input = { op: "decide", from, id, epoch, version: packet.version, expected: revision };
     try {
@@ -199,17 +208,45 @@ export async function connect({ initialState = {} } = {}) {
         const value = await handler(clone(data), { from, id }, clone(state), { assignments: clone(packet.checkpoint) });
         decision = { patch: value?.patch, result: value?.result, assignments: value?.assignments };
       } catch (error) { decision = { error: String(error?.message ?? error).slice(0, 512) }; }
-      try { apply(await retry({ ...input, ...decision })); }
+      try { apply(await retry({ ...input, ...decision })); answered = true; }
       catch (error) {
-        if ([400, 413].includes(error.status)) apply(await retry({ ...input, error: error.message.slice(0, 512) }));
+        if ([400, 413].includes(error.status)) {
+          apply(await retry({ ...input, error: error.message.slice(0, 512) }));
+          answered = true;
+        }
       }
-    } finally { deciding = false; }
+    } finally {
+      deciding = false;
+      if (answered && opened.roomEvents) wakeRead();
+    }
   }
 
+  function deliver(message) {
+    const value = message.binary ? Uint8Array.from(atob(message.data), char => char.charCodeAt(0)) : message.data;
+    for (const listener of subscriptions.get(message.kind) ?? []) notify(listener, clone(value), { from: message.from });
+  }
+
+  function wakeRead() {
+    if (closed) return;
+    if (reading) { readAgain = true; return; }
+    if (immediateRead) return;
+    immediateRead = true;
+    clearTimeout(timer);
+    timer = setTimeout(poll, 0);
+  }
+  transport.onUpdate = update => {
+    if (closed || !opened.roomEvents) return;
+    if (update.message) { deliver(update.message); return; }
+    if (update.settled) for (const notify of settlements) notify(update.settled);
+    wakeRead();
+  };
+
   async function poll() {
+    reading = true;
+    immediateRead = false;
     const began = performance.now();
     try {
-      const packet = await request({ op: "read", after: revision });
+      const packet = await request({ op: "read", after: revision, version, roomEvents: !!opened.roomEvents });
       if (closed) return;
       clockOffset = packet.now - (began + performance.now()) / 2;
       connection.update("connected");
@@ -218,17 +255,18 @@ export async function connect({ initialState = {} } = {}) {
       locale.update(context.locale);
       device.update(context.device);
       apply(packet);
-      for (const message of packet.messages ?? []) {
-        const value = message.binary ? Uint8Array.from(atob(message.data), char => char.charCodeAt(0)) : message.data;
-        for (const listener of subscriptions.get(message.kind) ?? []) notify(listener, clone(value), { from: message.from });
-      }
+      for (const message of packet.messages ?? []) deliver(message);
       void processCommand(packet).catch(() => {});
     } catch (error) {
       if (closed) return;
       if ([401, 403, 404, 410].includes(error.status)) { finish(); transport.close?.(); }
       else connection.update("reconnecting");
     } finally {
-      if (!closed) timer = setTimeout(poll, pollInterval);
+      reading = false;
+      const interval = opened.roomEvents ? heartbeatInterval : pollInterval;
+      immediateRead = readAgain;
+      if (!closed) timer = setTimeout(poll, readAgain ? 0 : interval);
+      readAgain = false;
     }
   }
 
@@ -247,15 +285,18 @@ export async function connect({ initialState = {} } = {}) {
     }
   }
 
-  async function flushMessages() {
-    if (sending) return;
-    sending = true;
-    try {
-      while (!closed && outbox.length) {
-        const packet = outbox.shift();
-        try { await request(packet); } catch { /* Live messages are best effort. */ }
-      }
-    } finally { sending = false; }
+  function flushMessages() {
+    // Hub calls run in wire order. Keep a small window so RTT does not limit
+    // the send rate to a single message per network round trip.
+    const windowSize = opened.roomEvents ? 4 : 1;
+    while (!closed && outbox.length && sendsInFlight < windowSize) {
+      const packet = outbox.shift();
+      sendsInFlight++;
+      void request(packet).catch(() => {}).finally(() => {
+        sendsInFlight--;
+        flushMessages();
+      });
+    }
   }
 
   function send(kind, data, { to, latest = false } = {}) {
@@ -289,19 +330,31 @@ export async function connect({ initialState = {} } = {}) {
   }
   async function submit(kind, data, { id = crypto.randomUUID() } = {}) {
     const input = { op: "submit", kind, data: clone(data), id };
-    for (;;) {
-      const reply = await retry(input);
-      if (reply.error !== undefined) throw new Error(reply.error);
-      if (!reply.pending) {
-        // Make the confirmed revision visible when the caller resumes after submit().
-        if (revision < reply.revision) {
-          const packet = await retry({ op: "sync", after: revision });
-          apply(packet);
-        }
-        return reply.result;
-      }
-      await delay(pollInterval);
+    let wake;
+    let settled = false;
+    function onSettlement(commandId) {
+      if (commandId === undefined || commandId === id) { settled = true; wake?.(); }
     }
+    if (opened.roomEvents) settlements.add(onSettlement);
+    try {
+      for (;;) {
+        settled = false;
+        const reply = await retry(input);
+        if (reply.error !== undefined) throw new Error(reply.error);
+        if (!reply.pending) {
+          if (revision < reply.revision) apply(await retry({ op: "sync", after: revision }));
+          return reply.result;
+        }
+        if (opened.roomEvents && !settled) {
+          // The result survives a dropped notification or a socket reconnect.
+          await new Promise(resolve => {
+            const timeout = setTimeout(resolve, heartbeatInterval);
+            wake = () => { clearTimeout(timeout); resolve(); };
+          });
+          wake = undefined;
+        } else if (!opened.roomEvents) await delay(pollInterval);
+      }
+    } finally { settlements.delete(onSettlement); }
   }
 
   const session = {
@@ -348,6 +401,6 @@ export async function connect({ initialState = {} } = {}) {
     media = createMedia({ context, permissions, volume: opened.volume, youtube: opened.youtube, request, send, on, participants: participants.api });
     session.media = media;
   } catch (error) { await depart("close").catch(() => {}); throw error; }
-  timer = setTimeout(poll, pollInterval);
+  timer = setTimeout(poll, opened.roomEvents ? 0 : pollInterval);
   return session;
 }

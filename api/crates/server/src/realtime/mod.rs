@@ -164,7 +164,14 @@ fn admit(state: &AppState, parts: &axum::http::request::Parts) -> Result<Who, Ap
         .ok_or_else(refuse)?;
     let requested_server =
         QueryValues::parse(parts.uri.query(), state.messages()).text("serverId")?;
+    let origin = parts
+        .headers
+        .get(axum::http::header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        .ok_or_else(ApiError::forbidden)?
+        .to_owned();
     Ok(Who {
+        origin,
         user: caller.user,
         session: caller.session,
         version: ticket.version(),

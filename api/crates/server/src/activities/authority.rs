@@ -29,8 +29,21 @@ impl Authority {
             ctx.eval::<(), _>(r#"
                 globalThis.crypto = { randomUUID: uuid };
                 const room = createRoom(JSON.parse(options));
-                globalThis.run = (person, input) => {
-                    try { return JSON.stringify({ value: room(JSON.parse(person), JSON.parse(input)) }); }
+                globalThis.run = (person, input, streams) => {
+                    try {
+                        const watching = new Set(JSON.parse(streams));
+                        const pushed = {};
+                        const value = room(JSON.parse(person), JSON.parse(input), {
+                            message(user, event) {
+                                if (!watching.has(user)) return false;
+                                (pushed.recipients ??= []).push(user);
+                                pushed.message = event;
+                                return true;
+                            },
+                            command(host) { pushed.host = host; },
+                        });
+                        return JSON.stringify({ value, ...pushed });
+                    }
                     catch(e) { return JSON.stringify({ status: e.status || 500, error: String(e.message) }); }
                 };
                 globalThis.updateProfile = person => room.updateProfile(JSON.parse(person));
@@ -40,13 +53,20 @@ impl Authority {
         }).map_err(ApiError::internal)?;
         Ok(Self { context })
     }
-    pub fn run(&self, person: &Value, input: &Value) -> Result<Value, ApiError> {
+    pub fn run(
+        &self,
+        person: &Value,
+        input: &Value,
+        subscribers: &[Id],
+    ) -> Result<Value, ApiError> {
         let output = self
             .context
             .with(|ctx| -> rquickjs::Result<String> {
-                ctx.globals()
-                    .get::<_, Function>("run")?
-                    .call((person.to_string(), input.to_string()))
+                ctx.globals().get::<_, Function>("run")?.call((
+                    person.to_string(),
+                    input.to_string(),
+                    serde_json::to_string(subscribers).unwrap(),
+                ))
             })
             .map_err(ApiError::internal)?;
         serde_json::from_str(&output).map_err(ApiError::internal)
@@ -91,7 +111,8 @@ mod tests {
         let room = Authority::new(&manifest).unwrap();
         let call = |user: &str, frame: Id, mut input: Value| {
             input["frame"] = json!(frame);
-            room.run(&json!({"id":user,"name":user}), &input).unwrap()
+            room.run(&json!({"id":user,"name":user}), &input, &[])
+                .unwrap()
         };
         let alice = Id::random();
         let bob = Id::random();

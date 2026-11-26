@@ -17,6 +17,7 @@ import {
   useVoiceCall,
   type ActivitySession,
 } from "@/state/hooks";
+import { useOptionalRealtime } from "@/state/PortsProvider";
 import type { SessionSlot } from "@/state/ActivitiesProvider";
 
 import { ActivityFrame, type DeviceKind, type FrameParts, type FramePlayer } from "./ActivityFrame";
@@ -194,10 +195,28 @@ export function ActivityPanel({ slot, session, target }: PanelProps) {
   const hosting = summary !== null && summary.host === selfId;
 
   const { place, install, access } = session;
+  const realtime = useOptionalRealtime();
   const room = useCallback(
     (action: Record<string, unknown>, signal: AbortSignal) =>
       activitiesApi.act(place, "room", { install, access, action }, signal),
     [place, install, access],
+  );
+  const liveRoom = useCallback(
+    async (action: Record<string, unknown>, signal: AbortSignal) => {
+      if (!realtime?.activityRoom) return room(action, signal);
+      if (realtime.hasSessionEnded?.()) throw Object.assign(new Error("Session ended"), { status: 401 });
+      try {
+        return await realtime.activityRoom(place, { install, access, action });
+      } catch (error) {
+        // A legal state patch can exceed the hub's frame limit. This error is
+        // raised locally before sending, so falling back cannot repeat a write.
+        if (error instanceof Error && "code" in error && error.code === "frame_too_large") {
+          return room(action, signal);
+        }
+        throw error;
+      }
+    },
+    [realtime, room, place, install, access],
   );
   const tile = useCallback(
     async (action: Record<string, unknown>, signal: AbortSignal) =>
@@ -435,6 +454,8 @@ export function ActivityPanel({ slot, session, target }: PanelProps) {
         muted={call.call?.muted ?? false}
         cameraOn={call.call?.cameraOn}
         room={room}
+        liveRoom={realtime?.activityRoom ? liveRoom : undefined}
+        realtime={realtime}
         tile={tile}
         onLost={lost}
         bar={bar}

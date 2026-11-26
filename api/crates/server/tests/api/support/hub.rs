@@ -88,7 +88,10 @@ impl HubClient {
     }
 
     pub async fn connect_to(address: std::net::SocketAddr, query: &str, cookie: &str) -> HubClient {
-        let (answer, stream) = upgrade(address, query, Some(cookie)).await;
+        Self::from_upgrade(upgrade(address, query, Some(cookie)).await).await
+    }
+
+    pub async fn from_upgrade((answer, stream): (Upgrade, TcpStream)) -> HubClient {
         assert_eq!(answer.status, 101, "{}", answer.head);
         assert!(
             answer

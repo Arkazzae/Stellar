@@ -1,6 +1,7 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { FakeRealtimeClient } from "@/test/fakes";
 import { ActivityFrame } from "./ActivityFrame";
 
 let locale = "pl";
@@ -80,4 +81,32 @@ it("takes a mounted camera image away and stops asking for pictures once the fra
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("routes installed session traffic to the hub and forwards events only to their frame", async () => {
+  const realtime = new FakeRealtimeClient();
+  const room = vi.fn(async () => ({ roomHub: true }));
+  const liveRoom = vi.fn(async (_action: Record<string, unknown>, _signal: AbortSignal) => ({}));
+  const mounted = render(<ActivityFrame src="https://game.test/play" title="Board" permissions={[]}
+    room={room} liveRoom={liveRoom} realtime={realtime} tile={async () => ({})} onLost={vi.fn()} />);
+  const frame = screen.getByTitle<HTMLIFrameElement>("Board");
+  const port = { postMessage: vi.fn(), close: vi.fn(), onmessage: null as null | ((event: unknown) => Promise<void>) };
+  window.dispatchEvent(Object.assign(new Event("message"), { source: frame.contentWindow, origin: "https://game.test",
+    data: "stellarr:dev-connect:v1", ports: [port] }));
+  await port.onmessage!({ data: { id: 1, input: { op: "open", roomEvents: true } } });
+  expect(port.postMessage.mock.lastCall?.[0].value.roomEvents).toBe(true);
+  await port.onmessage!({ data: { id: 2, input: { op: "read", roomEvents: true } } });
+  expect(liveRoom).toHaveBeenCalledWith(expect.objectContaining({ op: "read" }), expect.any(AbortSignal));
+  const id = port.postMessage.mock.calls.length;
+  realtime.push("ActivityRoomUpdate", { frame: "another-frame", settled: "deal" });
+  expect(port.postMessage).toHaveBeenCalledTimes(id);
+  const update = { frame: String(liveRoom.mock.calls[0]![0].frame), settled: "deal" };
+  realtime.push("ActivityRoomUpdate", update);
+  expect(port.postMessage).toHaveBeenLastCalledWith({ update });
+  await port.onmessage!({ data: { id: 3, input: { op: "loadProgress" } } });
+  expect(room).toHaveBeenCalledTimes(2);
+  mounted.unmount();
+  port.postMessage.mockClear();
+  realtime.push("ActivityRoomUpdate", update);
+  expect(port.postMessage).not.toHaveBeenCalled();
 });

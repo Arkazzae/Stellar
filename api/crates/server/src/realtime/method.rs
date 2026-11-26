@@ -45,6 +45,8 @@ use crate::values::Id;
 /// Who a connection belongs to, as the hub let it in.
 #[derive(Debug, Clone)]
 pub struct Who {
+    /// Browser origin admitted by the WebSocket handshake.
+    pub origin: String,
     pub user: Id,
     pub session: Id,
     /// The account's session version the connection was let in with.

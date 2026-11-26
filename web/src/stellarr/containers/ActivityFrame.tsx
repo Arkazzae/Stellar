@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
+import type { RealtimeClient } from "@/lib/realtime/types";
 import { Icon } from "@stellarr/icons";
 import { Avatar } from "@/components/primitives/Avatar";
 import { detectDevice, type Participant } from "../../../../sdk/client.js";
@@ -40,6 +41,8 @@ interface ActivityFrameProps {
   muted?: boolean;
   cameraOn?: boolean;
   room: (action: Action, signal: AbortSignal) => Promise<Record<string, unknown>>;
+  liveRoom?: ActivityFrameProps["room"];
+  realtime?: RealtimeClient | null;
   tile: (action: Action, signal: AbortSignal) => Promise<Record<string, string | null>>;
   onLost: () => void;
   /**
@@ -54,7 +57,7 @@ interface ActivityFrameProps {
   ask?: (kind: DeviceKind, signal: AbortSignal) => Promise<boolean>;
 }
 
-export function ActivityFrame({ src, title, permissions, youtube, muted = false, cameraOn, room, tile, onLost, bar, ask }: ActivityFrameProps) {
+export function ActivityFrame({ src, title, permissions, youtube, muted = false, cameraOn, room, liveRoom, realtime, tile, onLost, bar, ask }: ActivityFrameProps) {
   const { t, locale } = useLanguage();
   const target = useMemo(() => {
     const url = new URL(src, window.location.href);
@@ -95,6 +98,12 @@ export function ActivityFrame({ src, title, permissions, youtube, muted = false,
       } });
     let frameId: string | undefined;
     let connected: MessagePort | undefined;
+    const offUpdate = realtime?.on("ActivityRoomUpdate", update => {
+      if (update.frame === frameId) connected?.postMessage({ update });
+    });
+    const offStatus = realtime?.subscribeStatus(() => {
+      if (realtime.getStatus() === "connected") connected?.postMessage({ update: {} });
+    });
     function bind(event: MessageEvent) {
       if (event.source !== frame.current?.contentWindow || event.origin !== origin ||
           !event.ports[0]) return;
@@ -103,13 +112,16 @@ export function ActivityFrame({ src, title, permissions, youtube, muted = false,
       connected?.close();
       connected = event.ports[0];
       const port = connected;
+      let roomEvents = false;
       let rosterVersion = -1;
       let rosterSignature = "";
       const id = frameId = crypto.randomUUID();
       port.onmessage = async ({ data }) => {
         if (!data || !Number.isSafeInteger(data.id) || !data.input) return;
         try {
-          const value = await room({ ...data.input, frame: id }, controller.signal);
+          const op = data.input.op;
+          const request = roomEvents && liveRoom && !["open", "loadProgress", "saveProgress"].includes(op) ? liveRoom : room;
+          const value = await request({ ...data.input, frame: id }, controller.signal);
           if (controller.signal.aborted || port !== connected) return;
           if (data.input.op === "open" || data.input.op === "read") {
             value.locale = language.current || document.documentElement.lang || navigator.language;
@@ -126,6 +138,8 @@ export function ActivityFrame({ src, title, permissions, youtube, muted = false,
           if (Array.isArray(value.participants)) value.participants = value.participants.map(person => framePortrait(person, portraitBase));
           if (value.me) value.me = framePortrait(value.me as Participant, portraitBase);
           if (data.input.op === "open") {
+            roomEvents = Boolean(liveRoom && realtime && value.roomHub);
+            value.roomEvents = roomEvents && data.input.roomEvents === true;
             value.volume = Number(volume.current?.value ?? 100) / 100;
             value.youtube = Boolean(nonce && youtube);
           }
@@ -143,6 +157,8 @@ export function ActivityFrame({ src, title, permissions, youtube, muted = false,
       // The frame's own requests stop first, and the SDK host's teardown
       // comes last, so a failure in it cannot keep a lease polling.
       controller.abort();
+      offUpdate?.();
+      offStatus?.();
       window.removeEventListener("message", bind);
       connected?.close();
       if (frameId) void room({ op: "disconnect", frame: frameId }, new AbortController().signal).catch(() => {});
@@ -154,7 +170,7 @@ export function ActivityFrame({ src, title, permissions, youtube, muted = false,
         // Already torn down as far as it can be.
       }
     };
-  }, [target, title, permissions, youtube, room, tile, onLost]);
+  }, [target, title, permissions, youtube, room, liveRoom, realtime, tile, onLost]);
 
   const roster = useMemo(() => framePlayers(players), [players]);
   const volumeControl = (

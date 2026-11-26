@@ -293,6 +293,13 @@ export const HUB_DECODERS: { [E in RealtimeEventName]: HubDecoder<E> } = {
   ChannelAccessChanged: strings("serverId"),
   PresenceChanged: decodePresence,
   UserUpdated: parsed((payload) => parseUser(payload, "UserUpdated")),
+  ActivityRoomUpdate: (payload) => {
+    if (!isRecord(payload) || typeof payload.frame !== "string") return null;
+    const { frame, message, settled } = payload;
+    if (message !== undefined && !isRecord(message)) return null;
+    if (settled !== undefined && typeof settled !== "string") return null;
+    return { frame, message, settled };
+  },
   SocialChanged: () => ({}),
   DirectEncryptionChanged: parsed((payload) => parseEncryptionChanged(payload, "DirectEncryptionChanged")),
   DirectEncryptionEpochCreated: parsed((payload) => parseEpochCreated(payload, "DirectEncryptionEpochCreated")),
