@@ -498,6 +498,13 @@
   height: auto;
 }
 
+/* Mermaid sizes each label's box for its own 1.5 line height; the page's
+   paragraph leading made the labels taller than their boxes, which cut them off. */
+:root .Layout .vp-doc .mermaid-diagram p {
+  margin: 0;
+  line-height: inherit;
+}
+
 /*
  * The search window: one card under the top bar, its field the card's first
  * row and the results plain rows under it, the way Cockpit lists things. The
