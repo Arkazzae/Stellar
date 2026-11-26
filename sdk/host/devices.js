@@ -27,6 +27,8 @@ export async function capture(kind, { file, muted, send, tile, ended, signal }) 
       // type can still be identified by the browser's audio/video decoder.
       const type = file.type.startsWith(mic ? "audio/" : "video/") ? file.type : "application/octet-stream";
       fileURL = URL.createObjectURL(file.slice(0, file.size, type));
+      if (!fileURL.startsWith("blob:") || new URL(fileURL).origin !== location.origin)
+        throw new Error("Expected a local media object URL.");
       sourceElement = document.createElement("source");
       sourceElement.setAttribute("src", fileURL);
       sourceElement.addEventListener("error", () => {
