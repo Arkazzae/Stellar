@@ -23,7 +23,7 @@ pub mod visibility;
 
 mod error;
 #[cfg(test)]
-mod fixture;
+pub(crate) mod fixture;
 #[cfg(test)]
 mod tests;
 

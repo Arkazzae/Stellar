@@ -1,4 +1,5 @@
 //! Posting to a text channel.
+pub(crate) mod batch;
 
 use axum::extract::State;
 use axum::http::{HeaderValue, StatusCode, header};
@@ -376,8 +377,8 @@ pub async fn create(
     }
 
     let outcome = state
-        .database()
-        .write(move |tx| post(tx, &messages, server, &submission))
+        .post_queue()
+        .submit(state.database(), messages, server, submission)
         .await;
     let stored = match outcome {
         Ok(Posted::Replayed(message)) => return Ok(json_response(StatusCode::OK, &*message)),

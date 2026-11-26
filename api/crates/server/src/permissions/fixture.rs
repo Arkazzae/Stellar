@@ -7,6 +7,7 @@ use rusqlite::{Connection, params};
 
 use super::privileges::*;
 use super::visibility::ChannelKind;
+use crate::database::Database;
 use crate::testing::{TempDir, new_database};
 use crate::values::{Id, Timestamp};
 
@@ -14,6 +15,7 @@ use crate::values::{Id, Timestamp};
 /// `moderator 1`, `base 2`, so a lower value ranks higher.
 pub struct World {
     _folder: TempDir,
+    pub database: Database,
     pub db: Connection,
     pub server: Id,
     pub owner_role: Id,
@@ -40,6 +42,7 @@ impl World {
             .expect("foreign keys");
         let mut world = World {
             _folder: folder,
+            database,
             db,
             server: Id::random(),
             owner_role: Id::random(),
