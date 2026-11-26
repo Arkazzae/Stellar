@@ -26,12 +26,12 @@ impl Http {
         }
     }
 
-    fn request(&self, url: &str, follow: bool, insecure: bool, timeout: u64, head: bool) -> Answer {
+    fn request(&self, url: &str, follow: bool, insecure: bool, timeout: u64) -> Answer {
         #[cfg(feature = "test-seams")]
         if let Some(fake) = &self.fake {
             return fake.request(url, follow);
         }
-        real::request(url, follow, insecure, timeout, head)
+        real::request(url, follow, insecure, timeout)
     }
 
     /// Downloads `url`, following redirects to HTTPS only and trying again
@@ -46,7 +46,7 @@ impl Http {
         let mut attempt = 0;
         loop {
             attempt += 1;
-            let retry = match self.request(url, true, false, 120, false) {
+            let retry = match self.request(url, true, false, 120) {
                 Answer::Body(body) => return Ok(Some(body)),
                 Answer::Status(404) => return Ok(None),
                 Answer::Redirect(to) => {
@@ -65,25 +65,11 @@ impl Http {
         }
     }
 
-    /// Where the address redirects to, without following it. GitHub's
-    /// latest-release page names the release this way, with no rate limit,
-    /// unlike its API. `None` when the site did not answer.
-    pub fn redirect(&self, url: &str) -> Option<Answer> {
-        for attempt in 0..3 {
-            match self.request(url, false, false, 60, true) {
-                Answer::Failed(_) if attempt < 2 => self.pause(2),
-                Answer::Failed(_) => return None,
-                answer => return Some(answer),
-            }
-        }
-        None
-    }
-
     /// One request to the instance on this machine. Its certificate is not
     /// checked: on the loopback address it is self-signed and names another
     /// host.
     pub fn loopback(&self, url: &str) -> Option<String> {
-        match self.request(url, false, true, 10, false) {
+        match self.request(url, false, true, 10) {
             Answer::Body(body) => Some(String::from_utf8_lossy(&body).into_owned()),
             _ => None,
         }
@@ -103,7 +89,7 @@ mod real {
     use ureq::Agent;
     use ureq::tls::TlsConfig;
 
-    pub fn request(url: &str, follow: bool, insecure: bool, timeout: u64, head: bool) -> Answer {
+    pub fn request(url: &str, follow: bool, insecure: bool, timeout: u64) -> Answer {
         // A plain address is refused before any connection, and a redirect
         // to one is never followed.
         if !url.starts_with("https://") {
@@ -121,12 +107,7 @@ mod real {
             .tls_config(tls)
             .build()
             .into();
-        let response = if head {
-            agent.head(url).call()
-        } else {
-            agent.get(url).call()
-        };
-        let mut response = match response {
+        let mut response = match agent.get(url).call() {
             Ok(response) => response,
             Err(error) => return Answer::Failed(error.to_string()),
         };
@@ -141,9 +122,6 @@ mod real {
         }
         if status != 200 {
             return Answer::Status(status);
-        }
-        if head {
-            return Answer::Body(Vec::new());
         }
         match response
             .body_mut()

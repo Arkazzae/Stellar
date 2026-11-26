@@ -169,17 +169,16 @@ case $name in
     done
     [[ ! -e $state/github-down ]] || { echo "$name: Could not resolve host: github.com" >&2; exit 6; }
     case $url in
-      https://github.com/Arkazzae/Stellarr/releases/latest)
-        if [[ $name == curl ]]; then
-          read_file release-redirect https://github.com/Arkazzae/Stellarr/releases/tag/v1.4.0
-        else
+      https://stellarr.online/server-downloads/latest)
+        if [[ -f $state/release-redirect && $name == wget ]]; then
           echo '  HTTP/1.1 302 Found' >&2
-          echo "  Location: $(read_file release-redirect /Arkazzae/Stellarr/releases/tag/v1.4.0)" >&2
+          echo "  Location: $(cat "$state/release-redirect")" >&2
           exit 8
         fi
+        [[ -f $state/release-version ]] || exit 22
+        cat "$state/release-version" >"$target"
         ;;
-      https://github.com/Arkazzae/Stellarr/releases/tag/v1.4.0) ;;
-      https://github.com/Arkazzae/Stellarr/releases/download/v*/*)
+      https://stellarr.online/server-downloads/*/*)
         file="$STUB_ASSETS/${url##*/}"
         if [[ ! -f $file ]]; then
           echo "$name: The requested URL returned error: 404" >&2
@@ -399,13 +398,10 @@ new_case() {
   clock=fast
 }
 
-latest_release() {
-  mkdir -p "$http/github.com/Arkazzae/Stellarr/releases"
-  echo "$1" >"$http/github.com/Arkazzae/Stellarr/releases/latest.redirect"
-}
-
 release() {
-  latest_release "https://github.com/Arkazzae/Stellarr/releases/tag/v$1"
+  mkdir -p "$http/stellarr.online/server-downloads"
+  echo "$1" >"$http/stellarr.online/server-downloads/latest"
+  echo "$1" >"$state/release-version"
   mkdir -p "$raw/v$1"
   cp "$fixtures/compose-$1" "$raw/v$1/docker-compose.yml"
   cp "$fixtures/env.example" "$raw/v$1/.env.example"
@@ -418,9 +414,9 @@ checkout_files() {
   cp "$repo_root/infra/compose/build.yml" "$repo_root/infra/compose/turn.yml" "$directory/infra/compose/"
 }
 
-no_release() { latest_release https://github.com/Arkazzae/Stellarr/releases; }
+no_release() { rm -f "$http/stellarr.online/server-downloads/latest" "$state/release-version"; }
 github_down() {
-  : >"$http/github.com.down"
+  : >"$http/stellarr.online.down"
   : >"$state/github-down"
 }
 registration() { echo "$1" >"$http/127.0.0.1/api/auth/registration"; }
@@ -573,8 +569,8 @@ case_install_sh() {
   run --yes --domain chat.example.com
   expect_success
   expect_called "curl --proto =https --proto-redir =https --tlsv1.2 -fsSL"
-  expect_called "https://github.com/Arkazzae/Stellarr/releases/download/v1.4.0/stellarr-installer-x86_64-unknown-linux-musl"
-  expect_called "https://github.com/Arkazzae/Stellarr/releases/download/v1.4.0/stellarr-installer.sha256"
+  expect_called "https://stellarr.online/server-downloads/1.4.0/stellarr-installer-x86_64-unknown-linux-musl"
+  expect_called "https://stellarr.online/server-downloads/1.4.0/stellarr-installer.sha256"
   expect_line "$home/stellarr/.env" "STELLARR_DOMAIN=chat.example.com"
   expect_shown "Stellarr 1.4.0 is running"
 
@@ -590,7 +586,7 @@ case_install_sh() {
   through_install_sh
   run STELLARR_INSTALLER_VERSION=1.5.0 --help
   expect_success
-  expect_called "https://github.com/Arkazzae/Stellarr/releases/download/v1.5.0/stellarr-installer-x86_64-unknown-linux-musl"
+  expect_called "https://stellarr.online/server-downloads/1.5.0/stellarr-installer-x86_64-unknown-linux-musl"
 
   new_case install-sh-wget
   through_install_sh
@@ -634,12 +630,12 @@ case_install_sh() {
 
   new_case install-sh-before-first-release
   through_install_sh
-  echo https://github.com/Arkazzae/Stellarr/releases >"$state/release-redirect"
+  no_release
   run --help
   expect_failure
   expect_shown "Could not find the latest Stellarr release"
   expect_shown "cargo run --locked --manifest-path init/installer/Cargo.toml -- --dir . --build"
-  expect_not_called "releases/download/"
+  expect_not_called "/stellarr-installer-"
   expect_not_called docker
 
   new_case install-sh-no-installer
@@ -693,7 +689,7 @@ case_fresh_install() {
   new_case fresh-install
   run --yes --domain chat.example.com --public-ip auto --language pl
   expect_success
-  expect_called "https GET https://github.com/Arkazzae/Stellarr/releases/latest"
+  expect_called "https GET https://stellarr.online/server-downloads/latest"
   expect_called "https GET https://raw.githubusercontent.com/Arkazzae/Stellarr/v1.4.0/docker-compose.yml"
   expect_called "https GET https://raw.githubusercontent.com/Arkazzae/Stellarr/v1.4.0/.env.example"
   cmp -s "$fixtures/compose-1.4.0" "$home/stellarr/docker-compose.yml" || fail "docker-compose.yml is not 1.4.0's."
@@ -726,7 +722,7 @@ case_fresh_install() {
   run --yes --version 1.4.0
   expect_success
   expect_called "https GET https://raw.githubusercontent.com/Arkazzae/Stellarr/v1.4.0/docker-compose.yml"
-  expect_not_called "releases/latest"
+  expect_not_called "server-downloads/latest"
   expect_line "$home/stellarr/.env" "STELLARR_VERSION=1.4.0"
 }
 
@@ -786,7 +782,7 @@ case_github_unreachable() {
   github_down
   run --yes
   expect_failure
-  expect_shown "GitHub did not answer"
+  expect_shown "Could not resolve the Stellarr latest release"
   expect_not_shown "no published release"
   expect_missing "$home/stellarr"
 }
