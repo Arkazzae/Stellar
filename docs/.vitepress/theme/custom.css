@@ -126,10 +126,84 @@
     margin-left: 4px;
   }
 
-  /* The search field reads as a field on the tinted bar, as Cockpit's inputs do. */
+  /*
+   * The search is a field that starts on the panel's left edge. It is drawn as
+   * Cockpit's text input: 36 px high, a 6 px radius and 14 px text, on the
+   * panel's fill with a hairline border that steps up under the pointer. It
+   * is up to 300 px wide and gives way to the links in a narrow window.
+   */
+  :root .Layout .VPNav .VPNavBar.has-sidebar .VPNavBarSearch {
+    flex-grow: 1;
+    min-width: 0;
+    padding-left: 0;
+    padding-right: 16px;
+  }
+
+  :root .Layout .VPNav .VPNavBar.has-sidebar #local-search {
+    flex: 0 1 300px;
+    min-width: 0;
+  }
+
   :root .Layout .VPNav .VPNavBar.has-sidebar .DocSearch-Button {
-    background-color: var(--vp-c-bg);
+    width: 100%;
+    height: 36px;
+    padding: 0 7px 0 11px;
     border: 1px solid var(--vp-c-divider);
+    border-radius: 6px;
+    background-color: var(--vp-c-bg);
+  }
+
+  :root .Layout .VPNav .VPNavBar.has-sidebar .DocSearch-Button:hover {
+    border-color: var(--vp-c-border);
+    background-color: var(--vp-c-bg);
+  }
+
+  :root .Layout .VPNav .VPNavBar.has-sidebar .DocSearch-Button-Container {
+    flex: 1;
+    min-width: 0;
+  }
+
+  :root .Layout .VPNav .VPNavBar.has-sidebar .DocSearch-Search-Icon {
+    top: 0;
+    margin-right: 8px;
+    width: 16px;
+    height: 16px;
+    color: var(--vp-c-text-3);
+  }
+
+  :root .Layout .VPNav .VPNavBar.has-sidebar .DocSearch-Button-Placeholder,
+  :root .Layout .VPNav .VPNavBar.has-sidebar .DocSearch-Button:hover .DocSearch-Button-Placeholder {
+    margin: 0;
+    padding: 0;
+    font-size: 14px;
+    font-weight: 400;
+    color: var(--vp-c-text-3);
+  }
+
+  /* The shortcut is one small key cap at the field's end. */
+  :root .Layout .VPNav .VPNavBar.has-sidebar .DocSearch-Button-Keys {
+    margin-left: auto;
+  }
+
+  :root .Layout .VPNav .VPNavBar.has-sidebar .DocSearch-Button-Key {
+    margin: 0;
+    height: 20px;
+    line-height: 18px;
+    font-size: 11px;
+    color: var(--vp-c-text-3);
+  }
+
+  :root .Layout .VPNav .VPNavBar.has-sidebar .DocSearch-Button-Key:first-child {
+    padding-left: 5px;
+  }
+
+  :root .Layout .VPNav .VPNavBar.has-sidebar .DocSearch-Button-Key + .DocSearch-Button-Key {
+    padding-right: 5px;
+  }
+
+  :root .Layout .VPNav .VPNavBar.has-sidebar .DocSearch-Button-Key:first-child::after {
+    font-size: 11px;
+    color: var(--vp-c-text-3);
   }
 
   /* The page: an inset panel beside the sidebar. */
@@ -422,4 +496,255 @@
 .vp-doc .mermaid-diagram svg {
   max-width: 100%;
   height: auto;
+}
+
+/*
+ * The search window: one card under the top bar, its field the card's first
+ * row and the results plain rows under it, the way Cockpit lists things. The
+ * window is drawn in <body>, outside .Layout, and its own styles come later in
+ * the style sheet, so these rules start with ":root .VPLocalSearchBox".
+ */
+:root {
+  --vp-local-search-bg: var(--vp-c-bg);
+  /* The row colours also feed the theme's short fades at a cut excerpt's edges. */
+  --vp-local-search-result-bg: var(--vp-c-bg);
+  --vp-local-search-result-border: transparent;
+  --vp-local-search-result-selected-border: transparent;
+  --vp-local-search-result-selected-bg: var(--cockpit-nav-active);
+  --vp-local-search-highlight-bg: transparent;
+  --vp-local-search-highlight-text: var(--vp-c-brand-1);
+}
+
+/* Cockpit's scrim in the light scheme; the theme's darker one stays in the dark. */
+:root:not(.dark) .VPLocalSearchBox .backdrop {
+  background-color: rgba(0, 0, 0, 0.4);
+}
+
+:root .VPLocalSearchBox .shell {
+  padding: 0;
+  gap: 0;
+}
+
+@media (min-width: 768px) {
+  :root .VPLocalSearchBox .shell {
+    margin: 96px auto auto;
+    width: min(640px, calc(100vw - 32px));
+    max-height: calc(100vh - 144px);
+    border: 1px solid var(--vp-c-divider);
+    border-radius: var(--cockpit-radius);
+    background-color: var(--vp-c-bg);
+    box-shadow: var(--vp-shadow-4);
+    overflow: hidden;
+  }
+}
+
+/* The field is the card's first row, with a rule under it. */
+:root .VPLocalSearchBox .search-bar,
+:root .VPLocalSearchBox .search-bar:focus-within {
+  flex: none;
+  height: 56px;
+  padding: 0 8px 0 16px;
+  border: 0;
+  border-bottom: 1px solid var(--vp-c-divider);
+  border-radius: 0;
+}
+
+:root .VPLocalSearchBox .search-icon {
+  margin: 0 12px 0 0;
+  color: var(--vp-c-text-3);
+}
+
+:root .VPLocalSearchBox .search-input {
+  padding: 0;
+  height: 100%;
+  font-size: 16px;
+  color: var(--vp-c-text-1);
+}
+
+:root .VPLocalSearchBox .search-input::placeholder {
+  color: var(--vp-c-text-3);
+}
+
+/* The browser's own clear mark repeated the reset button beside it. */
+:root .VPLocalSearchBox .search-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+:root .VPLocalSearchBox .search-actions {
+  gap: 2px;
+}
+
+:root .VPLocalSearchBox .search-actions button {
+  padding: 8px;
+  border-radius: 6px;
+  color: var(--vp-c-text-3);
+}
+
+:root .VPLocalSearchBox .search-actions button:not([disabled]):hover,
+:root .VPLocalSearchBox .search-actions .toggle-layout-button.detailed-list {
+  color: var(--vp-c-text-1);
+  background-color: var(--cockpit-nav-active);
+}
+
+:root .VPLocalSearchBox .search-actions .local-search-icon {
+  font-size: 16px;
+}
+
+/* The theme shows the back button up to 768 px but hides the search icon only
+   below it, so at 768 px both were drawn. */
+@media (max-width: 768px) {
+  :root .VPLocalSearchBox .search-icon {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) {
+  :root .VPLocalSearchBox .search-bar,
+  :root .VPLocalSearchBox .search-bar:focus-within {
+    height: 52px;
+    padding: 0 8px;
+  }
+}
+
+/* Results are rows without frames. The open row is on the navigation's tint. */
+:root .VPLocalSearchBox .results {
+  padding: 8px;
+  gap: 2px;
+}
+
+/* With nothing typed, the card is the field and the key hints. */
+:root .VPLocalSearchBox .results:not(:has(li)) {
+  display: none;
+}
+
+:root .VPLocalSearchBox .result {
+  border: 0;
+  border-radius: 8px;
+  line-height: 20px;
+}
+
+:root .VPLocalSearchBox .result > div {
+  margin: 8px 12px;
+}
+
+:root .VPLocalSearchBox .result.selected {
+  background-color: var(--cockpit-nav-active);
+}
+
+/* The page and section trail is grey, the matched section in the text colour. */
+:root .VPLocalSearchBox .titles,
+:root .VPLocalSearchBox .result.selected .titles {
+  gap: 2px 6px;
+  padding: 0;
+  font-size: 14px;
+  color: var(--vp-c-text-2) !important;
+}
+
+:root .VPLocalSearchBox .title {
+  gap: 6px;
+}
+
+:root .VPLocalSearchBox .title .local-search-icon {
+  font-size: 14px;
+  color: var(--vp-c-text-3);
+}
+
+:root .VPLocalSearchBox .title.main {
+  font-weight: 500;
+  color: var(--vp-c-text-1);
+}
+
+:root .VPLocalSearchBox .title-icon {
+  display: none;
+}
+
+/* A match is the accent's text, never a filled block. */
+:root .VPLocalSearchBox .titles mark,
+:root .VPLocalSearchBox .excerpt mark {
+  padding: 0;
+  border-radius: 0;
+  background-color: transparent;
+  color: var(--vp-c-brand-1);
+  font-weight: 600;
+}
+
+/* The detailed view: a few grey lines of the section under its title, a
+   little fainter in the rows that are not open. */
+:root .VPLocalSearchBox .excerpt {
+  margin-top: 4px;
+  max-height: 120px;
+  opacity: 0.75;
+  color: var(--vp-c-text-2);
+}
+
+:root .VPLocalSearchBox .result.selected .excerpt {
+  opacity: 1;
+}
+
+:root .VPLocalSearchBox .excerpt * {
+  font-size: 13px !important;
+  line-height: 20px !important;
+}
+
+:root .VPLocalSearchBox .excerpt .vp-doc > * {
+  margin: 4px 0;
+  border: 0;
+}
+
+/* A heading in an excerpt loses the rule and the room above it; lists keep their indent. */
+:root .VPLocalSearchBox .excerpt .vp-doc > :is(h1, h2, h3, h4, h5, h6) {
+  padding: 0;
+}
+
+/* A callout in an excerpt is plain text, without its fill. */
+:root .VPLocalSearchBox .excerpt .vp-doc .custom-block {
+  background-color: transparent;
+}
+
+:root .VPLocalSearchBox .no-results {
+  padding: 32px 16px;
+  font-size: 14px;
+  color: var(--vp-c-text-2);
+}
+
+:root .VPLocalSearchBox .no-results strong {
+  font-weight: 500;
+  color: var(--vp-c-text-1);
+}
+
+/* Key hints: small key caps under a rule. */
+:root .VPLocalSearchBox .search-keyboard-shortcuts {
+  flex: none;
+  gap: 16px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--vp-c-divider);
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--vp-c-text-3);
+  opacity: 1;
+}
+
+:root .VPLocalSearchBox .search-keyboard-shortcuts span {
+  gap: 6px;
+}
+
+:root .VPLocalSearchBox .search-keyboard-shortcuts kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 4px;
+  background-color: transparent;
+  box-shadow: none;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--vp-c-text-3);
+}
+
+:root .VPLocalSearchBox .search-keyboard-shortcuts .navigate-icon {
+  font-size: 12px;
 }
