@@ -125,7 +125,11 @@ test("voice channel and frame leases guard assets and live state after the seat 
   assert.equal(launch.status, 302);
   const lease = { cookie: launch.headers.get("set-cookie").split(";")[0] };
   assert.equal((await asset(url.pathname + url.search)).status, 403);
-  assert.equal((await asset("/", lease)).status, 200);
+  const document = await asset("/", lease);
+  assert.equal(document.status, 200);
+  const scripts = document.headers.get("content-security-policy").split(";").find(directive => directive.trim().startsWith("script-src "));
+  assert.match(scripts, /'wasm-unsafe-eval'/);
+  assert.doesNotMatch(scripts, /'unsafe-eval'/);
   assert.equal((await asset("/_stellarr/sdk/media.js", lease)).status, 200);
   assert.equal((await call("launch", { channel: randomUUID(), code }, tester)).status, 403);
   const frame = randomUUID();
