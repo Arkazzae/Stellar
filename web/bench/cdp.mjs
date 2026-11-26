@@ -283,7 +283,9 @@ export async function launch({ width = 1280, height = 900, headless = true, flag
           const deadline = Date.now() + timeout;
           while (Date.now() < deadline) {
             try {
-              if (await page.eval(expression)) return;
+              // Only the truth value crosses CDP. React elements can refer to
+              // circular component state that Chrome cannot return by value.
+              if (await page.eval(`Boolean(${expression}\n)`)) return;
             } catch {
               // The page may still be loading its module.
             }
