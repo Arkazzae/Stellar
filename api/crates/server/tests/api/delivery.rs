@@ -399,6 +399,44 @@ fn owe_a_ghost(server: &Server, person: &Person) -> String {
 }
 
 #[tokio::test]
+async fn pwa_notification_targets_follow_the_current_reader_and_message() {
+    let server = Server::start().await;
+    let writer = server.found("owner").await;
+    let reader = server.register("reader").await;
+    let ghost = owe_a_ghost(&server, &reader);
+    let path = format!("/api/me/notification-delivery/{ghost}");
+    assert_eq!(server.anonymous().get(&path).await.status, 401);
+    assert_eq!(reader.client.get(&path).await.status, 404);
+
+    let conversation = writer.client.post_json("/api/social/conversations", &json!({"userId": reader.id})).await.json::<Value>();
+    let dm = conversation["id"].as_str().unwrap();
+    let sent = writer.client.post_json(&format!("/api/social/conversations/{dm}/messages"), &json!({"content": "hello"})).await;
+    assert_eq!(sent.status, 201);
+    let set_source = |kind: &str, row: Value| {
+        server.database().execute(
+            r#"UPDATE "NotificationDeliveries" SET "EventKind"=?1, "SourceMessageId"=?2 WHERE "Id"=?3"#,
+            params![kind, row["id"].as_str().unwrap().to_uppercase(), ghost.to_uppercase()],
+        ).unwrap();
+    };
+    set_source("direct-message", sent.json());
+    assert_eq!(reader.client.get(&path).await.json::<Value>(), json!({"kind": "dm", "conversationId": dm}));
+    assert_eq!(writer.client.get(&path).await.status, 404);
+
+    let channel: String = server.database().query_row(
+        r#"SELECT "Id" FROM "Channels" WHERE "Kind"=0 ORDER BY "Position" LIMIT 1"#, [], |r| r.get(0),
+    ).unwrap();
+    let sent = writer.client.post_json(&format!("/api/channels/{channel}/messages"), &json!({"content":"@reader hi"})).await;
+    assert_eq!(sent.status, 201);
+    let message = sent.json::<Value>();
+    set_source("mention", message.clone());
+    let response = reader.client.get(&path).await;
+    assert_eq!(response.header("cache-control"), Some("no-store"));
+    assert_eq!(response.json::<Value>()["message"]["id"], message["id"]);
+    server.database().execute(r#"DELETE FROM "ServerMembers" WHERE "UserId"=?1"#, [reader.id.to_uppercase()]).unwrap();
+    assert_eq!(reader.client.get(&path).await.status, 404);
+}
+
+#[tokio::test]
 async fn the_worker_looks_at_the_outbox_when_it_starts_and_a_stopped_one_does_not() {
     let keys = vapid();
     let first = start_with_push(&keys).await;

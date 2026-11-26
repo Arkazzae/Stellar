@@ -26,6 +26,7 @@ pub mod dispatcher;
 pub mod outbox;
 pub mod sender;
 mod subscriptions;
+mod target;
 mod vapid;
 
 #[cfg(test)]
@@ -51,6 +52,8 @@ pub const INTERVAL: Duration = Duration::from_secs(30);
 pub fn routes() -> Endpoints {
     Endpoints::new()
         .get("/api/me/notification-delivery", subscriptions::capabilities)
+        .authorized()
+        .get("/api/me/notification-delivery/{id}", target::resolve)
         .authorized()
         .put("/api/me/push-subscriptions", subscriptions::save)
         .json_body()

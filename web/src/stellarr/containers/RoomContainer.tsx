@@ -1,5 +1,6 @@
-import { memo, useCallback, useRef, useSyncExternalStore, type ComponentProps } from "react";
+import { memo, useCallback, useEffect, useRef, useSyncExternalStore, type ComponentProps } from "react";
 
+import type { Message } from "@/ports";
 import { DropOverlay } from "@/components/room/DropOverlay";
 import { MediaViewer } from "@/components/room/attachments/MediaViewer";
 import { ThreadPanel } from "@/components/room/panels/ThreadPanel";
@@ -52,15 +53,37 @@ function RoomTyping({ channelId }: { channelId: string | null }) {
  * room around them.
  */
 function ChannelTranscript(
-  props: Omit<
+  { noticeMessage, onNoticeConsumed, ...props }: Omit<
     TranscriptProps,
     "sections" | "loading" | "firstUnreadGroupId" | "onLoadOlder" | "hasOlder" | "loadingOlder"
-  >,
+  > & { noticeMessage: Message | null; onNoticeConsumed?: (value: null) => void },
 ) {
   const chat = useChatTranscript();
+  const { revealMessage } = useChatRoom();
+  const jump = useRef<((id: string) => void) | null>(null);
+  const { onJumpReady } = props;
+  const registerJump = useCallback((action: (id: string) => void) => {
+    jump.current = action;
+    onJumpReady?.(action);
+  }, [onJumpReady]);
+  useEffect(() => {
+    if (!noticeMessage || chat.loading) return;
+    const shown = chat.sections.some(({ groups }) =>
+      groups.some(({ bodies }) => bodies.some(({ id }) => id === noticeMessage.id)));
+    if (!shown) {
+      revealMessage(noticeMessage);
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      jump.current?.(noticeMessage.id);
+      onNoticeConsumed?.(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [noticeMessage, chat.loading, chat.sections, revealMessage, onNoticeConsumed]);
   return (
     <Transcript
       {...props}
+      onJumpReady={registerJump}
       sections={chat.sections}
       loading={chat.loading}
       firstUnreadGroupId={chat.firstUnreadGroupId}
@@ -90,7 +113,10 @@ function OpenThreadPanel(props: Omit<ComponentProps<typeof ThreadPanel>, "sectio
  * Both views stay mounted and swap `.active`, so the transcript keeps its
  * scroll position across a call.
  */
-export function RoomContainer() {
+export function RoomContainer({ noticeMessage = null, onNoticeConsumed }: {
+  noticeMessage?: Message | null;
+  onNoticeConsumed?: (value: null) => void;
+} = {}) {
   const { server, channels, textChannels, channelName, canManageMessages } = useDirectory();
   const ui = useUi();
   const voice = useVoice();
@@ -209,6 +235,8 @@ export function RoomContainer() {
             {...messageProps}
             key={chat.channelId ?? "no-channel"}
             label={t("room.messagesOn", { channel: textName })}
+            noticeMessage={noticeMessage?.channelId === chat.channelId ? noticeMessage : null}
+            onNoticeConsumed={onNoticeConsumed}
             onJumpReady={takeJump}
             covered={inVoice}
           />

@@ -1,3 +1,6 @@
+import { useState } from "react";
+import type { Message } from "@/ports";
+import { LaunchTarget, type LaunchProps } from "./LaunchTarget";
 import { ConfirmProvider } from "@/components/primitives/ConfirmDialog";
 import { AppShell } from "@/components/shell/AppShell";
 import { AccountProvider } from "@/state/AccountProvider";
@@ -52,7 +55,7 @@ import { UserSettingsContainer } from "./UserSettingsContainer";
  * Session and Ports sit above all of it, in `StellarrApp` (`app.tsx`),
  * because /login needs them and none of this.
  */
-export function AppContainer() {
+export function AppContainer(props: LaunchProps = {}) {
   return (
     <ConfirmProvider>
       <AccountProvider>
@@ -66,7 +69,7 @@ export function AppContainer() {
                       <FriendsProvider>
                         <ChatProvider>
                           <ProfileProvider>
-                            <Shell />
+                            <Shell {...props} />
                           </ProfileProvider>
                         </ChatProvider>
                       </FriendsProvider>
@@ -82,7 +85,8 @@ export function AppContainer() {
   );
 }
 
-function Shell() {
+function Shell({ entry, onEntryHandled }: LaunchProps) {
+  const [noticeMessage, setNoticeMessage] = useState<Message | null>(null);
   const ui = useUi();
   const { active } = useFriends();
   const dm = ui.space === "dm";
@@ -96,13 +100,14 @@ function Shell() {
       {/* The face and the wallpaper: what of the theme only the signed-in app
           shows. The wallpaper sits on a fixed layer behind the shell. */}
       <AppAppearance />
+      {entry && onEntryHandled && <LaunchTarget key={entry} entry={entry} finish={onEntryHandled} reveal={setNoticeMessage} />}
       <AppShell
         serverRail={<ServerRailContainer />}
         // One column, two contents. Both rails are unmounted when the other is
         // showing rather than hidden: the DM rail holds a search field and the
         // channel rail a drag state, and neither should survive a switch.
         rail={dm ? <DmRailContainer /> : <RailContainer />}
-        room={dm ? <FriendsRoomContainer /> : <RoomContainer />}
+        room={dm ? <FriendsRoomContainer /> : <RoomContainer noticeMessage={noticeMessage} onNoticeConsumed={setNoticeMessage} />}
         roster={
           dm ? (
             conversation ? (

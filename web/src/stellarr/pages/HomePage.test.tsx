@@ -1,6 +1,6 @@
-import { Router } from "@stellarr/router";
+import { Router, usePathname } from "@stellarr/router";
 import { createMemoryHistory, type MemoryHistory } from "@stellarr/router/testing";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -35,11 +35,15 @@ vi.mock("@/containers/AppContainer", () => ({
 
 let history: MemoryHistory;
 
-function renderHome() {
-  history = createMemoryHistory("/");
+function ActiveHome() {
+  return usePathname() === "/" ? <HomePage /> : null;
+}
+
+function renderHome(path = "/") {
+  history = createMemoryHistory(path);
   return render(
     <Router routes={routes} history={history}>
-      <HomePage />
+      <ActiveHome />
     </Router>,
   );
 }
@@ -108,6 +112,26 @@ describe("HomePage", () => {
 
     expect(history.navigations).toEqual([{ kind: "replace", href: "/login" }]);
     expect(screen.queryByTestId("app")).not.toBeInTheDocument();
+  });
+
+  it("preserves a notification through sign-in", () => {
+    const target = "/?notice=00000001-2222-3333-4444-000000000005";
+    settleAs("anonymous");
+    renderHome(target);
+    expect(history.navigations).toEqual([{ kind: "replace", href: "/login?returnUrl=" + encodeURIComponent(target) }]);
+  });
+
+  it("retries the offline start when the connection returns", () => {
+    const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    try {
+      settleAs("error");
+      renderHome();
+      expect(screen.getByText("Jesteś offline")).toBeVisible();
+      fireEvent(window, new Event("online"));
+      expect(mocks.session.reload).toHaveBeenCalledOnce();
+    } finally {
+      online.mockRestore();
+    }
   });
 
   it("shows the loading skeleton while the session settles, without leaving", () => {

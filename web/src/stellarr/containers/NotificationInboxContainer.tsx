@@ -23,10 +23,16 @@ export function NotificationInboxButton() {
   const ui = useUi();
   const session = useSession();
   const { t } = useLanguage();
-  const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
+  const [button, setButton] = useState<HTMLButtonElement | null>(null);
+  const [clicked, setAnchor] = useState<HTMLButtonElement | null>(null);
+  const anchor = ui.modal === "inbox" ? button : clicked;
 
   // Stable, because the inbox repositions and re-listens whenever it changes.
-  const close = useCallback(() => setAnchor(null), []);
+  const { modal, closeModal } = ui;
+  const close = useCallback(() => {
+    setAnchor(null);
+    if (modal === "inbox") closeModal();
+  }, [modal, closeModal]);
   const label =
     inbox.unreadCount > 0
       ? t("notifications.openUnread", { count: inbox.unreadCount })
@@ -44,6 +50,7 @@ export function NotificationInboxButton() {
   return (
     <>
       <button
+        ref={setButton}
         type="button"
         className="pill-btn notification-trigger"
         title={label}
@@ -52,7 +59,8 @@ export function NotificationInboxButton() {
         aria-expanded={anchor !== null}
         onClick={(event) => {
           const bell = event.currentTarget;
-          setAnchor((open) => (open === null ? bell : null));
+          if (anchor) close();
+          else setAnchor(bell);
         }}
       >
         <Icon name="bell" size={17} />

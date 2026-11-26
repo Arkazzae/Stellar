@@ -58,9 +58,17 @@ pub async fn manifest(State(state): State<AppState>) -> ApiResult<axum::response
         None | Some("") | Some("Stellarr") => "Stellarr".to_string(),
         Some(instance) => format!("Stellarr · {instance}"),
     };
+    let (inbox, messages) = match state.messages().language() {
+        stellarr_messages::Language::Polish => ("Powiadomienia", "Wiadomości"),
+        _ => ("Notifications", "Messages"),
+    };
     let manifest = serde_json::json!({
         "id": "/", "name": name, "short_name": name, "start_url": "/", "scope": "/",
         "display": "standalone", "background_color": "#111111", "theme_color": "#111111",
+        "shortcuts": [
+            {"name": messages, "url": "/?view=messages"},
+            {"name": inbox, "url": "/?view=inbox"}
+        ],
         "icons": [
             {"src": "/pwa/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
             {"src": "/pwa/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
