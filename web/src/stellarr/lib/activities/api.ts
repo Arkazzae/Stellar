@@ -64,8 +64,8 @@ export interface ActivityLaunch {
   permissions: string[];
   /** Who hosts it after this launch; null when the server did not say. */
   host: string | null;
-  /** The activity plays YouTube, which the host page draws for it. */
-  youtube: boolean;
+  /** External embed domains approved in the activity manifest. */
+  embedHosts: string[];
 }
 
 /** Why the server refused, by the `code` of its problem body. */
@@ -201,7 +201,7 @@ function parseLaunch(value: unknown, install: string | undefined): ActivityLaunc
     title: text(record["title"]),
     permissions: stringArray(record["permissions"]),
     host: nullableText(record["host"]),
-    youtube: record["youtube"] === true,
+    embedHosts: stringArray(record["embedHosts"]),
   };
 }
 

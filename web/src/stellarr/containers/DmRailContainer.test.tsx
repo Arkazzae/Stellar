@@ -119,7 +119,7 @@ describe("DmRailContainer", () => {
           title: "SyncTube",
           icon: null,
           permissions: [],
-          youtube: false,
+          embedHosts: [],
         },
       },
     });

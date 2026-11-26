@@ -69,7 +69,7 @@ const seat = (access: string, install = "synctube"): ActivityLaunch => ({
   title: install === "synctube" ? "SyncTube" : "Buzzer",
   permissions: [],
   host: "u-maja",
-  youtube: false,
+  embedHosts: [],
 });
 const synctube = { install: "synctube", name: "SyncTube", icon: "/icon.png", seats: null };
 const summary: VoiceActivitySummary = {

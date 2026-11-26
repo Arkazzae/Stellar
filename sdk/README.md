@@ -235,8 +235,8 @@ async function recordHighScore(score: number) {
   mic.onEnded((reason) => showKeyboardFallback(reason));
   ```
 
-- **Camera tile (`"permissions": ["media.cameraTile"]`):** Prompts the performer for consent while any participant calls `session.media.cameraTile.mount(performerId, placeholderEl)`. Stellarr renders the video overlay outside the iframe's readable DOM and tracks `placeholderEl` automatically.
-- **YouTube watch parties (`session.media.youtube`):** Declare `"www.youtube-nocookie.com"` in `connects`. On the default instance hostname, `session.media.youtube?.mount(videoId, element, events)` mounts a host-managed player (`prepare`, `play`, `pause`, `seek`, `volume`, `fullscreen`, `destroy`); dedicated-host packages and local previews can fall back to the YouTube IFrame API when `session.media.youtube` is `undefined`.
+- **Camera tile (`"permissions": ["media.cameraTile"]`):** Prompts the performer for consent while any participant calls `session.media.cameraTile.mount(performerId, placeholderEl)`. Stellarr renders the video overlay outside the iframe's readable DOM and tracks `placeholderEl` automatically. Call `setVisible(false)` on the returned unmount function to hide the tile locally.
+- **External embeds (`session.media.embed`)**. Declare the service hostname in `connects`, then call `session.media.embed.mount(embedUrl, placeholderEl, { title, onMessage })`. The handle supports `setVisible(boolean)`, `postMessage(data)`, and `destroy()`. Use the service’s own embed URL and player protocol.
 
 In `stellarr dev`, pick any local audio or video file in the simulator header bar to test consented mic levels, camera tiles, mutes, and denials without physical hardware.
 

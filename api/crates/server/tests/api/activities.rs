@@ -855,7 +855,12 @@ async fn voice_channel_runs_at_most_one_activity_joins_directly_and_clears_when_
 async fn installed_packages_share_the_instance_address_with_isolated_revocable_assets() {
     let server = crate::uploads::started(&[]).await;
     let owner = server.found("owner").await;
-    seed(&server, INSTALL, true);
+    install(&server, INSTALL, &json!({
+        "id": "personal-demo", "name": "Demo", "version": "1.0.0", "description": "Board", "protocol": 1,
+        "launchModes": ["personal"], "connects": [
+            {"host":"media.example","why":"Player"}, {"host":"chat.test","why":"Instance API"}
+        ]
+    }));
     server
         .database()
         .execute(
@@ -873,8 +878,15 @@ async fn installed_packages_share_the_instance_address_with_isolated_revocable_a
     let path = body["src"].as_str().unwrap().strip_prefix(ORIGIN).unwrap();
     assert!(path.starts_with("/_activity/") && path.ends_with("/index.html"));
     assert!(!path.contains(body["access"].as_str().unwrap()));
-    assert_eq!(body["youtube"], false);
+    assert_eq!(body["embedHosts"], json!(["media.example", "chat.test"]));
     let browser = server.anonymous();
+    let shell_path = path.replace("/index.html", "/_stellarr/embed.html");
+    let shell = browser.get(&shell_path).await;
+    assert_eq!(shell.status, 200);
+    assert!(shell.text().contains("/_stellarr/sdk/embed-frame.js"));
+    let shell_policy = shell.header("content-security-policy").unwrap();
+    assert!(shell_policy.contains("default-src 'none'"));
+    assert!(shell_policy.contains("frame-src https://media.example;"));
     let asset = browser.get(path).await;
     assert_eq!(asset.status, 200, "{}", asset.text());
     assert_eq!(asset.text(), "<p>Custom activity</p>");
@@ -928,6 +940,7 @@ async fn installed_packages_share_the_instance_address_with_isolated_revocable_a
     assert_eq!(disabled.status, 200);
     assert_eq!(browser.get(path).await.status, 403);
     assert_eq!(browser.get(&image_url).await.status, 403);
+    assert_eq!(browser.get(&shell_path).await.status, 403);
 }
 
 #[tokio::test]

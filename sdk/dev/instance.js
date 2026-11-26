@@ -246,7 +246,7 @@ export function previewMiddleware({ origin, domain, apiOrigin, clock = Date.now 
       const saves = draft.author.progress;
       return json(res, previewProgress(saves.get(person.id), input.action, next => saves.set(person.id, next)));
     }
-    if (input.action.op === "open") response.progress = true;
+    if (input.action.op === "open") Object.assign(response, { progress: true, embedHosts: (draft.manifest.connects ?? []).map(c => c.host) });
     if (input.action?.op === "close") removeLease(draft, input.access, true);
     return json(res, { ...response, launchMode: "voice", place: { id: draft.channel } });
   }

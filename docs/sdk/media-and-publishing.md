@@ -77,28 +77,37 @@ camHandle.onEnded(() => notifyTurnCameraStopped());
 const stageSlot = document.getElementById("performer-slot")!;
 const unmountTile = session.media.cameraTile.mount(currentPerformerId, stageSlot);
 
+// Hide the tile while the viewer's pause menu is open.
+unmountTile.setVisible(false);
+// Restore it when the menu closes.
+unmountTile.setVisible(true);
 // Call unmountTile() when the round ends or the performer changes.
 ```
 
-`mount()` tracks `stageSlot.getBoundingClientRect()` automatically on every animation frame as your layout resizes.
+`mount()` tracks `stageSlot.getBoundingClientRect()` while the tile is visible and reads the current bounds when it is shown again.
 
-### Synchronized YouTube playback (`session.media.youtube`)
+Hiding the tile affects this viewer only. The performer can stop sharing at any time using the activity bar.
 
-When running on the default instance hostname (inside an opaque-origin sandboxed frame), standard embedded YouTube iframes cannot initialize directly. Declare `"www.youtube-nocookie.com"` in `connects` and mount a host-managed player via `session.media.youtube` when present:
+### External players and embeds (`session.media.embed`)
+
+Declare the provider's hostname in `stellarr.json` under `connects`, then pass its HTTPS **embed URL** and a sized placeholder to `mount()`. The provider must support framing on your instance. Use the provider's embed URL format and include any parameters it requires. A normal share link may lead to a page that refuses framing.
 
 ```ts
-if (session.media.youtube) {
-  const player = session.media.youtube.mount(videoId, playerSlot, {
-    ready() { player.prepare(startSeconds, isPlaying); },
-    stateChange(code) { onPlayerState(code); },
-    blocked() { showAutoplayPrompt(); },
-    error(code) { reportVideoError(code); },
-  });
-  // Controls: player.play(), pause(), seek(sec), volume(0..1), fullscreen(), time(), duration(), running(), destroy()
+const player = session.media.embed.mount(embedUrl, playerSlot, {
+  title: "Watch together",
+  onMessage(data) { handlePlayerEvent(data); },
+});
+
+function showPauseMenu(open: boolean) {
+  player.setVisible(!open);
+  pauseMenu.hidden = !open;
 }
+// Call player.destroy() when the viewer leaves this screen.
 ```
 
-Packages served on dedicated `STELLARR_ACTIVITY_DOMAIN` origins or inside local `stellarr dev` previews (where `session.media.youtube` is `undefined`) can load the YouTube IFrame API directly.
+Showing the player again keeps its iframe and playback position. Playback and audio can continue while it is hidden. To control playback, use the provider's own message format with `player.postMessage(data)`. The optional `onLoad()` callback signals that the iframe loaded. Providers with a separate ready event deliver it through `onMessage(data)`.
+
+On the default instance hostname, Stellarr draws the embed above the activity and limits the frame to hosts approved for that installation. In local previews and activities with a dedicated origin, the iframe lives inside the placeholder.
 
 ### Testing media without physical devices
 

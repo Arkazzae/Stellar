@@ -452,7 +452,7 @@ export function ActivityPanel({ slot, session, target }: PanelProps) {
         src={session.src}
         title={session.title}
         permissions={session.permissions}
-        youtube={session.youtube}
+        embedHosts={session.embedHosts}
         muted={call.call?.muted ?? false}
         cameraOn={call.call?.cameraOn}
         room={room}

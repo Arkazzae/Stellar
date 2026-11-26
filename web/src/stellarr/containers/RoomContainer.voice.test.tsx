@@ -253,7 +253,7 @@ describe("RoomContainer with an activity on the channel", () => {
 
     mocks.activities = {
       ...mocks.activities,
-      voice: { place: "ch-salon", install: "synctube", access: "a", src: "", title: "SyncTube", icon: null, permissions: [], youtube: false },
+      voice: { place: "ch-salon", install: "synctube", access: "a", src: "", title: "SyncTube", icon: null, permissions: [], embedHosts: [] },
     };
     rerender(<RoomContainer />);
 

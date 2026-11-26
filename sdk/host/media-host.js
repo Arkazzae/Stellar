@@ -1,9 +1,8 @@
+import { embedUrl } from "../media.js";
 import { capture } from "./devices.js";
 
-import { createYouTubeHost } from "./youtube.js";
-
 const kinds = ["microphoneLevel", "cameraTile"];
-export function bindMediaHost({ frame, origin, nonce, youtube, title, permissions = [], controls, tile, camera, cloneLocalCamera, volume, muted = () => false, fixtures = false, language = "en", overlay, ask, labels = {} }) {
+export function bindMediaHost({ frame, origin, nonce, embedHosts = [], title, permissions = [], controls, tile, camera, cloneLocalCamera, volume, muted = () => false, fixtures = false, language = "en", overlay, ask, labels = {} }) {
   const words = (en, polish) => (typeof language === "function" ? language() : language).startsWith("pl") ? polish : en;
   const deviceName = kind => kind === "microphoneLevel" ? words("Microphone", "Mikrofon") : words("Camera", "Kamera");
   const deviceFiles = new Map(), active = new Map(), mounts = new Map();
@@ -11,7 +10,7 @@ export function bindMediaHost({ frame, origin, nonce, youtube, title, permission
   const cameraTransport = () => transport ??= camera?.();
   let port, prompt, simMuted = false, disposed = false, requestingImages = false;
   function send(data) { port?.postMessage(data); }
-  const player = youtube && nonce ? createYouTubeHost(frame, send) : undefined;
+  const embeds = new Map();
   function stop(kind, reason) {
     const device = active.get(kind);
     if (!device) return;
@@ -110,22 +109,53 @@ export function bindMediaHost({ frame, origin, nonce, youtube, title, permission
     item?.image.remove();
     mounts.delete(id);
   }
-  // Camera images are drawn over the frame. Inside `overlay`, when given, they
-  // stay with the frame wherever it goes, full screen included.
-  function layout({ image, bounds }) {
+  // Hosted media follows the activity viewport, including in fullscreen.
+  function layout(node, bounds) {
     const r = frame.getBoundingClientRect();
     const base = overlay ? overlay.getBoundingClientRect() : { left: 0, top: 0 };
     const [x,y,w,h,vw,vh] = bounds;
     const sx = r.width / vw, sy = r.height / vh;
     const left = Math.max(0, x), top = Math.max(0, y);
     const width = Math.max(0, Math.min(vw, x+w)-left), height = Math.max(0, Math.min(vh, y+h)-top);
-    Object.assign(image.style, { left: r.left - base.left + left*sx + "px", top: r.top - base.top + top*sy + "px",
-      width: width*sx + "px", height: height*sy + "px" });
+    Object.assign(node.style, { left: r.left - base.left + left*sx + "px", top: r.top - base.top + top*sy + "px",
+      width: width*sx + "px", height: height*sy + "px", visibility: width && height ? "visible" : "hidden" });
+  }
+  function validBounds(bounds) {
+    return Array.isArray(bounds) && bounds.length === 6 && bounds.every(Number.isFinite) && bounds[4] > 0 && bounds[5] > 0;
+  }
+  function openEmbed({ id, url: input, title }) {
+    if (!nonce || !Number.isSafeInteger(id) || embeds.has(id)) return;
+    let url;
+    try { url = embedUrl(input, embedHosts); } catch { return; }
+    if (url.origin === location.origin) return;
+    const shell = document.createElement("iframe");
+    const shellUrl = new URL("_stellarr/embed.html", frame.src);
+    shell.title = typeof title === "string" ? title : url.hostname;
+    shell.allow = "autoplay; encrypted-media; fullscreen; picture-in-picture";
+    shell.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-presentation");
+    shell.style.cssText = (overlay ? "position:absolute" : "position:fixed") + ";width:0;height:0;border:0;visibility:hidden";
+    const item = { frame: shell, destroy() {
+      shell.onload = null;
+      item.provider?.destroy();
+      shell.remove();
+      embeds.delete(id);
+    } };
+    shell.onload = () => {
+      const doc = shell.contentDocument;
+      if (doc?.URL !== shellUrl.href || !doc.defaultView.mountStellarrEmbed) return;
+      shell.onload = null;
+      item.provider = doc.defaultView.mountStellarrEmbed(doc.body, url, { title: shell.title,
+        onLoad: () => send({ op: "embedLoaded", id }),
+        onMessage: value => send({ op: "embedMessage", id, value }),
+      });
+    };
+    shell.src = shellUrl.href;
+    embeds.set(id, item);
+    (overlay ?? document.body).append(shell);
   }
   function mount(data) {
     if (!permissions.includes("media.cameraTile") || !Number.isSafeInteger(data.id)) return;
-    if (!Array.isArray(data.bounds) || data.bounds.length !== 6 || !data.bounds.every(Number.isFinite) ||
-        data.bounds[4] <= 0 || data.bounds[5] <= 0 || typeof data.participant !== "string") return removeMount(data.id);
+    if (!validBounds(data.bounds) || typeof data.participant !== "string") return removeMount(data.id);
     let item = mounts.get(data.id);
     if (!item) {
       if (mounts.size >= 16) return;
@@ -148,11 +178,14 @@ export function bindMediaHost({ frame, origin, nonce, youtube, title, permission
       });
     }
     Object.assign(item, { participant: data.participant, bounds: data.bounds });
-    layout(item);
+    layout(item.image, item.bounds);
   }
   // Only development previews use an image relay. WebRTC tiles follow
   // track changes, and layout changes are independent of the video frames.
-  const relayout = () => { for (const item of mounts.values()) layout(item); };
+  const relayout = () => {
+    for (const item of mounts.values()) layout(item.image, item.bounds);
+    for (const item of embeds.values()) if (item.bounds) layout(item.frame, item.bounds);
+  };
   const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(relayout);
   observer?.observe(frame);
   window.addEventListener("scroll", relayout, true);
@@ -162,7 +195,7 @@ export function bindMediaHost({ frame, origin, nonce, youtube, title, permission
     try {
       const images = await tile({ op: "get", ids: [...new Set([...mounts.values()].map(item => item.participant))] });
       for (const item of mounts.values()) {
-        layout(item);
+        layout(item.image, item.bounds);
         const source = images[item.participant];
         item.image.hidden = !source;
         if (source && item.image.getAttribute("src") !== source) item.image.src = source;
@@ -173,7 +206,7 @@ export function bindMediaHost({ frame, origin, nonce, youtube, title, permission
   const volumeChanged = () => send({ op: "volume", value: Number(volume.value) / 100 });
   volume.addEventListener("input", volumeChanged);
   function reset() {
-    player?.stop();
+    for (const item of embeds.values()) item.destroy();
     prompt?.cancel();
     for (const kind of active.keys()) stop(kind, "closed");
     for (const id of mounts.keys()) removeMount(id);
@@ -190,7 +223,17 @@ export function bindMediaHost({ frame, origin, nonce, youtube, title, permission
     port.onmessage = ({ data }) => {
       if (disposed || !data) return;
       switch (data.op) {
-        case "youtubeOpen": case "youtubeClose": case "youtubeLayout": case "youtubeCommand": return player?.handle(data);
+        case "embedOpen": return openEmbed(data);
+        case "embedClose": return embeds.get(data.id)?.destroy();
+        case "embedPost": return embeds.get(data.id)?.provider?.postMessage(data.value);
+        case "embedLayout": {
+          const item = embeds.get(data.id);
+          if (item && validBounds(data.bounds)) {
+            item.bounds = data.bounds;
+            layout(item.frame, item.bounds);
+          }
+          return;
+        }
         case "open": return open(data.kind, data.id);
         case "stop": return stop(data.kind, "stopped");
         case "cancel":
@@ -225,7 +268,6 @@ export function bindMediaHost({ frame, origin, nonce, youtube, title, permission
         reset();
       } finally {
         for (const id of [...mounts.keys()]) removeMount(id);
-        player?.dispose();
         toolbar.remove();
       }
     },
