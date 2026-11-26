@@ -55,7 +55,7 @@ export function useEncryptionSettings(open: boolean): EncryptionPaneProps {
     error,
     busy,
     onSetUp: () => openDialog({ kind: "setup" }),
-    onChangePin: () => openDialog({ kind: "newPin", mode: "change" }),
+    onChangeRecoveryCode: () => openDialog({ kind: "recoveryCode", mode: "change" }),
     onUnlock: () => openDialog({ kind: "unlock" }),
     onForgot: () => openDialog({ kind: "forgot" }),
     onRemoveDevice: (device) => {

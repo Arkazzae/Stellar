@@ -89,6 +89,7 @@ impl World {
             Arc::new(Unconnected),
             Arc::new(Unconnected),
             Sealer::from_key([5u8; 32]),
+            Sealer::from_key([6; 32]),
         );
         let (server, channel, base_role) = (Id::random(), Id::random(), Id::random());
         let (maja, ada) = (Id::random(), Id::random());

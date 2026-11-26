@@ -77,7 +77,7 @@ describe("DmNotice", () => {
       <DmNotice notice={{ kind: "sealed", reason: "pin", count: 3 }} lineId="s-1" authorId={PEER} context={ctx} />,
     );
     expect(screen.getByRole("note")).toHaveTextContent("3 zaszyfrowane wiadomości");
-    await user.click(screen.getByRole("button", { name: "Wpisz PIN" }));
+    await user.click(screen.getByRole("button", { name: "Odblokuj" }));
     expect(ctx.onEnterPin).toHaveBeenCalledOnce();
 
     rerender(<DmNotice notice={{ kind: "sealed", reason: "lost", count: 5 }} lineId="s-1" authorId={PEER} context={ctx} />);

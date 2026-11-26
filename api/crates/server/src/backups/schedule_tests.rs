@@ -56,6 +56,7 @@ impl Instance {
             Arc::new(Unconnected),
             Arc::new(Unconnected),
             Sealer::from_key([5; 32]),
+            Sealer::from_key([6; 32]),
         )
     }
 

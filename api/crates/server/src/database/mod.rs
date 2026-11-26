@@ -76,6 +76,31 @@ impl Database {
         })
     }
 
+    /// Upgrade existing PIN backups before serving requests or starting backup jobs.
+    pub(crate) async fn prepare_key_backups(
+        &self,
+        data_root: std::path::PathBuf,
+    ) -> Result<crate::seal::Sealer, DbError> {
+        self.writer
+            .run(move |db| crate::encryption::key_backups::initialize(db, &data_root))
+            .await
+    }
+
+    /// Release old WAL frames after retiring a PIN backup. Active readers can delay truncation.
+    pub(crate) async fn checkpoint_key_backups(&self) -> Result<(), DbError> {
+        self.writer
+            .run(|db| {
+                let busy = db.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+                    row.get::<_, i32>(0)
+                })?;
+                if busy != 0 {
+                    tracing::warn!("A reader delayed checkpointing a retired key backup");
+                }
+                Ok(())
+            })
+            .await
+    }
+
     /// Where the database file is.
     pub fn path(&self) -> &Path {
         &self.writer.settings.path

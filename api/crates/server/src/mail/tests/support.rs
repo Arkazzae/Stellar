@@ -45,6 +45,7 @@ pub fn instance(extra: &[(&str, &str)]) -> (TempDir, AppState) {
         Arc::new(Unconnected),
         Arc::new(Unconnected),
         Sealer::from_key([5u8; 32]),
+        Sealer::from_key([6; 32]),
     );
     (folder, state)
 }

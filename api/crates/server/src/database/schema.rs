@@ -25,15 +25,26 @@ const ONE_TIME_STEPS: [&str; 2] = ["ordinary-permissions", "view-channel"];
 
 /// Append each new schema change here. Version zero includes installations
 /// that already have some or all of the original additive tables.
-const MIGRATIONS: &[&str] = &[concat!(
-    include_str!("../discord_import/jobs.sql"),
-    "\n",
-    include_str!("../link_previews/imported.sql"),
-    "\n",
-    include_str!("upload_limits.sql"),
-    "\n",
-    include_str!("../activities/schema.sql"),
-)];
+const MIGRATIONS: &[&str] = &[
+    concat!(
+        include_str!("../discord_import/jobs.sql"),
+        "\n",
+        include_str!("../link_previews/imported.sql"),
+        "\n",
+        include_str!("upload_limits.sql"),
+        "\n",
+        include_str!("../activities/schema.sql"),
+    ),
+    include_str!("../encryption/key_backups.sql"),
+    "CREATE TABLE IF NOT EXISTS AccountBoundEpochs (
+        EpochId TEXT PRIMARY KEY REFERENCES EncryptionEpochs(Id) ON DELETE CASCADE
+    );",
+    "CREATE TABLE IF NOT EXISTS CodeRecoveryAccounts (
+        UserId TEXT PRIMARY KEY REFERENCES Users(Id) ON DELETE CASCADE,
+        ArchivedKeyId TEXT
+    ); CREATE TABLE IF NOT EXISTS RetiredPinAccounts (UserId TEXT PRIMARY KEY);
+    CREATE TABLE IF NOT EXISTS RecoveryCodeUpgradeScrub (Pending INTEGER);",
+];
 
 /// Sets the journal mode, which the database file remembers, and gives an
 /// empty file its schema.
@@ -66,6 +77,8 @@ pub fn prepare(connection: &mut Connection) -> Result<(), DbError> {
         // whose name starts with `sqlite_`, and it has made this one itself
         // by the time the statement would run.
         transaction.execute_batch(&SCHEMA.replacen(IMPLICIT_TABLE, "", 1))?;
+        // Older instances keep this baseline table until their PIN backups are sealed.
+        transaction.execute("DROP TABLE AccountKeyBackups", [])?;
         let now = Timestamp::now();
         for name in ONE_TIME_STEPS {
             transaction.execute(

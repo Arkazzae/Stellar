@@ -21,6 +21,10 @@ docker run --rm -v stellarr_stellarr_data:/data -v "$PWD":/backup alpine \
 
 Keep a copy of `.env` beside the archive. You can also download live full `.zip` archives from **Cockpit → Backups** (see [Automatic backups](../admin/backups.md)).
 
+### Encrypted DM history
+
+Allow disk space for a one-time SQLite rebuild. Keep a separate copy of `/data/stellarr/pin-recovery/master.key` when using full ZIP backups. After upgrading, ask members with encrypted DMs to open an updated client, complete the PIN migration, save their generated recovery code, and compare the new safety code with verified contacts. A member can migrate from an unlocked browser or sign in on a new device and use the old PIN once. Take a new full backup after migrations. Pre-migration volume copies and ZIPs may still expose the earlier history. [Account key backups](../admin/backups.md#save-the-instance-recovery-key-separately)
+
 ## 2. Pull and start the new release
 
 ### Option A: Installer-managed instances (`install.sh`)

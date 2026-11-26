@@ -23,14 +23,14 @@ export interface EncryptionPaneProps {
   error: string | null;
   busy: boolean;
   onSetUp(): void;
-  onChangePin(): void;
+  onChangeRecoveryCode(): void;
   onUnlock(): void;
   onForgot(): void;
   onRemoveDevice(device: EncryptionDeviceVM): void;
 }
 
 /**
- * The account's encryption: the PIN that protects the key backup, which
+ * The account's encryption: the recovery code that protects the key backup, which
  * conversations are encrypted, and every browser holding keys, each of which
  * can lose them here.
  */
@@ -42,7 +42,7 @@ export function EncryptionPane({
   error,
   busy,
   onSetUp,
-  onChangePin,
+  onChangeRecoveryCode,
   onUnlock,
   onForgot,
   onRemoveDevice,
@@ -51,21 +51,22 @@ export function EncryptionPane({
   const confirm = useConfirm();
   const hasKey = status.accountKey !== null;
 
-  const pinDetail = !hasKey
+  const recoveryDetail = !hasKey
     ? t("e2ee.settings.pinNone")
+    : status.migrationRequired && (status.unlocked || status.backup !== null) ? t(status.unlocked ? "e2ee.migrate.detail" : "e2ee.migrate.unlock")
     : !status.unlocked
-      ? t("e2ee.settings.pinLocked")
+      ? t(status.backup === null ? "e2ee.unlock.missing" : "e2ee.settings.pinLocked")
       : status.backup === null
         ? t("e2ee.settings.pinNoBackup")
         : t("e2ee.settings.pinDetail");
 
-  const pinAction =
+  const recoveryAction =
     unavailable !== null ? null : !hasKey ? (
       <Button type="button" variant="secondary" size="sm" onClick={onSetUp}>
         {t("e2ee.settings.set")}
       </Button>
     ) : status.unlocked ? (
-      <Button type="button" variant="secondary" size="sm" onClick={onChangePin}>
+      <Button type="button" variant="secondary" size="sm" onClick={onChangeRecoveryCode}>
         {t("e2ee.settings.change")}
       </Button>
     ) : (
@@ -111,9 +112,9 @@ export function EncryptionPane({
             <div className="acc-security-summary">
               <span className="acc-security-copy">
                 <b>{t("e2ee.settings.pin")}</b>
-                <small>{pinDetail}</small>
+                <small>{recoveryDetail}</small>
               </span>
-              {pinAction}
+              {recoveryAction}
             </div>
           </div>
           <div className="acc-security-item">

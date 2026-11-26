@@ -28,6 +28,7 @@ pub fn text(bytes: &[u8]) -> String {
 /// `auth_key`.
 pub fn backup(auth_key: &[u8]) -> Value {
     json!({
+        "version": 2,
         "salt": text(&bytes(16, 1)),
         "iterations": 600_000,
         "verifier": text(digest(&SHA256, auth_key).as_ref()),

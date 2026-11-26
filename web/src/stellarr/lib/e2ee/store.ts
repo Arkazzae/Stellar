@@ -25,8 +25,12 @@ export interface StoredDevice {
   publicKey: Bytes;
 }
 
-export interface StoredAccountKey extends LocallySealedKey {
+export interface StoredAccountKey extends StoredKeyMaterial {
   userId: string;
+  archived?: StoredKeyMaterial;
+}
+
+export interface StoredKeyMaterial extends LocallySealedKey {
   keyId: string;
   publicKey: Bytes;
 }
@@ -35,9 +39,19 @@ export interface StoredVerification {
   userId: string;
   peerId: string;
   /** The code that was compared, groups joined by spaces. */
-  code: string;
+  code: string | null;
+  plaintextAllowed?: boolean;
+  /** Previously confirmed account keys may still authenticate archived messages. */
+  previousCodes?: string[];
   /** ISO 8601. */
   at: string;
+}
+
+function updatedVerification(previous: StoredVerification | undefined, next: StoredVerification): StoredVerification {
+  const codes = new Set(previous?.previousCodes);
+  if (previous?.code) codes.add(previous.code);
+  if (next.code) codes.delete(next.code);
+  return { ...next, previousCodes: [...codes] };
 }
 
 export interface KeyStore {
@@ -46,9 +60,12 @@ export interface KeyStore {
   getAccountKey(userId: string): Promise<StoredAccountKey | null>;
   putAccountKey(key: StoredAccountKey): Promise<void>;
   deleteAccountKey(userId: string): Promise<void>;
+  /** Pins the participant id on first use, atomically across tabs. */
+  getPeer(userId: string, conversationId: string): Promise<string | null>;
+  setPlaintextAllowed(userId: string, peerId: string, allowed: boolean): Promise<void>;
+  bindPeer(userId: string, conversationId: string, peerId: string): Promise<boolean>;
   getVerification(userId: string, peerId: string): Promise<StoredVerification | null>;
   putVerification(verification: StoredVerification): Promise<void>;
-  deleteVerification(userId: string, peerId: string): Promise<void>;
   /** Deletes the device key and the account key copy of this account. */
   forget(userId: string): Promise<void>;
 }
@@ -122,11 +139,37 @@ export function createIndexedDbKeyStore(name = DATABASE): KeyStore {
     getAccountKey: (userId) => read<StoredAccountKey>("account", userId),
     putAccountKey: (key) => write("account", (store) => store.put(key)),
     deleteAccountKey: (userId) => write("account", (store) => store.delete(userId)),
+    getPeer: (userId, conversationId) => read<string>("verified", [userId, conversationId]),
+    async setPlaintextAllowed(userId, peerId, allowed) {
+      const transaction = (await open()).transaction("verified", "readwrite");
+      const completion = done(transaction);
+      const target = transaction.objectStore("verified");
+      const key = verificationKey(userId, peerId);
+      const previous = await promised(target.get(key)) as StoredVerification | undefined;
+      if (previous && Boolean(previous.plaintextAllowed) !== allowed) target.put({ ...previous, plaintextAllowed: allowed }, key);
+      await completion;
+    },
+    async bindPeer(userId, conversationId, peerId) {
+      const transaction = (await open()).transaction("verified", "readwrite");
+      const completion = done(transaction);
+      const store = transaction.objectStore("verified");
+      // Array keys are distinct from the legacy verification records' string keys.
+      const key = [userId, conversationId];
+      const previous = await promised(store.get(key)) as string | undefined;
+      if (previous === undefined) store.add(peerId, key);
+      await completion;
+      return previous === undefined || previous === peerId;
+    },
     getVerification: (userId, peerId) => read<StoredVerification>("verified", verificationKey(userId, peerId)),
-    putVerification: (verification) =>
-      write("verified", (store) => store.put(verification, verificationKey(verification.userId, verification.peerId))),
-    deleteVerification: (userId, peerId) =>
-      write("verified", (store) => store.delete(verificationKey(userId, peerId))),
+    async putVerification(verification) {
+      const transaction = (await open()).transaction("verified", "readwrite");
+      const completion = done(transaction);
+      const target = transaction.objectStore("verified");
+      const key = verificationKey(verification.userId, verification.peerId);
+      const previous = await promised(target.get(key)) as StoredVerification | undefined;
+      target.put(updatedVerification(previous, verification), key);
+      await completion;
+    },
     async forget(userId) {
       const db = await open();
       const transaction = db.transaction(["device", "account"], "readwrite");
@@ -142,16 +185,29 @@ export function createMemoryKeyStore(): KeyStore {
   const devices = new Map<string, StoredDevice>();
   const accounts = new Map<string, StoredAccountKey>();
   const verified = new Map<string, StoredVerification>();
+  const peers = new Map<string, string>();
   return {
     getDevice: async (userId) => devices.get(userId) ?? null,
     putDevice: async (device) => void devices.set(device.userId, device),
     getAccountKey: async (userId) => accounts.get(userId) ?? null,
     putAccountKey: async (key) => void accounts.set(key.userId, key),
     deleteAccountKey: async (userId) => void accounts.delete(userId),
+    async bindPeer(userId, conversationId, peerId) {
+      const key = verificationKey(userId, conversationId);
+      if (!peers.has(key)) peers.set(key, peerId);
+      return peers.get(key) === peerId;
+    },
+    getPeer: async (userId, conversationId) => peers.get(verificationKey(userId, conversationId)) ?? null,
+    async setPlaintextAllowed(userId, peerId, allowed) {
+      const key = verificationKey(userId, peerId);
+      const previous = verified.get(key);
+      if (previous) verified.set(key, { ...previous, plaintextAllowed: allowed });
+    },
     getVerification: async (userId, peerId) => verified.get(verificationKey(userId, peerId)) ?? null,
-    putVerification: async (verification) =>
-      void verified.set(verificationKey(verification.userId, verification.peerId), verification),
-    deleteVerification: async (userId, peerId) => void verified.delete(verificationKey(userId, peerId)),
+    async putVerification(verification) {
+      const key = verificationKey(verification.userId, verification.peerId);
+      verified.set(key, updatedVerification(verified.get(key), verification));
+    },
     async forget(userId) {
       devices.delete(userId);
       accounts.delete(userId);

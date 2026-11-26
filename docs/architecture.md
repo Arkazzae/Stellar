@@ -59,18 +59,24 @@ Direct 1:1 conversations support optional end-to-end encryption (`api/crates/ser
 
 ```mermaid
 flowchart LR
-    PIN["6-digit PIN (PBKDF2 600k + HKDF)"] -->|"Wraps backup"| AccountKey["X25519 Account Key Pair"]
+    Recovery["Browser-generated 256-bit recovery code"] -->|"Wraps backup"| AccountKey["X25519 Account Key Pair"]
     Session["UserSession (up to 10/account)"] -->|"Binds lifecycle"| DeviceKey["X25519 Device Key Pair"]
-    Epoch["256-bit Conversation Epoch Key"] -->|"X25519 + HKDF + AES-GCM"| AccountKey
-    Epoch -->|"Wrapped per active device"| DeviceKey
+    AccountKey -->|"X25519 with peer account key"| Shared["Shared secret"]
+    Seed["Random 32-byte salt in two account envelopes"] --> KDF["HKDF-SHA256"]
+    Shared --> KDF
+    KDF --> Epoch["256-bit Conversation Epoch Key"]
     Epoch -->|"AES-256-GCM (AAD: conv|epoch|author)"| DM["DM Text & File Keys"]
     Epoch -->|"HKDF -> SFrame AES-256-GCM"| Call["Opus / VP8 / VP9 Frames"]
 ```
 
 - **Device binding:** Sign-out, session revocation, password change, or account disablement immediately deactivates the session's encryption device; any device/key change triggers automatic epoch rotation on the next message or call.
-- **PIN backup protection:** `PBKDF2-HMAC-SHA256` (`600,000` iterations) expands via `HKDF-SHA256` into a server `authKey` verifier and client-only `encKey`; `10` consecutive wrong PIN tries permanently delete the server backup.
+- **Account key recovery.** The browser generates 32 random bytes and displays them as eight groups of eight hex digits. A versioned input to PBKDF2-HMAC-SHA256 (600,000 iterations) and HKDF-SHA256 derives independent authentication and AES-256-GCM keys. The server stores the encrypted backup and a verifier inside a second envelope protected by an instance key kept outside the ZIP. Recovery sends a derived proof. Ten consecutive incorrect proofs for the current backup delete the server copy. [Key storage and restore](admin/backups.md#save-the-instance-recovery-key-separately)
 - **Mutual activation & safety codes:** Transitions `off` → `requested` → `on` only when both peers confirm. Participants verify identities via a 60-digit safety code (`SHA-256` over `stellarr/e2ee/safety/v1`, sorted user UUIDs, and account public keys).
 - **1:1 media encryption:** Calls seal Opus, VP8, and VP9 frames in a WebRTC Encoded Transform worker (`SFrame`) while `stellarr-media` forwards opaque ciphertext; see [End-to-end encrypted calls](./stellarr-media.md#end-to-end-encrypted-calls).
+
+For each v2 epoch the sender seals the salt and the other participant’s public key to each account with the existing ephemeral X25519 envelope. HKDF binds the shared account secret and salt to the protocol version, conversation, epoch and both user IDs and public keys. Clients compare the identities with the locally confirmed safety code before sending. New devices recover their account keys with their recovery code. Legacy epochs remain readable. Both participants must update their clients for all new encrypted traffic to use v2. Once a conversation has a v2 epoch, the API rejects new legacy epochs even after the participants toggle encryption. Verification is local to each browser. A previously authorized device that retains the account private key must be treated as an account-key compromise.
+
+This protects against a server that alters the device directory or supplies its own epoch material. It assumes trusted client code and private account keys. For a current backup, the database and instance recovery key still leave a randomly generated 256-bit user secret to guess. A legacy backup remains susceptible to offline PIN guessing if its holder also has the outer key, or if the backup predates outer encryption. Migration rotates the active account identity and retains its predecessor inside the new backup for historical decryption. Previously verified peers must compare the new safety code.
 
 ## Account security and `master.key` sealing
 
@@ -161,6 +167,7 @@ Denying `viewChannel` on the base role and allowing it on specific roles/members
 | `files/` | Attachments, previews, posters, avatars, private wallpapers, custom emojis, soundboard clips, and `encrypted/` DM blobs |
 | `incoming/` | Multipart upload staging folder, cleared automatically on API startup |
 | `keys/master.key` | `0600` 32-byte master key (`HKDF-SHA256` + `AES-256-GCM`) sealing cookies, TOTP seeds, and Cockpit secrets |
+| `pin-recovery/master.key` | Independent `0600` key for E2EE recovery. Store a separate backup for migration to another host. |
 | `secrets/` | Auto-generated internal bearer tokens (`media-control-secret`, `turn-shared-secret`) |
 | `tls/` | Container-managed self-signed or operator-mounted `fullchain.pem` and `privkey.pem` |
 | `releases/` | Optional desktop and mobile client release artifacts |

@@ -7,6 +7,7 @@ import { DmNotice, type DmNoticeContext } from "@/components/friends/DmNotice";
 import { unsupportedReason } from "@/components/friends/encryptionCopy";
 import type { MessageGroupVM, TranscriptNotice } from "@/components/room/transcript/MessageGroup";
 import { ENCRYPTION_OFF } from "@/lib/api/types";
+import { E2eeError } from "@/lib/e2ee/client";
 import { formatDate } from "@/lib/format/format";
 import type { DmConversation } from "@/ports";
 import { useEncryption, useFriends, useLanguage, usePorts, useSession } from "@/state/hooks";
@@ -27,6 +28,7 @@ export function switchView(conversation: DmConversation, selfId: string | undefi
 export function useDmEncryptionView(conversation: DmConversation | null) {
   const encryption = useEncryption();
   const friends = useFriends();
+  const { encryption: port } = usePorts();
   const { user } = useSession();
   const { t, locale } = useLanguage();
   const { status, switchOn, runSwitch, openDialog, dismissRequest, dismissedRequests, switching } = encryption;
@@ -36,6 +38,17 @@ export function useDmEncryptionView(conversation: DmConversation | null) {
   const on = state.state === "on";
   const conversationId = conversation?.id ?? null;
   const peerName = conversation?.peer.displayName ?? "";
+  const peerId = conversation?.peer.id;
+  const [protectedConversation, setProtectedConversation] = useState<string | null>(null);
+  const standing = useSafetyStanding(conversationId, on && status.unlocked);
+  useEffect(() => {
+    if (on || !conversationId || !peerId) return;
+    let active = true;
+    void port.plaintextAllowed(conversationId, peerId).then((allowed) => {
+      if (active) setProtectedConversation(allowed ? null : conversationId);
+    }).catch(() => { if (active) setProtectedConversation(conversationId); });
+    return () => { active = false; };
+  }, [on, conversationId, peerId, port, status.revision]);
   const { liveRequestId, declinedIds } = friends.encryptionLines;
 
   const context = useMemo<DmNoticeContext | null>(() => {
@@ -70,14 +83,20 @@ export function useDmEncryptionView(conversation: DmConversation | null) {
   if (conversation === null || conversationId === null) return {};
 
   const composerBlocked = !on
-    ? undefined
+    ? protectedConversation === conversationId
+      ? <Button variant="secondary" size="sm" onClick={() => encryption.switchOff(conversation)}>{t("e2ee.composer.allowPlaintext")}</Button>
+      : undefined
     : status.support === "insecure"
       ? t("e2ee.composer.insecure")
       : status.support === "unsupported"
         ? t("e2ee.composer.unsupported")
         : status.deviceLimit
           ? t("e2ee.composer.deviceLimit")
-          : undefined;
+          : status.support === "supported" && !status.unlocked
+            ? <Button variant="secondary" size="sm" onClick={() => openDialog({ kind: status.backup ? "unlock" : "forgot" })}>{t("e2ee.composer.unlock")}</Button>
+            : standing?.status === "changed"
+              ? <Button variant="secondary" size="sm" onClick={() => openDialog({ kind: "safety", conversationId })}>{t("e2ee.code.changed")}</Button>
+              : undefined;
 
   return {
     renderNotice,
@@ -108,7 +127,7 @@ export function useSafetyStanding(conversationId: string | null, active: boolean
   const { encryption: port } = usePorts();
   const { status } = useEncryption();
   const { locale } = useLanguage();
-  const [standing, setStanding] = useState<SafetyStanding | undefined>(undefined);
+  const [result, setResult] = useState<{ id: string; revision: number; standing: SafetyStanding }>();
   const { revision, support } = status;
 
   useEffect(() => {
@@ -120,18 +139,21 @@ export function useSafetyStanding(conversationId: string | null, active: boolean
       const verified = await port.verification(code.peerId);
       const joined = code.groups.join(" ");
       if (!current) return;
-      setStanding(
-        verified === null
+      const standing: SafetyStanding = verified === null
           ? { status: "unverified" }
           : verified.code === joined
             ? { status: "verified", on: formatDate(verified.at, locale) }
-            : { status: "changed" },
-      );
-    })().catch(() => undefined);
+            : { status: "changed" };
+      setResult({ id: conversationId, revision, standing });
+    })().catch((error: unknown) => {
+      if (current && error instanceof E2eeError && error.reason === "key-changed") {
+        setResult({ id: conversationId, revision, standing: { status: "changed" } });
+      }
+    });
     return () => {
       current = false;
     };
   }, [port, conversationId, active, support, revision, locale]);
 
-  return active ? standing : undefined;
+  return active && result?.id === conversationId && result.revision === revision ? result.standing : undefined;
 }

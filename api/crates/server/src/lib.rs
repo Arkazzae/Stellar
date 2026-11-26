@@ -205,7 +205,18 @@ pub async fn serve_with(
     };
     let addresses = settings.listen.0.clone();
     let sealer = Sealer::load_or_create(&keys).map_err(|e| StartError(e.to_string()))?;
-    let state = AppState::new(settings, database, events, presence, sealer);
+    let key_backup_sealer = database
+        .prepare_key_backups(settings.data_root.clone())
+        .await
+        .map_err(|e| fail("cannot open E2EE key backups", &e))?;
+    let state = AppState::new(
+        settings,
+        database,
+        events,
+        presence,
+        sealer,
+        key_backup_sealer,
+    );
     if let Some(log) = services.log {
         state.cockpit().plug_in_log(log);
     }

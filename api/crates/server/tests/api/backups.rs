@@ -12,7 +12,7 @@ use crate::support::{Client, Request, Server};
 /// The list, until no backup is being written. A backup takes as long as the
 /// machine lets it (a whole suite runs beside it), so what is waited for is
 /// its end, with a ceiling that only a backup that never ends reaches.
-async fn settled(client: &Client) -> Value {
+pub(crate) async fn settled(client: &Client) -> Value {
     let ceiling = std::time::Instant::now() + Duration::from_secs(180);
     while std::time::Instant::now() < ceiling {
         let list: Value = client.get("/api/cockpit/backups").await.json();

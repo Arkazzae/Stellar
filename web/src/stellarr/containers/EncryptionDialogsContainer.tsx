@@ -2,9 +2,8 @@ import { useEffect, useRef, useState } from "react";
 
 import { SecurityStepDialog } from "@/components/account/panes/SecurityStepDialog";
 import {
-  ForgotPinDialog,
-  NewPinDialog,
-  PinSetupDialog,
+  LostRecoveryCodeDialog,
+  RecoveryCodeDialog,
   SafetyCodeDialog,
   UnlockDialog,
 } from "@/components/friends/EncryptionDialogs";
@@ -12,45 +11,35 @@ import { ApiError } from "@/lib/api/errors";
 import { E2eeError } from "@/lib/e2ee/client";
 import { pluralForm } from "@/lib/format/format";
 import type { MessageKey } from "@/i18n";
-import type { PreparedPin, SafetyCodeView, UnlockResult } from "@/ports";
+import type { PreparedRecoveryCode, SafetyCodeView, UnlockResult } from "@/ports";
 import { useEncryption, useFriends, useLanguage, usePorts, useSession } from "@/state/hooks";
 
 import { FRESH_SECOND_STEP_REQUIRED } from "./freshSecondStep";
 import { toPerson } from "./toPerson";
 import { useAccountSecurity } from "./useAccountSecurity";
 
-const WRONG_PIN: Record<"one" | "few" | "many", MessageKey> = {
+const WRONG_CODE: Record<"one" | "few" | "many", MessageKey> = {
   one: "e2ee.unlock.wrong.one",
   few: "e2ee.unlock.wrong.few",
   many: "e2ee.unlock.wrong.many",
 };
 
-/**
- * Every encryption dialog, raised from wherever the reader is: the first PIN
- * (then the switch it was for), unlocking history with the PIN, what
- * forgetting it costs, a new PIN or new keys behind the same re-authentication
- * as a password change, and the safety code.
- */
 export function EncryptionDialogsContainer() {
   const { encryption: port } = usePorts();
-  const { dialog, closeDialog, openDialog, runSwitch } = useEncryption();
+  const { dialog, closeDialog, openDialog, runSwitch, status } = useEncryption();
   const friends = useFriends();
   const session = useSession();
   const { t, locale } = useLanguage();
-  // Its own instance: a new PIN raised from a conversation needs the same
-  // second step the settings ask for, with the settings shut. It reads the
-  // account while that dialog is open, to know whether it has a password,
-  // and nothing else the settings show.
-  const security = useAccountSecurity(dialog?.kind === "newPin", { withSessions: false });
+  const security = useAccountSecurity(dialog?.kind === "recoveryCode", { withSessions: false });
 
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [dead, setDead] = useState(false);
-  const [code, setCode] = useState<SafetyCodeView | null>(null);
+  const [comparison, setCode] = useState<{ view: SafetyCodeView; id: string; revision: number } | null>(null);
   const [mismatch, setMismatch] = useState(false);
-  /** The slow PIN derivation is done once per PIN, however many times re-authentication retries. */
-  const prepared = useRef<{ key: string; value: PreparedPin } | null>(null);
+  /** Reuse the same encrypted backup when re-authentication needs a second attempt. */
+  const prepared = useRef<{ key: string; value: PreparedRecoveryCode } | null>(null);
 
   const kind = dialog?.kind ?? null;
   const [lastKind, setLastKind] = useState(kind);
@@ -65,33 +54,40 @@ export function EncryptionDialogsContainer() {
   }
 
   const safetyId = dialog?.kind === "safety" ? dialog.conversationId : null;
+  const conversation =
+    safetyId === null ? null : friends.conversations.find((item) => item.id === safetyId) ?? null;
+  const expectedPeer = conversation?.peer.id;
+  const code = comparison?.id === safetyId && comparison.revision === status.revision ? comparison.view : null;
   useEffect(() => {
     if (safetyId === null) return;
     let current = true;
     port.safetyCode(safetyId).then(
       (view) => {
         if (!current) return;
-        if (view === null) setError(t("e2ee.safety.failed"));
-        else setCode(view);
+        if (view === null || view.peerId !== expectedPeer) setError(t("e2ee.safety.failed"));
+        else {
+          setError(null);
+          setCode({ view, id: safetyId, revision: status.revision });
+        }
       },
       () => current && setError(t("e2ee.safety.failed")),
     );
     return () => {
       current = false;
     };
-  }, [port, safetyId, t]);
+  }, [port, safetyId, expectedPeer, status.revision, t]);
 
   const close = () => {
     prepared.current = null;
     closeDialog();
   };
 
-  const setUp = (pin: string) => {
+  const setUp = (code: string) => {
     if (dialog?.kind !== "setup") return;
     const then = dialog.then;
     setPending(true);
     setError(null);
-    port.setUp(pin).then(
+    port.setUp(code).then(
       () => {
         close();
         if (then !== undefined) runSwitch(then.conversationId, then.action);
@@ -105,8 +101,10 @@ export function EncryptionDialogsContainer() {
 
   const describeUnlock = (result: Exclude<UnlockResult, { kind: "unlocked" }>): string => {
     switch (result.kind) {
-      case "wrong-pin":
-        return t(WRONG_PIN[pluralForm(locale, result.remainingAttempts)], { count: result.remainingAttempts });
+      case "invalid-code":
+        return t("e2ee.recovery.invalid");
+      case "wrong-code":
+        return t(WRONG_CODE[pluralForm(locale, result.remainingAttempts)], { count: result.remainingAttempts });
       case "backup-deleted":
         return t("e2ee.unlock.deleted");
       case "backup-missing":
@@ -118,14 +116,15 @@ export function EncryptionDialogsContainer() {
     }
   };
 
-  const unlock = (pin: string) => {
+  const unlock = (input: string) => {
     setPending(true);
     setError(null);
-    port.unlock(pin).then(
+    port.unlock(input).then(
       (result) => {
         setPending(false);
         if (result.kind === "unlocked") {
-          close();
+          if (status.migrationRequired) openDialog({ kind: "recoveryCode", mode: "change" });
+          else close();
           return;
         }
         setError(describeUnlock(result));
@@ -138,24 +137,24 @@ export function EncryptionDialogsContainer() {
     );
   };
 
-  const newPin = async ({ password, pin }: { password: string; pin: string }) => {
-    if (dialog?.kind !== "newPin") return;
+  const saveRecoveryCode = async (code: string, password: string) => {
+    if (dialog?.kind !== "recoveryCode") return;
     const { mode } = dialog;
     setPending(true);
     setError(null);
     setPasswordError(null);
     try {
-      const key = `${mode}:${pin}`;
+      const key = `${mode}:${code}`;
       if (prepared.current?.key !== key) {
         prepared.current = {
           key,
-          value: mode === "change" ? await port.prepareNewPin(pin) : await port.prepareReset(pin),
+          value: mode === "change" ? await port.prepareRecoveryCode(code) : await port.prepareReset(code),
         };
       }
       const value = prepared.current.value;
       const attempt = () =>
         mode === "change"
-          ? port.changePin(value, password)
+          ? port.changeRecoveryCode(value, password)
           : port.reset(value as Parameters<typeof port.reset>[0], password);
       try {
         await attempt();
@@ -174,7 +173,7 @@ export function EncryptionDialogsContainer() {
       setPending(false);
       if (cause instanceof ApiError && cause.code === "password-incorrect") {
         setPasswordError(t("e2ee.password.wrong"));
-      } else if (cause instanceof E2eeError && cause.reason === "key-changed") {
+      } else if ((cause instanceof E2eeError && cause.reason === "key-changed") || (cause instanceof ApiError && cause.code === "account-key-changed")) {
         setError(t("e2ee.newPin.keyChanged"));
       } else if (cause instanceof ApiError && cause.kind === "rate-limited") {
         setError(t("e2ee.unlock.rateLimited"));
@@ -184,41 +183,32 @@ export function EncryptionDialogsContainer() {
     }
   };
 
-  const conversation =
-    safetyId === null ? null : friends.conversations.find((item) => item.id === safetyId) ?? null;
   const self = session.user;
 
   return (
     <>
-      <PinSetupDialog
-        open={kind === "setup"}
-        pending={pending}
-        error={error}
-        onSubmit={setUp}
-        onClose={close}
-      />
-      <UnlockDialog
-        open={kind === "unlock"}
+      {(kind === "setup" || dialog?.kind === "recoveryCode") && (
+        <RecoveryCodeDialog key={dialog?.kind === "recoveryCode" ? dialog.mode : "setup"}
+          mode={dialog?.kind === "recoveryCode" ? dialog.mode : "setup"}
+          migration={status.migrationRequired === true && dialog?.kind === "recoveryCode" && dialog.mode === "change"}
+          pending={pending} error={error} passwordError={passwordError}
+          withPassword={kind === "recoveryCode" && security.sections.security?.hasPassword !== false}
+          onSubmit={(code, password) => kind === "setup" ? setUp(code) : void saveRecoveryCode(code, password)}
+          onClose={close} />
+      )}
+      {kind === "unlock" && <UnlockDialog
+        legacy={status.migrationRequired === true}
+        open
         pending={pending}
         error={error}
         dead={dead}
         onSubmit={unlock}
         onForgot={() => openDialog({ kind: "forgot" })}
         onClose={close}
-      />
-      <ForgotPinDialog
+      />}
+      <LostRecoveryCodeDialog
         open={kind === "forgot"}
-        onContinue={() => openDialog({ kind: "newPin", mode: "reset" })}
-        onClose={close}
-      />
-      <NewPinDialog
-        open={kind === "newPin"}
-        mode={dialog?.kind === "newPin" ? dialog.mode : "change"}
-        pending={pending}
-        passwordError={passwordError}
-        error={error}
-        withPassword={security.sections.security?.hasPassword !== false}
-        onSubmit={(input) => void newPin(input)}
+        onContinue={() => openDialog({ kind: "recoveryCode", mode: "reset" })}
         onClose={close}
       />
       {conversation !== null && self !== null ? (
@@ -226,15 +216,15 @@ export function EncryptionDialogsContainer() {
           open={kind === "safety"}
           self={toPerson(self)}
           peer={toPerson(conversation.peer)}
-          groups={code?.groups ?? null}
+          groups={code?.peerId === expectedPeer && code !== null ? code.groups : null}
           error={error}
           mismatch={mismatch}
           onSame={() => {
-            if (code === null) return;
+            if (code === null || code.peerId !== expectedPeer) return;
             void port.setVerified(code.peerId, code.groups.join(" ")).finally(close);
           }}
           onDiffer={() => {
-            if (code !== null) void port.clearVerified(code.peerId);
+            if (code !== null && code.peerId === expectedPeer) void port.setVerified(code.peerId, null);
             setMismatch(true);
           }}
           onClose={close}

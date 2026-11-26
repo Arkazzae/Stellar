@@ -11,15 +11,14 @@ import type {
   EpochEnvelope,
   KeyBackupInput,
   Message,
-  PublicKeyRecord,
   RecipientKey,
   SealedReason,
 } from "@/lib/api/types";
 import type { UploadMediaMetadata } from "@/lib/media/probe";
 
 import { decryptFile, encryptFile, OPAQUE_TYPE, shownType } from "./attachment";
-import { fromBase64, sameBytes, toBase64, type Bytes } from "./bytes";
-import { newEpochKey, openEpochKey, unwrapEpochKey, wrapEpochKey, type OpenedEpoch } from "./epoch";
+import { concatBytes, fromBase64, sameBytes, toBase64, type Bytes } from "./bytes";
+import { deriveAccountEpoch, newEpochKey, unwrapEpochKey, unwrapEpochMaterial, wrapEpochKey, type OpenedEpoch } from "./epoch";
 import {
   exportPrivateKey,
   exportPublicKey,
@@ -31,13 +30,14 @@ import {
   sealLocally,
 } from "./keys";
 import { decryptPayload, encryptPayload, type MessagePayload, type PayloadAttachment } from "./message";
-import { derivePinKeys, openBackup, PIN_ITERATIONS, sealBackup, type SealedBackup } from "./pin";
+import { derivePinKeys, isPin, openBackup, PIN_ITERATIONS, sealBackup, type SealedBackup } from "./pin";
+import { decodeKeyBackup, encodeKeyBackup, normalizeRecoveryCode, recoveryCredential, type ArchivedKey } from "./recovery";
 import { safetyCode } from "./safetyCode";
 import type { KeyStore, StoredVerification } from "./store";
 import type { E2eeSupport } from "./support";
 
 /**
- * The browser side of the encryption protocol: keys, PIN backup, devices,
+ * The browser side of the encryption protocol: keys, account key backup, devices,
  * epochs, and turning direct messages into plaintext and back.
  *
  * One instance per runtime. The friends adapter decodes every direct message
@@ -51,10 +51,12 @@ export interface E2eeStatus {
   support: E2eeSupport | "checking";
   /** The account's public key on the server; null until encryption is set up. */
   accountKey: { keyId: string; publicKey: string } | null;
-  /** The PIN backup on the server; null when there is none. */
+  /** The current key backup on the server, if present. */
   backup: { remainingAttempts: number } | null;
   /** This browser holds the account private key. */
   unlocked: boolean;
+  /** This account still needs to move its history off the old PIN. */
+  migrationRequired?: boolean;
   /** This session's registered device, once there is one. */
   deviceId: string | null;
   /** The account already holds keys in as many browsers as it may. */
@@ -93,13 +95,14 @@ export class E2eeError extends Error {
 
 export type UnlockResult =
   | { kind: "unlocked" }
-  | { kind: "wrong-pin"; remainingAttempts: number }
-  /** That was the last wrong PIN; the backup is gone. */
+  | { kind: "wrong-code"; remainingAttempts: number }
+  /** The last incorrect attempt deleted the backup. */
   | { kind: "backup-deleted" }
+  | { kind: "invalid-code" }
   | { kind: "backup-missing" }
   /** Refused before trying: too many attempts lately. No attempt was spent. */
   | { kind: "rate-limited" }
-  /** The PIN was right, but what the backup holds is not this account's key. */
+  /** The decrypted backup failed account key validation. */
   | { kind: "backup-unusable" };
 
 /** One encrypted upload, ready to go into a message. */
@@ -109,11 +112,13 @@ export interface EncryptedUpload {
   payload: PayloadAttachment;
 }
 
-export interface PreparedPin {
+export interface PreparedRecoveryCode {
+  accountKeyId: string;
+  migration?: { publicKey: string; pkcs8: Bytes; archived: ArchivedKey };
   backup: KeyBackupInput;
 }
 
-export interface PreparedReset extends PreparedPin {
+export interface PreparedReset extends PreparedRecoveryCode {
   publicKey: string;
   pkcs8: Bytes;
 }
@@ -153,21 +158,9 @@ export function sameRecipients(left: readonly RecipientKey[], right: readonly Re
   return a.size === b.size && [...a].every((id) => b.has(id));
 }
 
-/** The public key a recipient entry stands for, from the keys route's answer. */
-export function publicKeyOf(keys: ConversationKeys, recipient: RecipientKey): PublicKeyRecord | null {
-  const person = [keys.self, keys.peer].find((candidate) => candidate.userId === recipient.userId);
-  if (person === undefined) return null;
-  if (recipient.kind === "account") {
-    return person.accountKey?.keyId === recipient.keyId ? person.accountKey : null;
-  }
-  const device = person.devices.find((candidate) => candidate.keyId === recipient.keyId);
-  return device === undefined
-    ? null
-    : { keyId: device.keyId, algorithm: device.algorithm, publicKey: device.publicKey, createdAt: device.createdAt };
-}
-
 function backupInput(backup: SealedBackup): KeyBackupInput {
   return {
+    version: 2,
     salt: toBase64(backup.salt),
     iterations: backup.iterations,
     verifier: toBase64(backup.verifier),
@@ -191,7 +184,14 @@ interface ConversationState {
   epochsLoad: Promise<void> | null;
   /** Epoch ids looked for and not found since the last change. */
   missing: Set<string>;
-  opened: Map<string, OpenedEpoch>;
+  legacyKeys: Map<string, OpenedEpoch>;
+  accountEpochs: Map<string, {
+    privateKey: CryptoKey;
+    envelope: EpochEnvelope;
+    peerId: string;
+    peerPublicKey: Bytes;
+    opened: OpenedEpoch;
+  }>;
   /** Rotation is decided one send at a time, so two sends never race to create epochs. */
   queue: Promise<unknown>;
 }
@@ -233,6 +233,7 @@ export function createE2eeClient(options: E2eeClientOptions) {
   let ready: Promise<void> = Promise.resolve();
   let account: EncryptionAccount = { accountKey: null, backup: null, device: null };
   let accountKey: LocalAccountKey | null = null;
+  let archivedKey: LocalAccountKey | null = null;
   let device: LocalDevice | null = null;
   let deviceRefreshed = false;
   let deviceLimit = false;
@@ -256,6 +257,7 @@ export function createE2eeClient(options: E2eeClientOptions) {
           ? null
           : { keyId: account.accountKey.keyId, publicKey: account.accountKey.publicKey },
       backup: account.backup === null ? null : { remainingAttempts: account.backup.remainingAttempts },
+      migrationRequired: account.accountKey !== null && account.recoveryVersion === 1,
       unlocked: accountKey !== null && accountKey.keyId === account.accountKey?.keyId,
       deviceId: device?.id ?? null,
       deviceLimit,
@@ -290,7 +292,8 @@ export function createE2eeClient(options: E2eeClientOptions) {
         listedSequence: 0,
         epochsLoad: null,
         missing: new Set(),
-        opened: new Map(),
+        legacyKeys: new Map(),
+        accountEpochs: new Map(),
         queue: Promise.resolve(),
       };
       conversations.set(id, state);
@@ -305,9 +308,11 @@ export function createE2eeClient(options: E2eeClientOptions) {
 
   /* ------------------------------------------------------------ account */
 
-  async function adoptAccountKey(user: string, keyId: string, publicKey: Bytes, pkcs8: Bytes): Promise<void> {
+  async function adoptAccountKey(user: string, keyId: string, publicKey: Bytes, pkcs8: Bytes, archived?: ArchivedKey): Promise<void> {
     const sealed = await sealLocally(pkcs8);
-    await store.putAccountKey({ userId: user, keyId, publicKey, ...sealed });
+    const old = archived && { keyId: archived.keyId, publicKey: archived.publicKey, ...await sealLocally(archived.pkcs8) };
+    await store.putAccountKey({ userId: user, keyId, publicKey, ...sealed, ...(old && { archived: old }) });
+    archivedKey = archived ? { keyId: archived.keyId, publicKey: archived.publicKey, privateKey: await importPrivateKey(archived.pkcs8, false) } : null;
     accountKey = { keyId, publicKey, privateKey: await importPrivateKey(pkcs8, false) };
   }
 
@@ -315,16 +320,20 @@ export function createE2eeClient(options: E2eeClientOptions) {
     const stored = await store.getAccountKey(user);
     const server = account.accountKey;
     if (stored === null) {
+      archivedKey = null;
       accountKey = null;
       return;
     }
     // A reset elsewhere left this copy behind: it opens nothing new.
     if (server === null || stored.keyId !== server.keyId) {
       await store.deleteAccountKey(user);
+      archivedKey = null;
       accountKey = null;
       return;
     }
     if (accountKey?.keyId === stored.keyId) return;
+    const old = stored.archived;
+    archivedKey = old ? { keyId: old.keyId, publicKey: old.publicKey, privateKey: await importPrivateKey(await openLocally(old), false) } : null;
     accountKey = {
       keyId: stored.keyId,
       publicKey: stored.publicKey,
@@ -392,7 +401,15 @@ export function createE2eeClient(options: E2eeClientOptions) {
     if (!fresh && !state.keysStale && state.keys !== null) return state.keys;
     state.keysLoad ??= api
       .getConversationKeys(conversationId)
-      .then((keys) => {
+      .then(async (keys) => {
+        const user = requireUser();
+        if (keys.conversationId !== conversationId || keys.self.userId !== user || keys.peer.userId === user ||
+            (support === "supported" && !await store.bindPeer(user, conversationId, keys.peer.userId))) {
+          throw new E2eeError("key-changed");
+        }
+        if (keys.encryption.state === "on" && support === "supported") {
+          await store.setPlaintextAllowed(user, keys.peer.userId, false);
+        }
         state.keys = keys;
         state.keysStale = false;
         if (keys.currentEpoch !== null) remember(state, keys.currentEpoch);
@@ -448,14 +465,88 @@ export function createE2eeClient(options: E2eeClientOptions) {
     return found;
   }
 
+  function accountPair(keys: ConversationKeys) {
+    const own = accountKey;
+    if (own === null) throw new E2eeError("locked");
+    const peer = keys.peer.accountKey;
+    if (!peer || peer.algorithm !== KEY_ALGORITHM) throw new E2eeError("recipient-key-missing");
+    if (keys.self.accountKey?.keyId !== own.keyId || keys.self.accountKey.publicKey !== toBase64(own.publicKey) ||
+        peer.keyId === own.keyId || peer.publicKey === toBase64(own.publicKey)) throw new E2eeError("key-changed");
+    return {
+      self: { ...own, userId: requireUser() },
+      peer: { keyId: peer.keyId, publicKey: fromBase64(peer.publicKey), userId: keys.peer.userId },
+    };
+  }
+
+  type AccountPair = ReturnType<typeof accountPair>;
+
+  async function checkVerification(self: AccountPair["self"], peer: AccountPair["peer"], historical = false) {
+    const verified = await store.getVerification(self.userId, peer.userId);
+    if (verified === null) return;
+    const code = (await safetyCode(self, peer)).join(" ");
+    if (code === verified.code || (historical && verified.previousCodes?.includes(code))) return;
+    // The peer can be unchanged even though our own half of the fingerprint rotated.
+    if (historical && self.keyId === archivedKey?.keyId && accountKey) {
+      const active = { ...accountKey, userId: self.userId };
+      const codeWithActiveKey = (await safetyCode(active, peer)).join(" ");
+      if (codeWithActiveKey === verified.code || verified.previousCodes?.includes(codeWithActiveKey)) return;
+    }
+    throw new E2eeError("key-changed");
+  }
+
+  async function openAccountEpoch(conversationId: string, epoch: EncryptionEpoch, current?: AccountPair) {
+    if (epoch.version !== 2 || accountKey === null) return null;
+    const user = requireUser();
+    const accounts = epoch.recipients.filter((r) => r.kind === "account");
+    // The retired PIN-era key is available exclusively to the history reader.
+    const own = current === undefined && archivedKey && accounts.some((r) => r.userId === user && r.keyId === archivedKey?.keyId)
+      ? archivedKey : accountKey;
+    const self = { ...own, userId: user };
+    const other = accounts.find((r) => r.userId !== self.userId);
+    const wire = epoch.envelopes.find((e) => e.recipientKeyId === self.keyId);
+    if (accounts.length !== 2 || !other || !wire ||
+        !accounts.some((r) => r.userId === self.userId && r.keyId === self.keyId)) return null;
+    try {
+      const cache = conversation(conversationId).accountEpochs;
+      let entry = cache.get(epoch.id);
+      if (!entry || entry.privateKey !== self.privateKey || entry.peerId !== other.userId ||
+          entry.envelope.ciphertext !== wire.ciphertext || entry.envelope.iv !== wire.iv ||
+          entry.envelope.ephemeralPublicKey !== wire.ephemeralPublicKey) {
+        const material = await unwrapEpochMaterial({
+          recipientKeyId: self.keyId, ephemeralPublicKey: fromBase64(wire.ephemeralPublicKey),
+          iv: fromBase64(wire.iv), ciphertext: fromBase64(wire.ciphertext),
+        }, self.privateKey, { conversationId, epochId: epoch.id });
+        if (material.length !== 64) return null;
+        const peer = { userId: other.userId, publicKey: material.slice(32) };
+        const opened = await deriveAccountEpoch(material.slice(0, 32), self, peer, conversationId, epoch.id);
+        entry = { privateKey: self.privateKey, envelope: wire, peerId: other.userId, peerPublicKey: peer.publicKey, opened };
+        cache.set(epoch.id, entry);
+      }
+      const peer = { ...other, publicKey: entry.peerPublicKey };
+      if (current !== undefined) {
+        if (peer.userId !== current.peer.userId || peer.keyId !== current.peer.keyId ||
+            !sameBytes(peer.publicKey, current.peer.publicKey)) return null;
+      } else {
+        const bound = await store.getPeer(self.userId, conversationId) ?? (await keysOf(conversationId)).peer.userId;
+        if (bound !== peer.userId) return null;
+        await checkVerification(self, peer, true);
+      }
+      return entry.opened;
+    } catch {
+      return null;
+    }
+  }
+
   async function openEpoch(conversationId: string, epoch: EncryptionEpoch): Promise<OpenedEpoch | null> {
     const state = conversation(conversationId);
-    const opened = state.opened.get(epoch.id);
+    if (epoch.version === 2) return openAccountEpoch(conversationId, epoch);
+    const opened = state.legacyKeys.get(epoch.id);
     if (opened !== undefined) return opened;
     const context = { conversationId, epochId: epoch.id };
     const attempts: [EpochEnvelope | undefined, CryptoKey | undefined][] = [
       [epoch.envelopes.find((envelope) => envelope.recipientKeyId === device?.id), device?.privateKey],
       [epoch.envelopes.find((envelope) => envelope.recipientKeyId === accountKey?.keyId), accountKey?.privateKey],
+      [epoch.envelopes.find((envelope) => envelope.recipientKeyId === archivedKey?.keyId), archivedKey?.privateKey],
     ];
     for (const [envelope, privateKey] of attempts) {
       if (envelope === undefined || privateKey === undefined) continue;
@@ -470,7 +561,7 @@ export function createE2eeClient(options: E2eeClientOptions) {
           privateKey,
           context,
         );
-        state.opened.set(epoch.id, key);
+        state.legacyKeys.set(epoch.id, key);
         return key;
       } catch {
         // Not for this key, or changed on the way; try the other.
@@ -485,41 +576,37 @@ export function createE2eeClient(options: E2eeClientOptions) {
     if (epoch !== null && current !== undefined && accountKey?.keyId !== current) {
       const forAccount =
         epoch.recipients.some((recipient) => recipient.keyId === current) ||
-        epoch.envelopes.some((envelope) => envelope.recipientKeyId === current);
+        epoch.envelopes.some((e) => epoch.recipients.some((r) =>
+          r.keyId === e.recipientKeyId && r.kind === "account" && r.userId === userId));
       if (forAccount) return "pin";
     }
     return "lost";
   }
 
-  async function createEpoch(conversationId: string, keys: ConversationKeys) {
+  async function createEpoch(conversationId: string, keys: ConversationKeys, pair: AccountPair) {
     const epochId = crypto.randomUUID();
-    const raw = newEpochKey();
-    const envelopes = await Promise.all(
-      keys.recipients.map(async (recipient) => {
-        const record = publicKeyOf(keys, recipient);
-        if (record === null || record.algorithm !== KEY_ALGORITHM) throw new E2eeError("recipient-key-missing");
-        const envelope = await wrapEpochKey(raw, fromBase64(record.publicKey), {
-          conversationId,
-          epochId,
-          recipientKeyId: recipient.keyId,
-        });
-        return {
-          recipientKeyId: envelope.recipientKeyId,
-          ephemeralPublicKey: toBase64(envelope.ephemeralPublicKey),
-          iv: toBase64(envelope.iv),
-          ciphertext: toBase64(envelope.ciphertext),
-        };
-      }),
-    );
+    const seed = newEpochKey();
+    const { self, peer } = pair;
+    // Construct exactly two envelopes from the account keys used for the safety code.
+    const envelopes = await Promise.all([self, peer].map(async (recipient) => {
+      const other = recipient === self ? peer : self;
+      const envelope = await wrapEpochKey(concatBytes(seed, other.publicKey), recipient.publicKey, {
+        conversationId, epochId, recipientKeyId: recipient.keyId,
+      });
+      return {
+        recipientKeyId: envelope.recipientKeyId,
+        ephemeralPublicKey: toBase64(envelope.ephemeralPublicKey),
+        iv: toBase64(envelope.iv),
+        ciphertext: toBase64(envelope.ciphertext),
+      };
+    }));
+    const opened = await deriveAccountEpoch(seed, self, peer, conversationId, epochId);
     const epoch = await api.createConversationEpoch(conversationId, {
-      epochId,
-      previousEpochId: keys.encryption.currentEpochId,
-      envelopes,
+      version: 2, epochId, previousEpochId: keys.encryption.currentEpochId, envelopes,
+      deviceKeyIds: keys.recipients.filter((r) => r.kind === "device").map((r) => r.keyId),
     });
-    const opened = await openEpochKey(raw);
-    const state = conversation(conversationId);
-    remember(state, epoch);
-    state.opened.set(epoch.id, opened);
+    if (epoch.id !== epochId || epoch.version !== 2) throw new E2eeError("key-changed");
+    remember(conversation(conversationId), epoch);
     keys.currentEpoch = epoch;
     keys.encryption = { ...keys.encryption, currentEpochId: epoch.id };
     return { epochId: epoch.id, sequence: epoch.sequence, opened };
@@ -539,17 +626,19 @@ export function createE2eeClient(options: E2eeClientOptions) {
         if (attempt === 0) continue;
         throw new E2eeError("encryption-off");
       }
+      const pair = accountPair(keys);
+      await checkVerification(pair.self, pair.peer);
       const current = keys.currentEpoch;
       if (
         current !== null &&
         current.id === keys.encryption.currentEpochId &&
         sameRecipients(current.recipients, keys.recipients)
       ) {
-        const opened = await openEpoch(conversationId, conversation(conversationId).epochs.get(current.id) ?? current);
+        const opened = await openAccountEpoch(conversationId, current, pair);
         if (opened !== null) return { epochId: current.id, sequence: current.sequence, opened };
       }
       try {
-        return await createEpoch(conversationId, keys);
+        return await createEpoch(conversationId, keys, pair);
       } catch (error) {
         const code = codeOf(error);
         if (code !== undefined && ROTATE_CODES.has(code)) {
@@ -684,21 +773,29 @@ export function createE2eeClient(options: E2eeClientOptions) {
     emit({ type: "switch", conversationId, state: encryption.state });
   }
 
-  /**
-   * The keys of a private call in `conversationId`, from the server's word
-   * read now. Null only when the server says the conversation is not
-   * encrypted. Whatever else stops this browser from encrypting (no
-   * support, no device, offline, no key it can open) throws, and the caller
-   * does not call: an encrypted conversation's call is encrypted or does not
-   * happen. The epoch is the one the next message would go out under, so a
-   * call rotates on the same rules as a send; asked again during the call,
-   * after keys changed, it hands out the epoch to move to.
-   */
+  async function plaintextAllowed(conversationId: string, peerId: string): Promise<boolean> {
+    await ready;
+    const self = requireUser();
+    const bound = await store.getPeer(self, conversationId);
+    if (bound !== null && bound !== peerId) return false;
+    const verified = await store.getVerification(self, peerId);
+    if (verified === null) return true;
+    if (bound === null && !await store.bindPeer(self, conversationId, peerId)) return false;
+    return verified.plaintextAllowed === true;
+  }
+
   async function callKeys(conversationId: string): Promise<CallKeys | null> {
     await ready;
-    const user = requireUser();
     const keys = await keysOf(conversationId, true);
-    if (keys.encryption.state !== "on") return null;
+    if (keys.encryption.state !== "on") {
+      if (!await plaintextAllowed(conversationId, keys.peer.userId)) throw new E2eeError("encryption-off");
+      return null;
+    }
+    return sendingCallKeys(conversationId);
+  }
+
+  async function sendingCallKeys(conversationId: string): Promise<CallKeys> {
+    const user = requireUser();
     if (support !== "supported") throw new E2eeError("unsupported");
     if (device?.id === undefined || device.id === null) await sync();
     if (device?.id === undefined || device.id === null) throw new E2eeError("no-device");
@@ -712,6 +809,7 @@ export function createE2eeClient(options: E2eeClientOptions) {
   /* ------------------------------------------------------------ the client */
 
   return {
+    plaintextAllowed,
     getStatus: (): E2eeStatus => status,
 
     subscribe(listener: (event: E2eeEvent) => void): () => void {
@@ -747,6 +845,7 @@ export function createE2eeClient(options: E2eeClientOptions) {
     async forget(): Promise<void> {
       const user = userId;
       userId = null;
+      archivedKey = null;
       accountKey = null;
       device = null;
       deviceRefreshed = false;
@@ -761,24 +860,24 @@ export function createE2eeClient(options: E2eeClientOptions) {
       if (user !== null && support === "supported") await store.forget(user);
     },
 
-    /* ---------------- PIN and account key */
+    /* ---------------- Account key recovery */
 
-    /** First set-up: a new account key, its backup under `pin`, and this browser's device. */
-    async setUp(pin: string): Promise<void> {
+    /** Creates the account key, its recovery-code backup and the first device. */
+    async setUp(code: string): Promise<void> {
       await ready;
       const user = requireUser();
-      if (support !== "supported") throw new E2eeError("unsupported");
+      if (support !== "supported" || account.recoveryVersion === undefined) throw new E2eeError("unsupported");
       const pair = await generateKeyPair(true);
       const pkcs8 = await exportPrivateKey(pair.privateKey);
       const publicKey = await exportPublicKey(pair.publicKey);
-      const backup = await sealBackup(pkcs8, pin, iterations);
+      const backup = await sealBackup(encodeKeyBackup(pkcs8), recoveryCredential(code), iterations);
       try {
         account = await api.setUpAccountKey({ publicKey: toBase64(publicKey), backup: backupInput(backup) });
       } catch (error) {
-        // Set up in another tab a moment ago: read it rather than fail.
+        // A different tab registered its own key and recovery code.
         if (codeOf(error) === "account-key-exists") {
           await sync();
-          return;
+          throw new E2eeError("key-changed");
         }
         throw error;
       }
@@ -789,8 +888,8 @@ export function createE2eeClient(options: E2eeClientOptions) {
       publish();
     },
 
-    /** Opens the backup with `pin` and keeps the account key on this browser. */
-    async unlock(pin: string): Promise<UnlockResult> {
+    /** Unlocks a current backup or reads a legacy backup for migration. */
+    async unlock(input: string): Promise<UnlockResult> {
       await ready;
       const user = requireUser();
       const server = account.accountKey;
@@ -803,10 +902,14 @@ export function createE2eeClient(options: E2eeClientOptions) {
         if (error instanceof ApiError && error.kind === "rate-limited") return { kind: "rate-limited" };
         throw error;
       }
-      const { authKey, encKey } = await derivePinKeys(pin, fromBase64(parameters.salt), parameters.iterations);
+      if (parameters.version !== account.recoveryVersion) return { kind: "backup-unusable" };
+      const legacy = parameters.version === 1;
+      if (legacy ? !isPin(input) : normalizeRecoveryCode(input) === null) return { kind: "invalid-code" };
+      const credential = legacy ? input : recoveryCredential(input);
+      const { authKey, encKey } = await derivePinKeys(credential, fromBase64(parameters.salt), parameters.iterations);
       let unlocked;
       try {
-        unlocked = await api.unlockBackup(toBase64(authKey));
+        unlocked = await api.unlockBackup(toBase64(authKey), parameters.version);
       } catch (error) {
         const code = codeOf(error);
         const details = error instanceof ApiError ? error.details : undefined;
@@ -814,7 +917,7 @@ export function createE2eeClient(options: E2eeClientOptions) {
           const remaining = typeof details?.["remainingAttempts"] === "number" ? details["remainingAttempts"] : 0;
           account = { ...account, backup: account.backup === null ? null : { ...account.backup, remainingAttempts: remaining } };
           publish();
-          return { kind: "wrong-pin", remainingAttempts: remaining };
+          return { kind: "wrong-code", remainingAttempts: remaining };
         }
         if (code === "backup-deleted") {
           account = { ...account, backup: null };
@@ -826,18 +929,19 @@ export function createE2eeClient(options: E2eeClientOptions) {
         throw error;
       }
       let pkcs8: Bytes;
+      let archived: ArchivedKey | undefined;
       try {
-        pkcs8 = await openBackup(encKey, fromBase64(unlocked.iv), fromBase64(unlocked.ciphertext));
+        const payload = await openBackup(encKey, fromBase64(unlocked.iv), fromBase64(unlocked.ciphertext));
+        ({ pkcs8, archived } = legacy ? { pkcs8: payload } : await decodeKeyBackup(payload));
       } catch {
         return { kind: "backup-unusable" };
       }
       const publicKey = fromBase64(server.publicKey);
-      // The backup must hold this account's current key before it is used or
-      // ever written again under another PIN.
+      // Bind the decrypted private key to the active account identity.
       if (unlocked.accountKeyId !== server.keyId || !(await privateKeyMatches(pkcs8, publicKey))) {
         return { kind: "backup-unusable" };
       }
-      await adoptAccountKey(user, server.keyId, publicKey, pkcs8);
+      await adoptAccountKey(user, server.keyId, publicKey, pkcs8, archived);
       if (account.backup !== null) {
         account = { ...account, backup: { ...account.backup, failedAttempts: 0, remainingAttempts: account.backup.failedAttempts + account.backup.remainingAttempts } };
       }
@@ -845,27 +949,53 @@ export function createE2eeClient(options: E2eeClientOptions) {
       return { kind: "unlocked" };
     },
 
-    /** A backup of the key this browser holds, under a new PIN; slow, so done once per attempt. */
-    async prepareNewPin(pin: string): Promise<PreparedPin> {
+    /** Seals the backup under the new code. A PIN-era account also gets a fresh identity. */
+    async prepareRecoveryCode(code: string): Promise<PreparedRecoveryCode> {
       const user = requireUser();
       const stored = await store.getAccountKey(user);
       if (stored === null || stored.keyId !== account.accountKey?.keyId) throw new E2eeError("locked");
-      return { backup: backupInput(await sealBackup(await openLocally(stored), pin, iterations)) };
+      if (account.recoveryVersion === undefined) throw new E2eeError("unsupported");
+      const credential = recoveryCredential(code);
+      const current = await openLocally(stored);
+      if (account.recoveryVersion !== 2) {
+        const pair = await generateKeyPair(true);
+        const pkcs8 = await exportPrivateKey(pair.privateKey);
+        const archived = { keyId: stored.keyId, publicKey: stored.publicKey, pkcs8: current };
+        return {
+          accountKeyId: stored.keyId,
+          migration: { pkcs8, publicKey: toBase64(await exportPublicKey(pair.publicKey)), archived },
+          backup: backupInput(await sealBackup(encodeKeyBackup(pkcs8, archived), credential, iterations)),
+        };
+      }
+      const old = stored.archived;
+      const archived = old && { keyId: old.keyId, publicKey: old.publicKey, pkcs8: await openLocally(old) };
+      return { accountKeyId: stored.keyId, backup: backupInput(await sealBackup(encodeKeyBackup(current, archived), credential, iterations)) };
     },
 
     /** Stores the new backup. Throws the server's refusals (password, second step) as they are. */
-    async changePin(prepared: PreparedPin, currentPassword: string): Promise<void> {
+    async changeRecoveryCode(prepared: PreparedRecoveryCode, currentPassword: string): Promise<void> {
       const user = requireUser();
       const keyId = account.accountKey?.keyId;
       if (keyId === undefined || accountKey?.keyId !== keyId) throw new E2eeError("locked");
+      if (prepared.accountKeyId !== keyId) throw new E2eeError("key-changed");
+      const migration = prepared.migration;
+      if (migration) {
+        const answer = await api.resetAccountKey({
+          migrateFromKeyId: keyId, currentPassword, publicKey: migration.publicKey, backup: prepared.backup,
+        });
+        account = { ...account, recoveryVersion: 2, accountKey: answer.accountKey, backup: answer.backup };
+        await adoptAccountKey(user, answer.accountKey.keyId, fromBase64(migration.publicKey), migration.pkcs8, migration.archived);
+        for (const state of conversations.values()) state.keysStale = true;
+        await sync().catch(() => undefined);
+        keysChanged();
+        return;
+      }
       const replace = () => api.replaceBackup({ currentPassword, accountKeyId: keyId, backup: prepared.backup });
       try {
         await replace();
       } catch (error) {
         const code = codeOf(error);
         if (code === "account-key-changed") {
-          await store.deleteAccountKey(user);
-          accountKey = null;
           await sync().catch(() => undefined);
           throw new E2eeError("key-changed");
         }
@@ -878,14 +1008,18 @@ export function createE2eeClient(options: E2eeClientOptions) {
       publish();
     },
 
-    /** A new account key and its backup under `pin`, for when no browser holds the old one. */
-    async prepareReset(pin: string): Promise<PreparedReset> {
+    /** Starts a fresh identity if the owner has lost all access to the old keys. */
+    async prepareReset(code: string): Promise<PreparedReset> {
+      const keyId = account.accountKey?.keyId;
+      if (keyId === undefined) throw new E2eeError("no-account-key");
+      if (account.recoveryVersion === undefined) throw new E2eeError("unsupported");
       const pair = await generateKeyPair(true);
       const pkcs8 = await exportPrivateKey(pair.privateKey);
       return {
+        accountKeyId: keyId,
         publicKey: toBase64(await exportPublicKey(pair.publicKey)),
         pkcs8,
-        backup: backupInput(await sealBackup(pkcs8, pin, iterations)),
+        backup: backupInput(await sealBackup(encodeKeyBackup(pkcs8), recoveryCredential(code), iterations)),
       };
     },
 
@@ -894,9 +1028,10 @@ export function createE2eeClient(options: E2eeClientOptions) {
       const answer = await api.resetAccountKey({
         currentPassword,
         publicKey: prepared.publicKey,
+        expectedAccountKeyId: prepared.accountKeyId,
         backup: prepared.backup,
       });
-      account = { ...account, accountKey: answer.accountKey, backup: answer.backup };
+      account = { ...account, recoveryVersion: 2, accountKey: answer.accountKey, backup: answer.backup };
       await adoptAccountKey(user, answer.accountKey.keyId, fromBase64(prepared.publicKey), prepared.pkcs8);
       for (const state of conversations.values()) state.keysStale = true;
       await sync().catch(() => undefined);
@@ -922,7 +1057,11 @@ export function createE2eeClient(options: E2eeClientOptions) {
         if (codeOf(error) !== "encryption-state" || details === undefined) throw error;
         encryption = parseConversationEncryption(details["encryption"], "encryption-state");
       }
+      const self = requireUser();
+      const peer = await store.getPeer(self, conversationId);
+      if (peer !== null) await store.setPlaintextAllowed(self, peer, action === "disable" && encryption.state === "off");
       encryptionChanged(conversationId, encryption);
+      keysChanged(conversationId);
       return encryption;
     },
 
@@ -1027,13 +1166,16 @@ export function createE2eeClient(options: E2eeClientOptions) {
      */
     async send(
       conversationId: string,
-      input: { text: string; uploads: readonly EncryptedUpload[]; clientMessageId: string },
+      input: { peerId?: string; text: string; uploads: readonly EncryptedUpload[]; clientMessageId: string },
     ): Promise<Message> {
       await ready;
       const user = requireUser();
       if (support !== "supported") throw new E2eeError("unsupported");
       if (device?.id === undefined || device.id === null) await sync();
       if (device?.id === undefined || device.id === null) throw new E2eeError("no-device");
+      if (input.peerId !== undefined && !await store.bindPeer(user, conversationId, input.peerId)) {
+        throw new E2eeError("key-changed");
+      }
       const payload: MessagePayload = { v: 1, text: input.text, attachments: input.uploads.map((upload) => upload.payload) };
       const attachmentIds = input.uploads.flatMap((upload) => upload.attachmentIds);
       let networkRetries = 0;
@@ -1088,13 +1230,16 @@ export function createE2eeClient(options: E2eeClientOptions) {
      * there is none.
      */
     async followCall(conversationId: string): Promise<CallKeys> {
-      const keys = await callKeys(conversationId);
-      if (keys !== null) return keys;
+      await ready;
+      const keys = await keysOf(conversationId, true);
+      if (keys.encryption.state === "on") return sendingCallKeys(conversationId);
       if (support !== "supported") throw new E2eeError("unsupported");
+      const pair = accountPair(keys);
+      await checkVerification(pair.self, pair.peer);
       await loadEpochs(conversationId);
       const newestFirst = [...conversation(conversationId).epochs.values()].sort((a, b) => b.sequence - a.sequence);
       for (const epoch of newestFirst) {
-        const opened = await openEpoch(conversationId, epoch);
+        const opened = await openAccountEpoch(conversationId, epoch, pair);
         if (opened !== null) {
           return { self: requireUser(), send: { sequence: epoch.sequence, epochId: epoch.id, base: opened.callBase } };
         }
@@ -1122,7 +1267,10 @@ export function createE2eeClient(options: E2eeClientOptions) {
         found = find();
       }
       if (found === undefined) return null;
-      const opened = await openEpoch(conversationId, found);
+      if (accountKey === null || found.version !== 2) return null;
+      const pair = accountPair(await keysOf(conversationId));
+      await checkVerification(pair.self, pair.peer);
+      const opened = await openAccountEpoch(conversationId, found, pair);
       return opened === null ? null : { sequence: found.sequence, epochId: found.id, base: opened.callBase };
     },
 
@@ -1130,13 +1278,9 @@ export function createE2eeClient(options: E2eeClientOptions) {
 
     async safetyCode(conversationId: string): Promise<SafetyCodeView | null> {
       const keys = await keysOf(conversationId, conversation(conversationId).keysStale);
-      const self = keys.self.accountKey;
-      const peer = keys.peer.accountKey;
-      if (self === null || peer === null) return null;
-      const groups = await safetyCode(
-        { userId: keys.self.userId, publicKey: fromBase64(self.publicKey) },
-        { userId: keys.peer.userId, publicKey: fromBase64(peer.publicKey) },
-      );
+      if (accountKey === null || keys.peer.accountKey === null) return null;
+      const { self, peer } = accountPair(keys);
+      const groups = await safetyCode(self, peer);
       return { peerId: keys.peer.userId, groups };
     },
 
@@ -1145,19 +1289,14 @@ export function createE2eeClient(options: E2eeClientOptions) {
       return store.getVerification(userId, peerId);
     },
 
-    async setVerified(peerId: string, code: string): Promise<void> {
+    async setVerified(peerId: string, code: string | null): Promise<void> {
       const user = requireUser();
       await store.putVerification({ userId: user, peerId, code, at: new Date().toISOString() });
       revision += 1;
       publish();
     },
 
-    async clearVerified(peerId: string): Promise<void> {
-      const user = requireUser();
-      await store.deleteVerification(user, peerId);
-      revision += 1;
-      publish();
-    },
+
   };
 }
 

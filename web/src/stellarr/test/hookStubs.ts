@@ -177,6 +177,7 @@ function defaults(): HookStubs {
       encryption: {
         listDevices: vi.fn(async () => []),
         safetyCode: vi.fn(async () => null),
+        plaintextAllowed: vi.fn(async () => true),
         verification: vi.fn(async () => null),
       },
     }),

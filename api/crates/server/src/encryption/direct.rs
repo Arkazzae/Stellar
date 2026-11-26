@@ -283,6 +283,7 @@ pub async fn keys(
             let own_key_ids: HashSet<Id> = own_key
                 .iter()
                 .map(|key| key.key_id)
+                .chain(super::key_backups::archived_key(db, user)?)
                 .chain(current.map(|device| device.id))
                 .collect();
 
@@ -362,6 +363,7 @@ pub async fn epochs(
             let own_key_ids: HashSet<Id> = own_key
                 .iter()
                 .map(|key| key.key_id)
+                .chain(super::key_backups::archived_key(db, user)?)
                 .chain(device.iter().map(|device| device.id))
                 .collect();
             let epochs = store::epochs_after(db, id, after, EPOCH_PAGE_SIZE + 1)?;
@@ -446,6 +448,14 @@ pub async fn create_epoch(
     else {
         return Err(invalid_epoch(&state));
     };
+    let version = request.version.unwrap_or(1);
+    let devices = request.device_key_ids.unwrap_or_default();
+    if !matches!(version, 1 | 2)
+        || (version == 1 && !devices.is_empty())
+        || (version == 2 && (envelopes.len() != 2 || devices.len() + 2 > MAX_ENVELOPES))
+    {
+        return Err(invalid_epoch(&state));
+    }
     let mut keys: Vec<Wrapped> = Vec::with_capacity(envelopes.len());
     for envelope in envelopes {
         // A hole in the list is not an envelope.
@@ -454,8 +464,8 @@ pub async fn create_epoch(
         };
         keys.push(found);
     }
-    let distinct: HashSet<Id> = keys.iter().map(|key| key.key_id).collect();
-    if distinct.len() != keys.len() {
+    let distinct: HashSet<Id> = keys.iter().map(|key| key.key_id).chain(devices.iter().copied()).collect();
+    if distinct.len() != keys.len() + devices.len() {
         return Err(invalid_epoch(&state));
     }
     let previous = request.previous_epoch_id;
@@ -497,6 +507,13 @@ pub async fn create_epoch(
             if conversation.current_epoch != previous {
                 return Ok(Made::Stale(conversation.current_epoch));
             }
+            if version == 1 && tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM EncryptionEpochs e JOIN AccountBoundEpochs a ON a.EpochId = e.Id WHERE e.ConversationId = ?1)",
+                [id],
+                |row| row.get::<_, bool>(0),
+            )? {
+                return Ok(Made::Invalid);
+            }
             let recipients = store::recipients(tx, conversation.first, conversation.second, now)?;
             let required: HashSet<Id> = recipients.iter().map(|recipient| recipient.key_id).collect();
             let mut missing: Vec<Id> = required.difference(&distinct).copied().collect();
@@ -508,9 +525,27 @@ pub async fn create_epoch(
             }
             let mut envelopes = Vec::with_capacity(recipients.len());
             for recipient in &recipients {
+                // Device membership still triggers rotation. It carries no secret in v2.
+                if version == 2 && recipient.kind == store::DEVICE {
+                    if !devices.contains(&recipient.key_id) {
+                        return Ok(Made::Invalid);
+                    }
+                    envelopes.push(store::Envelope {
+                        recipient_key_id: recipient.key_id,
+                        recipient_user: recipient.user,
+                        kind: recipient.kind.to_string(),
+                        ephemeral_public_key: Vec::new(),
+                        iv: Vec::new(),
+                        ciphertext: Vec::new(),
+                    });
+                    continue;
+                }
                 let Some(key) = keys.iter().find(|key| key.key_id == recipient.key_id) else {
                     return Ok(Made::Invalid);
                 };
+                if version == 2 && key.ciphertext.len() != 80 {
+                    return Ok(Made::Invalid);
+                }
                 if !store::is_public_key(Some(&recipient.algorithm), Some(&key.ephemeral_public_key)) {
                     return Ok(Made::Invalid);
                 }
@@ -524,6 +559,7 @@ pub async fn create_epoch(
                 });
             }
             let epoch = Epoch {
+                version,
                 id: epoch_id,
                 conversation: id,
                 sequence: store::last_sequence(tx, id)? + 1,

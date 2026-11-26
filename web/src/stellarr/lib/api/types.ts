@@ -492,12 +492,14 @@ export interface OwnDevice {
 }
 
 export interface EncryptionAccount {
+  recoveryVersion?: 1 | 2;
   accountKey: PublicKeyRecord | null;
   backup: KeyBackupStatus | null;
   device: OwnDevice | null;
 }
 
 export interface KeyBackupInput {
+  version: 2;
   salt: string;
   iterations: number;
   verifier: string;
@@ -506,6 +508,7 @@ export interface KeyBackupInput {
 }
 
 export interface BackupParameters {
+  version: 1 | 2;
   salt: string;
   iterations: number;
   remainingAttempts: number;
@@ -538,12 +541,14 @@ export interface EpochEnvelope {
 }
 
 export interface EncryptionEpoch {
+  /** Omitted by legacy servers. */
+  version?: 1 | 2;
   id: string;
   sequence: number;
   previousEpochId: string | null;
   createdById: UserId;
   createdAt: string;
-  /** Exactly the keys the epoch was wrapped for. */
+  /** Account keys and the device membership snapshot used for rotation. */
   recipients: RecipientKey[];
   /** Only the reader's own. */
   envelopes: EpochEnvelope[];

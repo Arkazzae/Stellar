@@ -42,7 +42,7 @@ export interface DmChatProps {
   /** Draws the entries that are not messages (encryption lines, sealed history). */
   renderNotice?(notice: TranscriptNotice, group: MessageGroupVM): ReactNode;
   /** Writing is not possible here, and this says why; the composer gives way to it. */
-  composerBlocked?: string;
+  composerBlocked?: ReactNode;
 }
 
 /**

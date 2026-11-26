@@ -1,6 +1,6 @@
-//! The account's side: its key, the PIN-protected backup of that key and the
-//! browsers that hold keys. Browsers do all the cryptography; the server keeps
-//! public keys and opaque bytes, and counts PIN attempts.
+//! The account's side: its key, the recovery backup for that key and the
+//! browsers that hold keys. The server seals the browser-encrypted backup at rest
+//! and counts recovery attempts.
 
 use aws_lc_rs::constant_time::verify_slices_are_equal;
 use aws_lc_rs::digest::{SHA256, digest};
@@ -10,6 +10,7 @@ use axum::response::{IntoResponse, Response};
 use stellarr_messages::MessageKey;
 
 use super::announce::{self, DEVICE_ADDED, KEYS_RESET, Line};
+use super::key_backups;
 use super::problems::{self, Refusal};
 use super::store::{self, Conversation};
 use super::wire::{
@@ -88,12 +89,13 @@ async fn guarded<T>(
 }
 
 pub async fn read(State(state): State<AppState>, caller: Caller) -> ApiResult<Response> {
+    let sealer = state.key_backup_sealer().clone();
     let account = state
         .database()
         .read(move |db| -> Result<AccountDto, DbError> {
             let now = Timestamp::now();
             let key = store::account_key(db, caller.user)?;
-            let backup = store::backup(db, caller.user)?;
+            let backup = key_backups::get(db, &sealer, caller.user)?;
             let device = store::own_devices(db, caller.user, now)?
                 .into_iter()
                 .find(|device| device.session == caller.session);
@@ -101,6 +103,7 @@ pub async fn read(State(state): State<AppState>, caller: Caller) -> ApiResult<Re
                 account_key: key.map(|key| key.dto()),
                 backup: backup.map(|backup| backup.status()),
                 device: device.map(|device| device.own_dto(Some(caller.session))),
+                recovery_version: if key_backups::uses_code(db, caller.user)? { 2 } else { 1 },
             })
         })
         .await?;
@@ -108,7 +111,7 @@ pub async fn read(State(state): State<AppState>, caller: Caller) -> ApiResult<Re
 }
 
 /// First set-up: the account's public key and the backup of its private key,
-/// together. An account has one key; a forgotten PIN is a reset.
+/// together. A browser that still holds the private key can replace its recovery code.
 pub async fn set_up(
     State(state): State<AppState>,
     caller: Caller,
@@ -118,6 +121,7 @@ pub async fn set_up(
     let backup = checked_backup(&state, request.backup)?;
     let (algorithm, public_key) = (request.algorithm.unwrap_or_default(), request.public_key.unwrap_or_default());
 
+    let sealer = state.key_backup_sealer().clone();
     let written = state
         .database()
         .write(move |tx| -> Result<Option<AccountDto>, DbError> {
@@ -131,13 +135,14 @@ pub async fn set_up(
                  VALUES (?1, ?2, ?3, ?4, ?5)",
                 rusqlite::params![caller.user, key_id, algorithm, public_key, now],
             )?;
-            store::put_backup(tx, caller.user, &backup, now)?;
+            key_backups::put(tx, &sealer, caller.user, &backup, 0, now)?;
             let key = store::account_key(tx, caller.user)?;
-            let backup = store::backup(tx, caller.user)?;
+            let backup = key_backups::get(tx, &sealer, caller.user)?;
             Ok(Some(AccountDto {
                 account_key: key.map(|key| key.dto()),
                 backup: backup.map(|backup| backup.status()),
                 device: None,
+                recovery_version: 2,
             }))
         })
         .await?;
@@ -153,46 +158,40 @@ pub async fn set_up(
     Ok(created("/api/me/encryption", &account))
 }
 
-/// What a browser derives the PIN's keys with, before it tries one.
+/// Public parameters for the client's local derivation.
 pub async fn backup_parameters(
     State(state): State<AppState>,
     caller: Caller,
 ) -> ApiResult<Response> {
+    let sealer = state.key_backup_sealer().clone();
     let found = state
         .database()
-        .read(move |db| store::backup(db, caller.user))
+        .read(move |db| key_backups::get(db, &sealer, caller.user))
         .await?;
     match found {
         None => Err(problems::backup_missing(&state)),
         Some(backup) => Ok(json_response(
             StatusCode::OK,
             &BackupParametersDto {
+                version: backup.payload.version,
                 remaining_attempts: backup.remaining_attempts(),
-                salt: Octets(backup.salt),
-                iterations: backup.iterations,
+                salt: Octets(backup.payload.salt),
+                iterations: backup.payload.iterations,
             },
         )),
     }
 }
 
-/// What one attempt at a PIN came to.
+/// Outcome of an attempt to unlock the backup.
 enum Attempt {
     NoBackup,
     Right(UnlockedDto),
     Wrong(i32),
 }
 
-/// One PIN attempt. A right PIN hands out the backup and clears the count of
-/// wrong ones; the tenth wrong one in a row deletes the backup. The account key
-/// stays, so browsers that hold it keep working and can store a backup under a
-/// new PIN.
-///
-/// A PIN is short, so what is counted here is the whole protection of the
-/// backup against somebody who holds a session: every attempt costs one of the
-/// account's, whatever it holds and whatever it comes to, and the count of
-/// wrong ones is written in the transaction that compares, so that attempts
-/// sent at once are counted one after another. The handler runs to the end
-/// when the client leaves, so a refusal is never undone by hanging up.
+/// Verifies a proof for the active backup version. Ten consecutive incorrect
+/// proofs delete that backup. Updating the counter in the same transaction as
+/// verification serializes concurrent attempts, even if a client disconnects.
 pub async fn unlock(
     State(state): State<AppState>,
     caller: Caller,
@@ -211,39 +210,43 @@ pub async fn unlock(
     };
     let proof = digest(&SHA256, &auth_key);
 
+    let sealer = state.key_backup_sealer().clone();
     let attempt = state
         .database()
         .write(move |tx| -> Result<Attempt, DbError> {
-            let Some(backup) = store::backup(tx, caller.user)? else {
+            let Some(backup) = key_backups::get(tx, &sealer, caller.user)? else {
                 return Ok(Attempt::NoBackup);
             };
-            if verify_slices_are_equal(proof.as_ref(), &backup.verifier).is_ok() {
+            if request.version != Some(backup.payload.version) || (backup.payload.version == 1 && key_backups::uses_code(tx, caller.user)?) {
+                return Ok(Attempt::NoBackup);
+            }
+            if verify_slices_are_equal(proof.as_ref(), &backup.payload.verifier).is_ok() {
                 let key = store::account_key(tx, caller.user)?.ok_or_else(|| {
                     DbError::Task("an account with a backup has no key".to_string())
                 })?;
                 tx.execute(
-                    "UPDATE \"AccountKeyBackups\" SET \"FailedAttempts\" = 0 WHERE \"UserId\" = ?1",
+                    "UPDATE \"ProtectedAccountKeyBackups\" SET \"FailedAttempts\" = 0 WHERE \"UserId\" = ?1",
                     [caller.user],
                 )?;
                 return Ok(Attempt::Right(UnlockedDto {
                     account_key_id: key.key_id,
-                    iv: Octets(backup.iv),
-                    ciphertext: Octets(backup.ciphertext),
+                    iv: Octets(backup.payload.iv),
+                    ciphertext: Octets(backup.payload.ciphertext),
                 }));
             }
             tx.execute(
-                "UPDATE \"AccountKeyBackups\" SET \"FailedAttempts\" = \"FailedAttempts\" + 1 WHERE \"UserId\" = ?1",
+                "UPDATE \"ProtectedAccountKeyBackups\" SET \"FailedAttempts\" = \"FailedAttempts\" + 1 WHERE \"UserId\" = ?1",
                 [caller.user],
             )?;
             let failed: i32 = tx.query_row(
-                "SELECT \"FailedAttempts\" FROM \"AccountKeyBackups\" WHERE \"UserId\" = ?1",
+                "SELECT \"FailedAttempts\" FROM \"ProtectedAccountKeyBackups\" WHERE \"UserId\" = ?1",
                 [caller.user],
                 |row| row.get(0),
             )?;
             let remaining = (store::MAX_FAILED_ATTEMPTS - failed).max(0);
             if remaining == 0 {
                 tx.execute(
-                    "DELETE FROM \"AccountKeyBackups\" WHERE \"UserId\" = ?1",
+                    "DELETE FROM \"ProtectedAccountKeyBackups\" WHERE \"UserId\" = ?1",
                     [caller.user],
                 )?;
             }
@@ -270,7 +273,7 @@ pub async fn unlock(
     }
 }
 
-/// What a new PIN came to.
+/// Outcome of replacing an existing recovery-code backup.
 enum Replaced {
     WrongPassword,
     FreshProofNeeded,
@@ -280,11 +283,9 @@ enum Replaced {
     Done(super::wire::BackupStatusDto),
 }
 
-/// A new PIN: a browser that holds the account key encrypts it again. It
-/// needs the account password (or, for an account that has none, a recent
-/// sign-in) and, where the account has a second step, a fresh one, like a
-/// password change; it does not need the old PIN, so it also restores a backup
-/// that wrong PINs deleted.
+/// Reissues a recovery-code backup from an unlocked device after fresh
+/// authentication. This also replaces a missing backup. Legacy accounts must
+/// rotate their identity through the migration route.
 pub async fn replace_backup(
     State(state): State<AppState>,
     caller: Caller,
@@ -298,6 +299,7 @@ pub async fn replace_backup(
         check_given_password(&state, caller.user, request.current_password.as_deref()).await?;
     let claimed = request.account_key_id;
 
+    let sealer = state.key_backup_sealer().clone();
     let outcome = state
         .database()
         .write(move |tx| -> Result<Replaced, DbError> {
@@ -317,14 +319,14 @@ pub async fn replace_backup(
             // refuse a browser that encrypted a key the account no longer has,
             // or that never registered a device and so cannot have unlocked or
             // made the key.
-            if claimed.as_deref() != Some(key.key_id.to_string().as_str()) {
+            if claimed.as_deref() != Some(key.key_id.to_string().as_str()) || !key_backups::uses_code(tx, caller.user)? {
                 return Ok(Replaced::KeyChanged(key.key_id));
             }
             if store::current_device(tx, caller.session, now)?.is_none() {
                 return Ok(Replaced::DeviceMissing);
             }
-            store::put_backup(tx, caller.user, &backup, now)?;
-            let stored = store::backup(tx, caller.user)?
+            key_backups::put(tx, &sealer, caller.user, &backup, 0, now)?;
+            let stored = key_backups::get(tx, &sealer, caller.user)?
                 .ok_or_else(|| DbError::Task("the backup just written is not there".to_string()))?;
             Ok(Replaced::Done(stored.status()))
         })
@@ -375,6 +377,8 @@ fn add_lines(
 
 /// What a reset came to.
 enum Resetting {
+    Replayed(ResetDto),
+    Stale,
     WrongPassword,
     FreshProofNeeded,
     KeyMissing,
@@ -384,10 +388,9 @@ enum Resetting {
     },
 }
 
-/// For a forgotten PIN that no browser can stand in for: a new account key and
-/// its backup replace the old ones. Everything encrypted for the old key is
-/// lost. Every other device loses its keys, and the people in the account's
-/// encrypted conversations see that the keys changed.
+/// Rotates the account identity and revokes other device registrations.
+/// Migration retains the previous key ID for history. A destructive reset
+/// drops access to the previous key envelopes.
 pub async fn reset(
     State(state): State<AppState>,
     caller: Caller,
@@ -405,6 +408,7 @@ pub async fn reset(
         request.public_key.unwrap_or_default(),
     );
 
+    let sealer = state.key_backup_sealer().clone();
     let outcome = state
         .database()
         .write(move |tx| -> Result<Resetting, DbError> {
@@ -417,15 +421,44 @@ pub async fn reset(
                 }
                 PasswordProof::FreshProofNeeded => return Ok(Resetting::FreshProofNeeded),
             }
-            if store::account_key(tx, caller.user)?.is_none() {
+            let Some(previous) = store::account_key(tx, caller.user)? else {
                 return Ok(Resetting::KeyMissing);
+            };
+            let archived = request.migrate_from_key_id;
+            if previous.public_key == public_key {
+                if let Some(saved) = key_backups::get(tx, &sealer, caller.user)?
+                    && saved.payload == backup
+                    && key_backups::archived_key(tx, caller.user)? == archived
+                {
+                    return Ok(Resetting::Replayed(ResetDto {
+                        account_key: previous.dto(), backup: saved.status(), revoked_devices: 0,
+                    }));
+                }
+                return Ok(Resetting::Stale);
             }
+            if request.expected_account_key_id.is_some_and(|id| id != previous.key_id) {
+                return Ok(Resetting::Stale);
+            }
+            let legacy = !key_backups::uses_code(tx, caller.user)?;
+            if archived.is_some_and(|expected| expected != previous.key_id || !legacy) {
+                return Ok(Resetting::Stale);
+            }
+            if legacy {
+                tx.execute("INSERT OR IGNORE INTO RetiredPinAccounts (UserId) VALUES (?1)", [caller.user])?;
+            }
+            tx.pragma_update(None, "secure_delete", true)?;
+            tx.execute("DELETE FROM ProtectedAccountKeyBackups WHERE UserId = ?1", [caller.user])?;
+            tx.execute(
+                "INSERT INTO CodeRecoveryAccounts (UserId, ArchivedKeyId) VALUES (?1, ?2)
+                 ON CONFLICT(UserId) DO UPDATE SET ArchivedKeyId = excluded.ArchivedKeyId",
+                rusqlite::params![caller.user, archived],
+            )?;
             tx.execute(
                 "UPDATE \"AccountKeys\" SET \"KeyId\" = ?2, \"Algorithm\" = ?3, \"PublicKey\" = ?4, \"CreatedAt\" = ?5
                  WHERE \"UserId\" = ?1",
                 rusqlite::params![caller.user, Id::random(), algorithm, public_key, now],
             )?;
-            store::put_backup(tx, caller.user, &backup, now)?;
+            key_backups::put(tx, &sealer, caller.user, &backup, 0, now)?;
             // Every device of the account that is not this session's, whether
             // or not its session still signs in.
             let revoked = tx.execute(
@@ -437,7 +470,7 @@ pub async fn reset(
             let key = store::account_key(tx, caller.user)?.ok_or_else(|| {
                 DbError::Task("the account key just written is not there".to_string())
             })?;
-            let stored = store::backup(tx, caller.user)?
+            let stored = key_backups::get(tx, &sealer, caller.user)?
                 .ok_or_else(|| DbError::Task("the backup just written is not there".to_string()))?;
             Ok(Resetting::Done {
                 answer: ResetDto {
@@ -455,8 +488,14 @@ pub async fn reset(
             Err(problems::password_incorrect(&state))
         }
         Resetting::FreshProofNeeded => Err(fresh::refusal(state.messages())?.into()),
+        Resetting::Replayed(answer) => Ok(json_response(StatusCode::OK, &answer)),
+        Resetting::Stale => Err(problems::coded(&state, StatusCode::CONFLICT,
+            problems::ACCOUNT_KEY_CHANGED, MessageKey::EncryptionAccountKeyChanged)),
         Resetting::KeyMissing => Err(problems::account_key_missing(&state)),
         Resetting::Done { answer, changes } => {
+            if let Err(error) = state.database().checkpoint_key_backups().await {
+                tracing::warn!(%error, "Could not checkpoint the superseded key backup");
+            }
             let told = announce::keys_changed(&state, changes, caller.user).await?;
             announce::account_changed(&state, caller.user);
             let mut people = vec![caller.user];
@@ -494,10 +533,9 @@ enum Registered {
     },
 }
 
-/// Registers the key of the browser asking, under its login session. It needs
-/// no PIN: a device without one still takes part in new messages. The same key
-/// again is a no-op, so a browser may register on every start; a different key
-/// replaces the session's device.
+/// Registers a browser key under its login session. Registering the same
+/// key is idempotent. Account-bound encryption separately requires the
+/// account private key.
 pub async fn register_device(
     State(state): State<AppState>,
     caller: Caller,
