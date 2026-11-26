@@ -45,7 +45,8 @@ pub fn registration() -> Registration {
             {
                 cx.state()
                     .activities()
-                    .sync_voice_channel(cx.state(), departure.channel);
+                    .sync_voice_channel(cx.state(), departure.channel)
+                    .await;
                 if let Err(error) = broadcast_snapshot(cx.state(), departure.channel).await {
                     tracing::warn!(%error, "a room was not told that somebody left it");
                 }
@@ -174,7 +175,10 @@ async fn join_voice(cx: Context, arguments: Vec<Value>) -> Result<Value, HubErro
         }
     }
     for left in vacated {
-        cx.state().activities().sync_voice_channel(cx.state(), left);
+        cx.state()
+            .activities()
+            .sync_voice_channel(cx.state(), left)
+            .await;
         broadcast_snapshot(cx.state(), left).await.map_err(internal)?;
     }
     broadcast_snapshot(cx.state(), room).await.map_err(internal)?;
@@ -192,7 +196,8 @@ async fn leave_voice(cx: Context, arguments: Vec<Value>) -> Result<Value, HubErr
     if let Some(departure) = cx.realtime().presence().leave_voice(cx.connection_id()) {
         cx.state()
             .activities()
-            .sync_voice_channel(cx.state(), departure.channel);
+            .sync_voice_channel(cx.state(), departure.channel)
+            .await;
         broadcast_snapshot(cx.state(), departure.channel)
             .await
             .map_err(internal)?;
@@ -232,7 +237,7 @@ async fn decline_direct_call(cx: Context, arguments: Vec<Value>) -> Result<Value
     }
 
     let seated = cx.realtime().presence().end_voice_room(id);
-    cx.state().activities().sync_voice_channel(cx.state(), id);
+    cx.state().activities().sync_voice_channel(cx.state(), id).await;
     send_to(
         &cx,
         seated,

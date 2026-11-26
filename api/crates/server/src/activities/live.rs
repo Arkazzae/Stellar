@@ -1,10 +1,12 @@
 use super::{Installed, LaunchMode, authority::Authority, hostname, invalid, library};
 use crate::{
     auth::{Caller, session},
+    database::DbError,
     encoding::hex_lower,
     events::{Audience, Event},
-    http::{ApiError, ApiResult, Json, Path},
+    http::{ApiError, ApiResult, Json, Path, Problem, Query},
     instance::users::User,
+    permissions::{membership, visibility},
     state::AppState,
     values::{Id, Timestamp},
 };
@@ -59,13 +61,17 @@ impl Scope {
     }
 }
 type Place = (Id, Scope);
+type Rooms = HashMap<Place, Live>;
 #[derive(Default)]
 pub(crate) struct Sessions {
     pub(crate) changes: tokio::sync::RwLock<()>,
-    rooms: Mutex<HashMap<Place, Live>>,
+    rooms: Mutex<Rooms>,
 }
 struct Lease {
     user: Id,
+    /// When the person came in, counted per room: whoever has been inside
+    /// longest takes over from a host who leaves.
+    joined: u64,
     account_session: Id,
     account_version: i64,
     parent_origin: String,
@@ -89,7 +95,77 @@ struct Live {
     leases: HashMap<Id, Lease>,
     pictures: HashMap<Id, (Instant, String)>,
     used: Instant,
+    /// Who launched the activity, or took it over from whoever did. Only the
+    /// host ends it for everybody or swaps it for another; in a personal room
+    /// it is the account itself.
+    host: Id,
+    /// How many people have come in, which numbers the next one.
+    arrivals: u64,
 }
+impl Live {
+    fn new(installed: Installed, host: Id) -> ApiResult<Live> {
+        Ok(Live {
+            authority: Authority::new(&installed.manifest)?,
+            asset_label: asset_label(&installed),
+            installed,
+            leases: HashMap::new(),
+            pictures: HashMap::new(),
+            used: Instant::now(),
+            host,
+            arrivals: 0,
+        })
+    }
+    /// The people inside, in the order they came in.
+    fn participants(&self) -> Vec<Id> {
+        let mut inside: Vec<&Lease> = self.leases.values().collect();
+        inside.sort_by_key(|lease| lease.joined);
+        inside.iter().map(|lease| lease.user).collect()
+    }
+    /// Takes somebody out: their lease, their part in the authority and their
+    /// picture. A host who leaves hands the activity to whoever has been inside
+    /// longest, and it keeps running.
+    fn depart(&mut self, user: Id) {
+        self.leases.remove(&user);
+        self.authority.revoke(user);
+        self.pictures.remove(&user);
+        if self.host == user
+            && let Some(next) = self
+                .leases
+                .values()
+                .min_by_key(|lease| lease.joined)
+                .map(|lease| lease.user)
+        {
+            self.host = next;
+        }
+    }
+    /// Takes out everybody whose lease lapsed or who no longer sits where the
+    /// activity runs.
+    fn sweep(&mut self, state: &AppState, scope: Scope) {
+        let departed: Vec<Id> = self
+            .leases
+            .values()
+            .filter(|lease| {
+                lease.touched.elapsed() > Duration::from_secs(60)
+                    || !seated(state, scope, lease.user)
+            })
+            .map(|lease| lease.user)
+            .collect();
+        for user in departed {
+            self.depart(user);
+        }
+    }
+    /// Whether the room still runs: a voice room while anybody is in it, a
+    /// personal one for three minutes after its last use, and neither once its
+    /// authority has ended the session.
+    fn alive(&self, scope: Scope) -> bool {
+        let used = match scope {
+            Scope::Voice(_) => !self.leases.is_empty(),
+            Scope::Personal(_) => self.used.elapsed() < Duration::from_secs(180),
+        };
+        used && !self.authority.expired()
+    }
+}
+/// What the channel list shows of the activity that runs in a voice channel.
 fn summary(channel: Id, live: &Live) -> Value {
     let artwork = super::artwork::urls(
         &live.installed,
@@ -99,35 +175,80 @@ fn summary(channel: Id, live: &Live) -> Value {
         "install": live.installed.install,
         "name": live.installed.manifest.name,
         "icon": artwork["icon"],
+        "host": live.host,
+        "participants": live.participants(),
+        "seats": live.installed.manifest.seats,
     })
+}
+/// The activity that runs in a voice channel, with its installation.
+fn voice_room(rooms: &Rooms, channel: Id) -> Option<(Id, &Live)> {
+    rooms
+        .iter()
+        .find(|((_, scope), _)| *scope == Scope::Voice(channel))
+        .map(|((install, _), live)| (*install, live))
+}
+
+/// What a voice channel shows of its activity: which one runs, who hosts it
+/// and who is inside, in order.
+type Shown = (Id, Id, Vec<Id>);
+fn shown(rooms: &Rooms) -> HashMap<Id, Shown> {
+    rooms
+        .iter()
+        .filter_map(|((install, scope), live)| match scope {
+            Scope::Voice(channel) => Some((*channel, (*install, live.host, live.participants()))),
+            Scope::Personal(_) => None,
+        })
+        .collect()
+}
+/// A voice channel whose activity looks other than it did.
+struct Change {
+    channel: Id,
+    /// Another activity took the place of the one that ran: those who were in
+    /// it hear that it ended before they hear of the next one.
+    replaced: bool,
+}
+fn changes(before: &HashMap<Id, Shown>, after: &HashMap<Id, Shown>) -> Vec<Change> {
+    let mut changed: Vec<Change> = Vec::new();
+    for channel in before.keys().chain(after.keys()) {
+        let (was, is) = (before.get(channel), after.get(channel));
+        if was != is && !changed.iter().any(|change| change.channel == *channel) {
+            changed.push(Change {
+                channel: *channel,
+                replaced: matches!((was, is), (Some(was), Some(is)) if was.0 != is.0),
+            });
+        }
+    }
+    changed
 }
 
 fn publish_voice_activity(
     state: &AppState,
-    connections: impl IntoIterator<Item = String>,
+    audience: Audience,
     channel: Id,
     activity: Option<Value>,
 ) {
-    let payload = json!({ "channelId": channel, "activity": activity });
-    for connection in connections {
-        state.events().publish(Event::new(
-            Audience::Connection(connection),
-            "VoiceActivityChanged",
-            &payload,
-        ));
-    }
+    state.events().publish(Event::new(
+        audience,
+        "VoiceActivityChanged",
+        &json!({ "channelId": channel, "activity": activity }),
+    ));
 }
 
-fn broadcast_voice_activity(state: &AppState, channel: Id, activity: Option<Value>) {
-    let Some(realtime) = state.realtime() else {
-        return;
-    };
-    publish_voice_activity(
-        state,
-        realtime.presence().voice_connections(channel),
-        channel,
-        activity,
-    );
+/// Tells everybody who sees each of these voice channels, and whoever sits in
+/// it, what runs there now: the channel list shows it to people outside the
+/// call too. The audience is read first. What runs is read and sent under the
+/// lock of the rooms, so no two announcements of a channel reach anybody in
+/// the reverse order of the changes they follow.
+async fn announce(state: &AppState, changed: Vec<Change>) {
+    for change in changed {
+        match crate::voice::rooms::audience(state, change.channel).await {
+            Ok(Some(audience)) => state.activities().send_current(state, audience, &change),
+            Ok(None) => {}
+            Err(error) => {
+                tracing::warn!(%error, "a channel was not told which activity runs in it");
+            }
+        }
+    }
 }
 
 fn participant(user: &User) -> Value {
@@ -162,51 +283,52 @@ impl Sessions {
             .get(&(id, channel))
             .map(|live| live.installed.digest.clone())
     }
-    pub fn remove(&self, state: &AppState, id: Id) {
-        let ended: Vec<Id> = {
-            let mut rooms = self.rooms.lock().unwrap();
-            let channels = rooms
-                .keys()
-                .filter_map(|(installed, scope)| match (*installed == id, scope) {
-                    (true, Scope::Voice(channel)) => Some(*channel),
-                    _ => None,
-                })
-                .collect();
-            rooms.retain(|(installed, _), _| *installed != id);
-            channels
-        };
-        for channel in ended {
-            broadcast_voice_activity(state, channel, None);
-        }
+    /// Changes the rooms under their lock and names the voice channels whose
+    /// activity looks other than before, for [`announce`] once the lock is
+    /// released.
+    fn update<T>(&self, op: impl FnOnce(&mut Rooms) -> T) -> (T, Vec<Change>) {
+        let mut rooms = self.rooms.lock().unwrap();
+        let before = shown(&rooms);
+        let output = op(&mut rooms);
+        let after = shown(&rooms);
+        (output, changes(&before, &after))
     }
+    fn send_current(&self, state: &AppState, audience: Audience, change: &Change) {
+        let rooms = self.rooms.lock().unwrap();
+        let current =
+            voice_room(&rooms, change.channel).map(|(_, live)| summary(change.channel, live));
+        if change.replaced {
+            publish_voice_activity(state, audience.clone(), change.channel, None);
+        }
+        publish_voice_activity(state, audience, change.channel, current);
+    }
+    /// Ends every room of an installation that was turned off or removed.
+    pub async fn remove(&self, state: &AppState, id: Id) {
+        let (_, changed) =
+            self.update(|rooms| rooms.retain(|(installed, _), _| *installed != id));
+        announce(state, changed).await;
+    }
+    /// Tells a connection that has just taken a seat what runs in the room:
+    /// somebody moved there may not see the channel, and so has not heard.
     pub(crate) fn announce_to_connection(&self, state: &AppState, connection: &str, channel: Id) {
-        let active = {
-            let mut rooms = self.rooms.lock().unwrap();
-            prune(&mut rooms, state);
-            rooms
-                .iter()
-                .find(|((_, scope), _)| *scope == Scope::Voice(channel))
-                .map(|(_, live)| summary(channel, live))
-        };
+        let active = voice_room(&self.rooms.lock().unwrap(), channel)
+            .map(|(_, live)| summary(channel, live));
         if active.is_some() {
-            publish_voice_activity(state, [connection.to_owned()], channel, active);
+            publish_voice_activity(
+                state,
+                Audience::Connection(connection.to_owned()),
+                channel,
+                active,
+            );
         }
     }
-    pub(crate) fn sync_voice_channel(&self, state: &AppState, channel: Id) {
-        let ended = {
-            let mut rooms = self.rooms.lock().unwrap();
-            let had_room = rooms
-                .keys()
-                .any(|(_, scope)| *scope == Scope::Voice(channel));
-            prune(&mut rooms, state);
-            let has_room = rooms
-                .keys()
-                .any(|(_, scope)| *scope == Scope::Voice(channel));
-            had_room && !has_room
-        };
-        if ended {
-            broadcast_voice_activity(state, channel, None);
-        }
+    /// Takes whoever no longer sits in a voice room out of the activity that
+    /// runs there, once a seat was freed, handing a host's place on, and tells
+    /// everybody who sees the channel.
+    pub(crate) async fn sync_voice_channel(&self, state: &AppState, channel: Id) {
+        let (_, changed) =
+            self.update(|rooms| prune(rooms, state, Some(Scope::Voice(channel))));
+        announce(state, changed).await;
     }
 }
 pub(super) fn config(state: &AppState) -> ApiResult<(String, String)> {
@@ -265,6 +387,50 @@ impl axum::extract::FromRequestParts<AppState> for ActivityParent {
         Ok(Self(origin))
     }
 }
+/// Why a launch or an end was refused, which the client reads from the
+/// problem's `code` to say why.
+enum Refusal {
+    /// No such installation, or it is turned off, or nothing runs to join or
+    /// to end.
+    NotFound,
+    /// Another activity runs in the voice channel, and the launch did not ask
+    /// to swap it.
+    Running,
+    /// Only the host ends an activity or swaps it for another.
+    NotHost,
+    /// Every seat of the activity is taken.
+    Full,
+    /// The release does not run on the device the launch named.
+    UnsupportedDevice,
+}
+impl From<Refusal> for ApiError {
+    fn from(refusal: Refusal) -> ApiError {
+        let (status, code, title) = match refusal {
+            Refusal::NotFound => (
+                StatusCode::NOT_FOUND,
+                "not-found",
+                "This activity is not installed, not enabled or not running.",
+            ),
+            Refusal::Running => (
+                StatusCode::CONFLICT,
+                "activity-running",
+                "Another activity is running in this channel.",
+            ),
+            Refusal::NotHost => (
+                StatusCode::FORBIDDEN,
+                "not-host",
+                "Only the host can end or swap this activity.",
+            ),
+            Refusal::Full => (StatusCode::CONFLICT, "full", "This activity is full."),
+            Refusal::UnsupportedDevice => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "unsupported-device",
+                "This activity does not support this device.",
+            ),
+        };
+        Problem::new(status).title(title).with("code", code).into()
+    }
+}
 fn seated(state: &AppState, scope: Scope, user: Id) -> bool {
     let Scope::Voice(channel) = scope else {
         return scope == Scope::Personal(user);
@@ -282,6 +448,20 @@ pub(super) fn check(state: &AppState, channel: Scope, user: Id) -> ApiResult<()>
         Err(ApiError::forbidden())
     }
 }
+/// Whether the person sees the voice channel an activity runs in, as their
+/// channel list shows it, without sitting in it.
+pub(super) async fn sees(state: &AppState, channel: Scope, user: Id) -> ApiResult<bool> {
+    let (Scope::Voice(room), Some(realtime)) = (channel, state.realtime()) else {
+        return Ok(false);
+    };
+    let realtime = realtime.clone();
+    Ok(state
+        .database()
+        .read(move |db| -> Result<bool, DbError> {
+            Ok(crate::voice::rooms::sees(db, realtime.presence(), room, user)?)
+        })
+        .await?)
+}
 fn approved_origin(headers: &HeaderMap, origin: &str) -> ApiResult<()> {
     if headers.get(header::ORIGIN).and_then(|h| h.to_str().ok()) == Some(origin) {
         Ok(())
@@ -289,27 +469,41 @@ fn approved_origin(headers: &HeaderMap, origin: &str) -> ApiResult<()> {
         Err(ApiError::forbidden())
     }
 }
-fn prune(rooms: &mut HashMap<Place, Live>, state: &AppState) {
-    rooms.retain(|(_, channel), live| {
-        let departed: Vec<Id> = live
-            .leases
-            .iter()
-            .filter_map(|(id, lease)| {
-                (lease.touched.elapsed() > Duration::from_secs(60) || !seated(state, *channel, *id))
-                    .then_some(*id)
-            })
-            .collect();
-        for id in departed {
-            live.leases.remove(&id);
-            live.authority.revoke(id);
-            live.pictures.remove(&id);
+/// Ends what no longer runs and takes out whoever left, in the rooms of one
+/// place or, without one, in all of them.
+fn prune(rooms: &mut Rooms, state: &AppState, only: Option<Scope>) {
+    rooms.retain(|(_, scope), live| {
+        if only.is_some_and(|only| only != *scope) {
+            return true;
         }
-        let alive = match channel {
-            Scope::Voice(_) => !live.leases.is_empty(),
-            Scope::Personal(_) => live.used.elapsed() < Duration::from_secs(180),
-        };
-        alive && !live.authority.expired()
+        live.sweep(state, *scope);
+        live.alive(*scope)
     })
+}
+/// The instance's owner, whom the picker names as the one who installs
+/// activities, and whether that is the person asking: the account the
+/// operator panel lets in.
+fn instance_owner(db: &rusqlite::Connection, viewer: Id) -> rusqlite::Result<(Value, bool)> {
+    use rusqlite::OptionalExtension;
+    let owner = match membership::instance_server(db)? {
+        Some(server) => db
+            .query_row(
+                "SELECT u.\"Id\", u.\"DisplayName\", u.\"AvatarUrl\" FROM \"ServerMembers\" m
+                 JOIN \"ServerRoles\" r ON r.\"Id\" = m.\"RoleId\" JOIN \"Users\" u ON u.\"Id\" = m.\"UserId\"
+                 WHERE m.\"ServerId\" = ?1 AND r.\"IsOwner\" = 1 LIMIT 1",
+                [server],
+                |row| {
+                    let id: Id = row.get(0)?;
+                    let name: String = row.get(1)?;
+                    let avatar: Option<String> = row.get(2)?;
+                    Ok(json!({"id": id, "name": name, "avatar": avatar}))
+                },
+            )
+            .optional()?,
+        None => None,
+    };
+    let viewer_is_owner = membership::find_administered_server(db, viewer)?.is_some();
+    Ok((json!(owner), viewer_is_owner))
 }
 #[derive(Deserialize)]
 pub(super) struct ActiveLaunch {
@@ -330,40 +524,77 @@ pub(super) async fn available(
 ) -> ApiResult<Json<Value>> {
     let channel = Scope::from_path(&path, caller.user)?;
     check(&state, channel, caller.user)?;
+    let viewer = caller.user;
+    let (owner, viewer_is_owner) = state
+        .database()
+        .read(move |db| -> Result<(Value, bool), DbError> { Ok(instance_owner(db, viewer)?) })
+        .await?;
     let _gate = state.activities().changes.read().await;
     let all = library(&state).await?;
-    let mut rooms = state.activities().rooms.lock().unwrap();
-    prune(&mut rooms, &state);
-    if let Some(active) = input.lease {
-        // A static page may never open an SDK connection. Its parent keeps
-        // this specific launch alive for as long as the frame is displayed.
-        let gone = || ApiError::status(StatusCode::GONE);
-        let live = rooms.get_mut(&(active.install, channel)).ok_or_else(gone)?;
-        let lease = live
-            .leases
-            .get_mut(&caller.user)
-            .filter(|lease| lease.account_session == caller.session && lease.token == active.access)
-            .ok_or_else(gone)?;
-        let now = Instant::now();
-        lease.touched = now;
-        live.used = now;
-    }
-    let list:Vec<_>=all.into_iter().filter(|entry|entry.enabled).filter_map(|entry|{
-        let live=rooms.get(&(entry.install,channel));
-        let current=live.map_or(&entry,|room|&room.installed);
-        if !current.manifest.launch_modes.contains(&channel.mode()){ return None; }
-        let artwork=super::artwork::urls(current,&format!("/api/activities/{}/art/{}",channel.segment(),entry.install));
-        Some(json!({"install":entry.install,"name":current.manifest.name,"version":current.manifest.version,"running":live.is_some(),
-               "description":current.manifest.description,"artwork":artwork,
-               "supported":current.manifest.supports(&input.device),"devices":current.manifest.devices,"seats":current.manifest.seats}))
-    }).collect();
-    Ok(Json(json!(list)))
+    // What only a voice channel runs, which a personal picker names so that
+    // nobody looks for it there in vain.
+    let voice_only: Vec<String> = match channel {
+        Scope::Personal(_) => all
+            .iter()
+            .filter(|entry| {
+                entry.enabled && !entry.manifest.launch_modes.contains(&LaunchMode::Personal)
+            })
+            .map(|entry| entry.manifest.name.clone())
+            .collect(),
+        Scope::Voice(_) => Vec::new(),
+    };
+    let (listed, changed) = state.activities().update(|rooms| -> ApiResult<(Vec<Value>, Option<Value>)> {
+        prune(rooms, &state, None);
+        if let Some(active) = input.lease {
+            // A static page may never open an SDK connection. Its parent keeps
+            // this specific launch alive for as long as the frame is displayed.
+            let gone = || ApiError::status(StatusCode::GONE);
+            let live = rooms.get_mut(&(active.install, channel)).ok_or_else(gone)?;
+            let lease = live
+                .leases
+                .get_mut(&caller.user)
+                .filter(|lease| lease.account_session == caller.session && lease.token == active.access)
+                .ok_or_else(gone)?;
+            let now = Instant::now();
+            lease.touched = now;
+            live.used = now;
+        }
+        let rooms: &Rooms = rooms;
+        let list:Vec<Value>=all.into_iter().filter(|entry|entry.enabled).filter_map(|entry|{
+            let live=rooms.get(&(entry.install,channel));
+            let current=live.map_or(&entry,|room|&room.installed);
+            if !current.manifest.launch_modes.contains(&channel.mode()){ return None; }
+            let artwork=super::artwork::urls(current,&format!("/api/activities/{}/art/{}",channel.segment(),entry.install));
+            Some(json!({"install":entry.install,"name":current.manifest.name,"version":current.manifest.version,"running":live.is_some(),
+                   "description":current.manifest.description,"artwork":artwork,
+                   "supported":current.manifest.supports(&input.device),"devices":current.manifest.devices,"seats":current.manifest.seats,
+                   "permissions":current.manifest.permissions}))
+        }).collect();
+        let running = match channel {
+            Scope::Voice(room) => voice_room(rooms, room).map(|(_, live)| summary(room, live)),
+            Scope::Personal(_) => None,
+        };
+        Ok((list, running))
+    });
+    announce(&state, changed).await;
+    let (list, running) = listed?;
+    Ok(Json(json!({
+        "activities": list,
+        "voiceOnly": voice_only,
+        "live": running,
+        "owner": owner,
+        "viewerIsOwner": viewer_is_owner,
+    })))
 }
 #[derive(Deserialize)]
 pub(super) struct Launch {
     #[serde(default)]
     install: Option<Id>,
     device: String,
+    /// Swap the activity that runs in the voice channel for this one, which
+    /// only its host may do.
+    #[serde(default)]
+    replace: bool,
 }
 pub(super) async fn launch(
     State(state): State<AppState>,
@@ -381,26 +612,29 @@ pub(super) async fn launch(
         .read(move |db| User::find(db, caller.user))
         .await?
         .ok_or_else(ApiError::forbidden)?;
-    let (response, started_voice) = {
-        let mut rooms = state.activities().rooms.lock().unwrap();
-        prune(&mut rooms, &state);
-        let existing_voice = matches!(channel, Scope::Voice(_))
-            .then(|| {
-                rooms
-                    .keys()
-                    .find(|(_, scope)| *scope == channel)
-                    .map(|(id, _)| *id)
-            })
-            .flatten();
-        let install_id = match (input.install, existing_voice) {
-            (Some(requested), Some(running)) if requested != running => {
-                return Err(ApiError::conflict());
+    let (launched, changed) = state.activities().update(|rooms| -> ApiResult<Value> {
+        prune(rooms, &state, None);
+        // A voice channel runs one activity at a time; a person runs as many
+        // personal ones as they like.
+        let running = match channel {
+            Scope::Voice(room) => voice_room(rooms, room).map(|(install, live)| (install, live.host)),
+            Scope::Personal(_) => None,
+        };
+        let (install_id, replaced) = match (input.install, running) {
+            (Some(requested), Some((current, host))) if requested != current => {
+                if !input.replace {
+                    return Err(Refusal::Running.into());
+                }
+                if host != caller.user {
+                    return Err(Refusal::NotHost.into());
+                }
+                (requested, Some(current))
             }
-            (Some(requested), _) => requested,
-            (None, Some(running)) => running,
+            (Some(requested), _) => (requested, None),
+            (None, Some((current, _))) => (current, None),
             (None, None) => {
                 return Err(match channel {
-                    Scope::Voice(_) => ApiError::not_found(),
+                    Scope::Voice(_) => ApiError::from(Refusal::NotFound),
                     Scope::Personal(_) => ApiError::bad_request(),
                 });
             }
@@ -414,54 +648,47 @@ pub(super) async fn launch(
                 current
                     .as_ref()
                     .map(|c| c.manifest.launch_modes.contains(&channel.mode()))
-                    .ok_or_else(ApiError::not_found)
+                    .ok_or(Refusal::NotFound)
             },
-            |room| {
-                Ok(room
-                    .installed
-                    .manifest
-                    .launch_modes
-                    .contains(&channel.mode()))
-            },
+            |room| Ok(room.installed.manifest.launch_modes.contains(&channel.mode())),
         )?;
         if !allowed_mode {
             return Err(ApiError::forbidden());
         }
-        let created = !rooms.contains_key(&key);
-        if created {
-            let current = current.ok_or_else(ApiError::not_found)?;
+        if !rooms.contains_key(&key) {
+            let current = current.ok_or(Refusal::NotFound)?;
             if !current.manifest.supports(&input.device) {
-                return Err(invalid("This release does not support this device."));
+                return Err(Refusal::UnsupportedDevice.into());
             }
-            if rooms.len() >= 64 {
+            if rooms.len().saturating_sub(usize::from(replaced.is_some())) >= 64 {
                 return Err(ApiError::status(StatusCode::TOO_MANY_REQUESTS));
             }
-            rooms.insert(
-                key,
-                Live {
-                    authority: Authority::new(&current.manifest)?,
-                    asset_label: asset_label(&current),
-                    installed: current,
-                    leases: HashMap::new(),
-                    pictures: HashMap::new(),
-                    used: Instant::now(),
-                },
-            );
+            let started = Live::new(current, caller.user)?;
+            // The host swaps the activity for another: the one that ran ends
+            // for everybody in it, as an end does, and the host hosts the next.
+            if let Some(replaced) = replaced {
+                rooms.remove(&(replaced, channel));
+            }
+            rooms.insert(key, started);
         }
         let live = rooms.get_mut(&key).expect("joined room");
         if !live.installed.manifest.supports(&input.device) {
-            return Err(invalid(
-                "This session's release does not support this device.",
-            ));
+            return Err(Refusal::UnsupportedDevice.into());
         }
         let cap = live
             .installed
             .manifest
             .seats
             .map_or(128, |seats| usize::from(seats).min(128));
-        if !live.leases.contains_key(&caller.user) && live.leases.len() >= cap {
-            return Err(invalid("This activity is full."));
-        }
+        // Somebody who opens the activity again keeps their place in the order.
+        let joined = match live.leases.get(&caller.user) {
+            Some(lease) => lease.joined,
+            None if live.leases.len() >= cap => return Err(Refusal::Full.into()),
+            None => {
+                live.arrivals += 1;
+                live.arrivals
+            }
+        };
         let token = Id::random();
         let ticket = Id::random();
         let asset_key = Id::random();
@@ -485,6 +712,7 @@ pub(super) async fn launch(
             caller.user,
             Lease {
                 user: caller.user,
+                joined,
                 account_session: caller.session,
                 account_version: user.session_version,
                 token,
@@ -495,24 +723,18 @@ pub(super) async fn launch(
             },
         );
         live.used = Instant::now();
-        let started = match (created, channel) {
-            (true, Scope::Voice(ch)) => Some((ch, summary(ch, live))),
-            _ => None,
-        };
-        let payload = json!({
+        Ok(json!({
             "install": install_id,
             "src": src,
             "access": token,
             "title": live.installed.manifest.name,
             "permissions": live.installed.manifest.permissions,
             "youtube": live.installed.manifest.connects.iter().any(|c| c.host == "www.youtube-nocookie.com"),
-        });
-        (payload, started)
-    };
-    if let Some((ch, active)) = started_voice {
-        broadcast_voice_activity(&state, ch, Some(active));
-    }
-    Ok(Json(response))
+            "host": live.host,
+        }))
+    });
+    announce(&state, changed).await;
+    Ok(Json(launched?))
 }
 
 pub(super) async fn leave(
@@ -523,33 +745,107 @@ pub(super) async fn leave(
     Json(input): Json<ActiveLaunch>,
 ) -> ApiResult<Json<Value>> {
     let channel = Scope::from_path(&path, caller.user)?;
-    let (still_running, ended_voice) = {
-        let mut rooms = state.activities().rooms.lock().unwrap();
-        prune(&mut rooms, &state);
-        let key = (input.install, channel);
-        let mut ended = None;
+    let key = (input.install, channel);
+    let (still_running, changed) = state.activities().update(|rooms| {
+        prune(rooms, &state, None);
         if let Some(live) = rooms.get_mut(&key)
             && live
                 .leases
                 .get(&caller.user)
                 .is_some_and(|l| l.account_session == caller.session && l.token == input.access)
         {
-            live.leases.remove(&caller.user);
-            live.authority.revoke(caller.user);
-            live.pictures.remove(&caller.user);
+            live.depart(caller.user);
             if live.leases.is_empty() {
                 rooms.remove(&key);
-                if let Scope::Voice(ch) = channel {
-                    ended = Some(ch);
-                }
             }
         }
-        (rooms.contains_key(&key), ended)
-    };
-    if let Some(ch) = ended_voice {
-        broadcast_voice_activity(&state, ch, None);
-    }
+        rooms.contains_key(&key)
+    });
+    announce(&state, changed).await;
     Ok(Json(json!({ "ok": true, "running": still_running })))
+}
+#[derive(Deserialize)]
+pub(super) struct End {
+    /// The personal room to end; without it, every personal room of the
+    /// account. A voice channel runs one activity, which is the one ended.
+    #[serde(default)]
+    install: Option<Id>,
+}
+/// Ends the activity for everybody in it, which only its host may do.
+pub(super) async fn end(
+    State(state): State<AppState>,
+    caller: Caller,
+    Path(path): Path<String>,
+    ActivityParent(_): ActivityParent,
+    input: Option<Json<End>>,
+) -> ApiResult<Json<Value>> {
+    let channel = Scope::from_path(&path, caller.user)?;
+    let only = input.and_then(|Json(end)| end.install);
+    let (ended, changed) = state.activities().update(|rooms| -> ApiResult<()> {
+        prune(rooms, &state, None);
+        let ending: Vec<Place> = rooms
+            .keys()
+            .copied()
+            .filter(|(install, place)| *place == channel && only.is_none_or(|only| only == *install))
+            .collect();
+        if ending.is_empty() {
+            return Err(Refusal::NotFound.into());
+        }
+        if ending.iter().any(|key| rooms[key].host != caller.user) {
+            return Err(Refusal::NotHost.into());
+        }
+        // A room takes its authority with it: every lease, picture and the
+        // session's state are gone, and a frame that still calls is told the
+        // session ended.
+        for key in ending {
+            rooms.remove(&key);
+        }
+        Ok(())
+    });
+    announce(&state, changed).await;
+    ended?;
+    Ok(Json(json!({ "ok": true })))
+}
+#[derive(Deserialize)]
+pub(super) struct Listed {
+    server: Id,
+}
+/// What runs in the voice channels of a server that the person sees, for the
+/// channel list to show until `VoiceActivityChanged` says otherwise.
+pub(super) async fn running(
+    State(state): State<AppState>,
+    caller: Caller,
+    Query(query): Query<Listed>,
+) -> ApiResult<Json<Value>> {
+    let (server, user) = (query.server, caller.user);
+    let channels = state
+        .database()
+        .read(move |db| -> Result<Option<Vec<Id>>, DbError> {
+            if !membership::is_member(db, server, user)? {
+                return Ok(None);
+            }
+            let mut channels = crate::voice::voice_channels_of(db, server)?;
+            if let Some(view) = visibility::of_member(db, user, server)? {
+                channels.retain(|channel| view.channels.contains(channel));
+            }
+            Ok(Some(channels))
+        })
+        .await?
+        .ok_or_else(ApiError::forbidden)?;
+    let (listed, changed) = state.activities().update(|rooms| {
+        prune(rooms, &state, None);
+        let rooms: &Rooms = rooms;
+        channels
+            .iter()
+            .filter_map(|channel| {
+                voice_room(rooms, *channel).map(|(_, live)| {
+                    json!({"channelId": channel, "activity": summary(*channel, live)})
+                })
+            })
+            .collect::<Vec<Value>>()
+    });
+    announce(&state, changed).await;
+    Ok(Json(json!(listed)))
 }
 #[derive(Deserialize)]
 pub(super) struct Action {
@@ -557,35 +853,45 @@ pub(super) struct Action {
     access: Id,
     action: Value,
 }
-fn in_session<T>(
+async fn in_session<T>(
     state: &AppState,
     channel: Scope,
     caller: Caller,
     input: &Action,
     op: impl FnOnce(&mut Live) -> ApiResult<T>,
 ) -> ApiResult<T> {
-    let mut rooms = state.activities().rooms.lock().unwrap();
-    let live = rooms
-        .get_mut(&(input.install, channel))
-        .ok_or_else(|| ApiError::status(StatusCode::GONE))?;
-    if !seated(state, channel, caller.user) {
-        live.authority.revoke(caller.user);
-        live.leases.remove(&caller.user);
-        live.pictures.remove(&caller.user);
-        return Err(ApiError::forbidden());
-    }
-    let lease = live
-        .leases
-        .get_mut(&caller.user)
-        .filter(|l| {
-            l.account_session == caller.session
-                && l.token == input.access
-                && l.touched.elapsed() < Duration::from_secs(60)
-        })
-        .ok_or_else(ApiError::forbidden)?;
-    lease.touched = Instant::now();
-    live.used = Instant::now();
-    op(live)
+    let key = (input.install, channel);
+    let (result, changed) = state.activities().update(|rooms| {
+        // Whoever has gone is taken out first, a host handing over: the
+        // people who stay are the ones who keep calling.
+        prune(rooms, state, Some(channel));
+        let result = rooms
+            .get_mut(&key)
+            .ok_or_else(|| ApiError::status(StatusCode::GONE))
+            .and_then(|live| {
+                let lease = live
+                    .leases
+                    .get_mut(&caller.user)
+                    .filter(|l| {
+                        l.account_session == caller.session
+                            && l.token == input.access
+                            && l.touched.elapsed() < Duration::from_secs(60)
+                    })
+                    .ok_or_else(ApiError::forbidden)?;
+                lease.touched = Instant::now();
+                live.used = Instant::now();
+                op(live)
+            });
+        // The last person to close a voice activity ends it.
+        if matches!(channel, Scope::Voice(_))
+            && rooms.get(&key).is_some_and(|live| live.leases.is_empty())
+        {
+            rooms.remove(&key);
+        }
+        result
+    });
+    announce(state, changed).await;
+    result
 }
 
 pub(super) async fn room(
@@ -607,17 +913,6 @@ pub(super) async fn room(
         person = participant(&user);
     }
     let (mut output, progress) = in_session(&state, channel, caller, &input, |live| {
-        let stale: Vec<Id> = live
-            .leases
-            .keys()
-            .copied()
-            .filter(|id| !seated(&state, channel, *id))
-            .collect();
-        for id in stale {
-            live.authority.revoke(id);
-            live.leases.remove(&id);
-            live.pictures.remove(&id);
-        }
         let output = live.authority.run(&person, &input.action)?;
         let progress = matches!(
             input.action["op"].as_str(),
@@ -629,11 +924,11 @@ pub(super) async fn room(
             activity: live.installed.manifest.id.clone(),
         });
         if input.action["op"] == "close" && output.get("error").is_none() {
-            live.leases.remove(&caller.user);
-            live.pictures.remove(&caller.user);
+            live.depart(caller.user);
         }
         Ok((output, progress))
-    })?;
+    })
+    .await?;
     if let Some(error) = output.get("error") {
         let status = output["status"]
             .as_u64()
@@ -658,10 +953,6 @@ pub(super) async fn room(
         value["launchMode"] = json!(channel.mode());
         value["standalone"] = json!(false);
         value["progress"] = json!(true);
-    } else if input.action["op"] == "close"
-        && let Scope::Voice(ch) = channel
-    {
-        state.activities().sync_voice_channel(&state, ch);
     }
     Ok(Response::builder()
         .header(header::CONTENT_TYPE, "application/json")
@@ -738,6 +1029,7 @@ pub(super) async fn tile(
         };
         Ok(Json(val))
     })
+    .await
 }
 
 const SDK: &str = include_str!("../../../../../sdk/client.js");
