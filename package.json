@@ -38,5 +38,8 @@
     "eslint-plugin-react": {
       "eslint": "^10.14.0"
     }
+  },
+  "devDependencies": {
+    "rolldown": "1.2.18"
   }
 }

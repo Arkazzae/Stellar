@@ -1,0 +1,95 @@
+name: Build browser packages
+on:
+  pull_request:
+    paths:
+      - "artifacts/**"
+      - "scripts/npm/**"
+      - "web/src/stellarr/lib/voice/capture/**"
+      - "package-lock.json"
+      - "Dockerfile"
+      - ".github/workflows/npm-runtime.yml"
+  push:
+    tags: ["npm-audio-filters-v*", "npm-translation-v*"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pack:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [audio-filters, translation]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 26
+      - run: npm ci
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+      - name: Build pinned WASM recipes
+        env:
+          PACKAGE: ${{ matrix.package }}
+          RECIPE_CACHE: gha
+        run: |
+          if [[ $PACKAGE == audio-filters ]]; then recipes=(recipe-speex recipe-rnnoise); else recipes=(recipe-bergamot); fi
+          docker buildx bake "${recipes[@]}"
+      - if: matrix.package == 'audio-filters'
+        uses: mymindstorm/setup-emsdk@4528d102f7230f0e7b276855c01ea1159be0e984
+        with:
+          version: 4.0.10
+      - if: matrix.package == 'audio-filters'
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9
+        with:
+          enable-cache: false
+      - name: Compile GTCRN from the Stellarr source snapshot
+        if: matrix.package == 'audio-filters'
+        env:
+          UV_FROZEN: "true"
+          CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler libprotobuf-dev cmake
+          bash scripts/npm/fetch-input.sh gtcrn-sources.tar.gz "$RUNNER_TEMP/inputs"
+          bash "$RUNNER_TEMP/inputs/gtcrn/build/build-wasm.sh"
+      - if: matrix.package == 'translation'
+        run: bash scripts/npm/fetch-input.sh translation-models.tar.gz "$RUNNER_TEMP/inputs"
+      - name: Pack browser files
+        env:
+          PACKAGE: ${{ matrix.package }}
+        run: node scripts/npm/pack-runtime.mjs "$PACKAGE" "$RUNNER_TEMP/inputs" "$RUNNER_TEMP/packages"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: npm-${{ matrix.package }}
+          path: ${{ runner.temp }}/packages/*.tgz
+          if-no-files-found: error
+  publish:
+    if: github.event_name == 'push'
+    needs: pack
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          pattern: npm-*
+          path: packages
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 26
+      - name: Publish the archive matching this release tag
+        run: |
+          for archive in packages/*/*.tgz; do
+            meta=$(tar -xOzf "$archive" package/package.json)
+            name=$(jq -r '.name | split("/")[1]' <<< "$meta")
+            version=$(jq -r .version <<< "$meta")
+            if [[ $GITHUB_REF_NAME == "npm-$name-v$version" ]]; then
+              npm publish "$archive" --access public --tag next
+              exit
+            fi
+          done
+          exit 1
