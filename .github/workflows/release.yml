@@ -4,7 +4,8 @@ on:
   push:
     tags: ["server-v*.*.*"]
 
-# Server images and native installer bundles are published in GHCR.
+# Server images and native installer bundles are published in GHCR, and the
+# installers with their sums are attached to the tag's GitHub release.
 permissions:
   contents: read
 
@@ -189,6 +190,14 @@ jobs:
           if [[ $version != *-* ]]; then
             python3 scripts/release/server-release.py promote "$version"
           fi
+
+  # Mirror the published installers onto the Releases page, for this tag.
+  github-release:
+    needs: release
+    permissions:
+      contents: write
+      attestations: read
+    uses: ./.github/workflows/github-release.yml
 
   verify-stable-install:
     needs: release
