@@ -141,7 +141,16 @@ pub(super) async fn participant(
 ) -> ApiResult<Response> {
     let _gate = state.activities().changes.read().await;
     let channel = super::live::Scope::from_path(&path, caller.user)?;
-    super::live::check(&state, channel, caller.user)?;
+    // The icon of what runs in a voice channel is for everybody who sees the
+    // channel, whose list shows it; the rest is for the people inside.
+    if super::live::check(&state, channel, caller.user).is_err()
+        && !(kind == "icon"
+            && matches!(channel, super::live::Scope::Voice(_))
+            && state.activities().pinned_digest(id, channel).is_some()
+            && super::live::sees(&state, channel, caller.user).await?)
+    {
+        return Err(ApiError::forbidden());
+    }
     let current = super::library(&state)
         .await?
         .into_iter()

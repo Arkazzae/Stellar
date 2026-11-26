@@ -82,6 +82,7 @@ impl Unseated {
             }
         }
         for room in rooms {
+            state.activities().sync_voice_channel(state, room).await;
             if let Err(error) = broadcast_snapshot(state, room).await {
                 tracing::warn!(%error, "a room was not told that somebody was taken out of it");
             }

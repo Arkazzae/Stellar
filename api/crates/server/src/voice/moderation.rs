@@ -151,6 +151,7 @@ pub(super) async fn kick_from_voice(
         Kick::Refused(refused) => Err(refuse(refused)),
         Kick::Done(seated) => {
             if !seated.is_empty() {
+                state.activities().sync_voice_channel(&state, channel).await;
                 send_to_connections(&state, seated, "VoiceChannelKicked", &Kicked { channel_id: channel });
                 if let Err(error) = broadcast_snapshot(&state, channel).await {
                     tracing::warn!(%error, "a room was not told that somebody was sent out of it");
@@ -246,6 +247,7 @@ pub(super) async fn move_between_voice_channels(
                     to_channel_id: destination,
                 },
             );
+            state.activities().sync_voice_channel(&state, channel).await;
             for room in [channel, destination] {
                 if let Err(error) = broadcast_snapshot(&state, room).await {
                     tracing::warn!(%error, "a room was not told that somebody was moved");
