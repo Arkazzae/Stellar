@@ -657,7 +657,7 @@ case_install_sh() {
   : >"$checkout/init/installer/Cargo.toml"
   rm "$case_assets/stellarr-installer-x86_64-unknown-linux-musl"
   through_install_sh "$checkout/install.sh"
-  run --yes --build
+  run STELLARR_INSTALLER_VERSION=1.4.0 --yes --build
   expect_failure
   expect_shown "cargo run --locked --manifest-path init/installer/Cargo.toml -- --dir . --build"
   expect_not_called cargo
@@ -1639,7 +1639,7 @@ case_checkout() {
   no_release
   # install.sh names the checkout it is in to the installer.
   through_install_sh "$checkout/install.sh"
-  run --yes --build
+  run STELLARR_INSTALLER_VERSION=1.4.0 --yes --build
   expect_success
   expect_called "compose build stellarr @$checkout"
   expect_called "up -d --no-build --pull never @$checkout"
@@ -1681,7 +1681,7 @@ case_checkout() {
   echo 'FROM scratch' >"$checkout/Dockerfile"
   no_release
   through_install_sh "$checkout/install.sh"
-  run --yes
+  run STELLARR_INSTALLER_VERSION=1.4.0 --yes
   expect_failure
   expect_shown "  ./install.sh --build"
   expect_missing "$checkout/.env"
