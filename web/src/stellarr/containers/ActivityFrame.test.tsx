@@ -83,6 +83,54 @@ it("takes a mounted camera image away and stops asking for pictures once the fra
   }
 });
 
+it("plays WebRTC tiles in the parent and drops a late capture after consent is withdrawn", async () => {
+  const watchers = new Map<string, (stream: MediaStream | null) => void>();
+  const transport = {
+    publish: vi.fn(), dispose: vi.fn(),
+    watch: (id: string, show: (stream: MediaStream | null) => void) => {
+      watchers.set(id, show);
+      return () => { watchers.delete(id); show(null); };
+    },
+  };
+  let giveCamera!: (stream: MediaStream) => void;
+  const capture = vi.fn(() => new Promise<MediaStream>(resolve => { giveCamera = resolve; }));
+  const mediaDevices = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
+  Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: capture } });
+  const track = { stop: vi.fn() };
+  const stream = { getTracks: () => [track] } as unknown as MediaStream;
+  const ask = vi.fn(async () => true);
+  try {
+    const view = render(<ActivityFrame src="https://game.test/play" title="Camera" permissions={["media.cameraTile"]}
+      room={async () => ({})} camera={() => transport} ask={ask} onLost={vi.fn()} />);
+    const frame = screen.getByTitle<HTMLIFrameElement>("Camera");
+    const port = { postMessage: vi.fn(), close: vi.fn(), onmessage: null as null | ((event: unknown) => void) };
+    window.dispatchEvent(Object.assign(new Event("message"), {
+      source: frame.contentWindow, origin: "https://game.test", data: "stellarr:media:v1", ports: [port],
+    }));
+    const send = (data: object) => port.onmessage?.({ data });
+    send({ op: "mount", id: 1, participant: "alice", bounds: [0, 0, 10, 10, 100, 100] });
+    watchers.get("alice")!(stream);
+    const video = view.container.querySelector("video")!;
+    expect(video.srcObject).toBe(stream);
+    expect(capture).not.toHaveBeenCalled();
+    await act(async () => { send({ op: "open", id: 2, kind: "cameraTile" }); });
+    expect(ask).toHaveBeenCalledOnce();
+    expect(capture).toHaveBeenCalledOnce();
+    send({ op: "stop", kind: "cameraTile" });
+    await act(async () => { giveCamera(stream); });
+    expect(track.stop).toHaveBeenCalledOnce();
+    expect(transport.publish).not.toHaveBeenCalled();
+    expect(port.postMessage.mock.calls.flat()).not.toContain(stream);
+    view.unmount();
+    expect(watchers.size).toBe(0);
+    expect(transport.dispose).toHaveBeenCalledOnce();
+    expect(video.srcObject).toBeNull();
+  } finally {
+    if (mediaDevices) Object.defineProperty(navigator, "mediaDevices", mediaDevices);
+    else Reflect.deleteProperty(navigator, "mediaDevices");
+  }
+});
+
 it("routes installed session traffic to the hub and forwards events only to their frame", async () => {
   const realtime = new FakeRealtimeClient();
   const room = vi.fn(async () => ({ roomHub: true }));

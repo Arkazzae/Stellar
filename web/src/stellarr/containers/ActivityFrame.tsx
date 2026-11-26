@@ -5,7 +5,7 @@ import { Icon } from "@stellarr/icons";
 import { Avatar } from "@/components/primitives/Avatar";
 import { detectDevice, type Participant } from "../../../../sdk/client.js";
 import { useLanguage } from "@/state/LanguageProvider";
-import { bindMediaHost, type HostMediaControls } from "../../../../sdk/host/media-host.js";
+import { bindMediaHost, type HostMediaControls, type ActivityCamera } from "../../../../sdk/host/media-host.js";
 
 type Action = Record<string, unknown>;
 function framePortrait(person: Participant, base: string): Participant {
@@ -43,7 +43,9 @@ interface ActivityFrameProps {
   room: (action: Action, signal: AbortSignal) => Promise<Record<string, unknown>>;
   liveRoom?: ActivityFrameProps["room"];
   realtime?: RealtimeClient | null;
-  tile: (action: Action, signal: AbortSignal) => Promise<Record<string, string | null>>;
+  camera?: () => ActivityCamera;
+  cloneLocalCamera?: () => MediaStreamTrack | undefined;
+  tile?: (action: Action, signal: AbortSignal) => Promise<Record<string, string | null>>;
   onLost: () => void;
   /**
    * Lays out the volume, the device controls and who plays. Without it they
@@ -57,7 +59,7 @@ interface ActivityFrameProps {
   ask?: (kind: DeviceKind, signal: AbortSignal) => Promise<boolean>;
 }
 
-export function ActivityFrame({ src, title, permissions, youtube, muted = false, cameraOn, room, liveRoom, realtime, tile, onLost, bar, ask }: ActivityFrameProps) {
+export function ActivityFrame({ src, title, permissions, youtube, muted = false, cameraOn, room, liveRoom, realtime, camera, cloneLocalCamera, tile, onLost, bar, ask }: ActivityFrameProps) {
   const { t, locale } = useLanguage();
   const target = useMemo(() => {
     const url = new URL(src, window.location.href);
@@ -90,7 +92,7 @@ export function ActivityFrame({ src, title, permissions, youtube, muted = false,
     const portraitBase = nonce ? target.src : origin + "/";
     media.current = bindMediaHost({ frame: frame.current, origin, nonce, youtube, title, permissions, controls: controls.current,
       volume: volume.current, language: () => language.current ?? document.documentElement.lang, muted: () => callMuted.current,
-      tile: action => tile(action, controller.signal), overlay: viewport.current ?? undefined,
+      camera, cloneLocalCamera, tile: tile ? action => tile(action, controller.signal) : undefined, overlay: viewport.current ?? undefined,
       ask: asking.current ? (kind, signal) => asking.current?.(kind, signal) ?? Promise.resolve(false) : undefined,
       labels: {
         stop: { cameraTile: words.current("activities.stopCamera"), microphoneLevel: words.current("activities.stopMicrophoneLevel") },
@@ -170,7 +172,7 @@ export function ActivityFrame({ src, title, permissions, youtube, muted = false,
         // Already torn down as far as it can be.
       }
     };
-  }, [target, title, permissions, youtube, room, liveRoom, realtime, tile, onLost]);
+  }, [target, title, permissions, youtube, room, liveRoom, realtime, camera, cloneLocalCamera, tile, onLost]);
 
   const roster = useMemo(() => framePlayers(players), [players]);
   const volumeControl = (

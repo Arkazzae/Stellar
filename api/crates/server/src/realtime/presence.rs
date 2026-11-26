@@ -46,6 +46,7 @@ struct State {
     seeded: HashMap<Id, String>,
     /// The voice seat each connection holds.
     seats: HashMap<String, Seat>,
+    cameras: HashMap<(String, Id), seats::CameraSeat>,
     /// The seats of connections that ended, until the hub's hook has told the
     /// rooms they left.
     departures: HashMap<String, VoiceDeparture>,
@@ -136,6 +137,7 @@ impl PresenceTracker {
         let Some(user) = state.user_by_connection.remove(connection_id) else {
             return false;
         };
+        seats::close_cameras(&mut state, connection_id, None);
         if let Some(departure) = seats::take_seat(&mut state, connection_id) {
             state
                 .departures

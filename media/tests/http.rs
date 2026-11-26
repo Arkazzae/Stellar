@@ -316,6 +316,45 @@ async fn sessions_are_created_and_deleted() {
 }
 
 #[tokio::test]
+async fn activity_camera_replacements_preserve_other_activities_and_the_voice_call() {
+    let server = start().await;
+    let user = uuid(1);
+    let camera = |room: &str| {
+        post(
+            &server,
+            "/v1/activity-sessions",
+            json!({"roomId":room,"userId":user}),
+        )
+    };
+    let voice = create(&server, 1).await;
+    let (first_room, second_room) = (ROOM, uuid(42));
+    let first = camera(first_room).await;
+    assert_eq!(first.status, 201);
+    let other = camera(&second_room).await;
+    assert_eq!(other.status, 201);
+    let replacement = camera(first_room).await;
+    assert_eq!(replacement.status, 201);
+    assert_ne!(first.body["sessionId"], replacement.body["sessionId"]);
+    let voice_replacement = create(&server, 1).await;
+    let subscribe = |id: &str| format!("/v1/sessions/{id}/subscriptions");
+    for (id, status) in [
+        (voice.as_str(), 404),
+        (voice_replacement.as_str(), 204),
+        (first.body["sessionId"].as_str().unwrap(), 404),
+        (replacement.body["sessionId"].as_str().unwrap(), 204),
+        (other.body["sessionId"].as_str().unwrap(), 204),
+    ] {
+        assert_eq!(
+            post(&server, &subscribe(id), json!({"mids":[]}))
+                .await
+                .status,
+            status
+        );
+    }
+    server.shutdown().await.unwrap();
+}
+
+#[tokio::test]
 async fn offers_answers_and_candidates_use_the_contract_codes() {
     let server = start().await;
     let a = create(&server, 1).await;

@@ -124,6 +124,12 @@ fn set_seat(state: &mut State, connection: &str, next: Option<Seat>) {
         next.media = None;
     }
 
+    if let Some(seat) = &current
+        && next.as_ref().map(|s| s.channel) != Some(seat.channel)
+    {
+        close_cameras(state, connection, Some(seat.channel));
+    }
+
     if let Some(media) = current.and_then(|seat| seat.media)
         && next.as_ref().and_then(|seat| seat.media.as_ref()) != Some(&media)
     {
@@ -186,6 +192,27 @@ fn occupants(state: &State, channel: Id) -> Vec<VoiceParticipant> {
         .collect();
     found.sort_by_key(|participant| participant.user);
     found
+}
+
+/// A grant belongs to one launch, one hub connection and one activity SFU room.
+pub(super) struct CameraSeat {
+    grant: Id,
+    voice: Option<Id>,
+    media: Option<MediaSession>,
+}
+
+pub(super) fn close_cameras(state: &mut State, connection: &str, voice: Option<Id>) {
+    let mut closed = Vec::new();
+    state.cameras.retain(|(owner, _), seat| {
+        if owner != connection || voice.is_some() && seat.voice != voice {
+            return true;
+        }
+        closed.extend(seat.media.take());
+        false
+    });
+    for media in closed {
+        queue_close(state, media);
+    }
 }
 
 impl PresenceTracker {
@@ -443,29 +470,117 @@ impl PresenceTracker {
         }
     }
 
+    pub fn grant_camera(
+        &self,
+        connection: &str,
+        user: Id,
+        room: Id,
+        voice: Option<Id>,
+        grant: Id,
+    ) -> bool {
+        let mut state = self.state();
+        if state.user_by_connection.get(connection) != Some(&user)
+            || voice.is_some_and(|id| !state.seats.get(connection).is_some_and(|s| s.channel == id))
+        {
+            return false;
+        }
+        if let Some(old) = state.cameras.insert(
+            (connection.into(), room),
+            CameraSeat {
+                grant,
+                voice,
+                media: None,
+            },
+        ) && let Some(media) = old.media
+        {
+            queue_close(&mut state, media);
+        }
+        true
+    }
+
+    pub fn has_camera_grant(&self, connection: &str, room: Id, grant: Id) -> bool {
+        self.state()
+            .cameras
+            .get(&(connection.into(), room))
+            .is_some_and(|seat| seat.grant == grant)
+    }
+
+    pub fn attach_camera(
+        &self,
+        connection: &str,
+        room: Id,
+        grant: Id,
+        media: MediaSession,
+    ) -> bool {
+        let mut state = self.state();
+        let Some(seat) = state
+            .cameras
+            .get_mut(&(connection.into(), room))
+            .filter(|s| s.grant == grant)
+        else {
+            return false;
+        };
+        seat.media = Some(media);
+        true
+    }
+
+    pub fn revoke_camera(&self, connection: &str, room: Id, grant: Id) {
+        let mut state = self.state();
+        let key = (connection.into(), room);
+        if state.cameras.get(&key).is_some_and(|s| s.grant == grant)
+            && let Some(media) = state.cameras.remove(&key).and_then(|s| s.media)
+        {
+            queue_close(&mut state, media);
+        }
+    }
+
     /// The media session of the connection's seat in this room; none without a
     /// seat there or without a session.
     pub fn media_session_of(&self, connection: &str, channel: Id) -> Option<MediaSession> {
-        self.state()
+        let state = self.state();
+        state
             .seats
             .get(connection)
             .filter(|seat| seat.channel == channel)
             .and_then(|seat| seat.media.clone())
+            .or_else(|| {
+                state
+                    .cameras
+                    .get(&(connection.into(), channel))?
+                    .media
+                    .clone()
+            })
     }
 
     /// The seat that holds a media session, which is where its signals go.
     pub fn find_media_session(&self, session_id: &str) -> Option<SeatedMediaSession> {
         let state = self.state();
-        state.seats.iter().find_map(|(connection, seat)| {
-            seat.media
-                .as_ref()
-                .filter(|media| media.session_id == session_id)
-                .map(|media| SeatedMediaSession {
-                    connection_id: connection.clone(),
-                    channel: seat.channel,
-                    session: media.clone(),
-                })
-        })
+        state
+            .seats
+            .iter()
+            .find_map(|(connection, seat)| {
+                seat.media
+                    .as_ref()
+                    .filter(|media| media.session_id == session_id)
+                    .map(|media| SeatedMediaSession {
+                        connection_id: connection.clone(),
+                        channel: seat.channel,
+                        session: media.clone(),
+                    })
+            })
+            .or_else(|| {
+                state
+                    .cameras
+                    .iter()
+                    .find_map(|((connection, channel), seat)| {
+                        let media = seat.media.as_ref().filter(|m| m.session_id == session_id)?;
+                        Some(SeatedMediaSession {
+                            connection_id: connection.clone(),
+                            channel: *channel,
+                            session: media.clone(),
+                        })
+                    })
+            })
     }
 
     /// Takes a media session off its seat without closing it, because the
@@ -484,7 +599,7 @@ impl PresenceTracker {
         ended: impl Fn(&MediaSession) -> bool,
     ) -> Vec<SeatedMediaSession> {
         let mut state = self.state();
-        let forgotten: Vec<SeatedMediaSession> = state
+        let mut forgotten: Vec<SeatedMediaSession> = state
             .seats
             .iter()
             .filter_map(|(connection, seat)| {
@@ -504,6 +619,15 @@ impl PresenceTracker {
         for session in &forgotten {
             if let Some(seat) = state.seats.get_mut(&session.connection_id) {
                 seat.media = None;
+            }
+        }
+        for ((connection, channel), seat) in &mut state.cameras {
+            if let Some(media) = seat.media.take_if(|media| ended(media)) {
+                forgotten.push(SeatedMediaSession {
+                    connection_id: connection.clone(),
+                    channel: *channel,
+                    session: media,
+                });
             }
         }
         forgotten

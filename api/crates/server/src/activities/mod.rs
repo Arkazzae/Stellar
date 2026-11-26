@@ -397,7 +397,6 @@ pub fn routes() -> Endpoints {
         .post("/api/activities/{channel}/room", live::room)
         .json_body_up_to(384 * 1024)
         .authorized()
-        .post("/api/activities/{channel}/tile", live::tile)
         .json_body_up_to(128 * 1024)
         .authorized()
         .get("/_activity/{asset_key}/{*path}", live::sandbox_asset)

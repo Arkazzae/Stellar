@@ -1,5 +1,5 @@
 /** Capture is owned by the trusted Stellarr page. Every returned resource has a single stop path. */
-export async function capture(kind, { file, muted, send, tile, ended, signal }) {
+export async function capture(kind, { file, muted, send, tile, camera, cloneLocalCamera, ended, signal }) {
   const mic = kind === "microphoneLevel";
   const player = mic ? document.createElement("audio") : document.createElement("video");
   player.playsInline = true;
@@ -10,13 +10,13 @@ export async function capture(kind, { file, muted, send, tile, ended, signal }) 
     if (closed) return;
     closed = true;
     clearInterval(interval);
-    player.pause();
+    if (!player.paused) player.pause();
     player.srcObject = null;
     sourceElement?.remove();
     if (fileURL) URL.revokeObjectURL(fileURL);
     stream?.getTracks().forEach(track => track.stop());
     if (context) void context.close().catch(() => {});
-    if (!mic) void tile({ op: "clear" }).catch(() => {});
+    if (!mic && !camera && tile) void tile({ op: "clear" }).catch(() => {});
   };
   signal.addEventListener("abort", cleanup, { once: true });
   try {
@@ -39,10 +39,12 @@ export async function capture(kind, { file, muted, send, tile, ended, signal }) 
       }, { once: true });
       player.append(sourceElement);
     } else {
-      stream = await navigator.mediaDevices.getUserMedia(mic ? { audio: true } : { video: { width: 320, height: 240 }, audio: false });
+      const callTrack = !mic && camera ? cloneLocalCamera?.() : undefined;
+      stream = callTrack ? new MediaStream([callTrack]) : await navigator.mediaDevices.getUserMedia(
+        mic ? { audio: true } : { video: { width: 320, height: 240 }, audio: false });
       if (signal.aborted) { stream.getTracks().forEach(track => track.stop()); throw new Error("Device request closed."); }
       for (const track of stream.getTracks()) track.addEventListener("ended", ended, { once: true });
-      if (!mic) player.srcObject = stream;
+      if (!mic && !camera) player.srcObject = stream;
     }
     if (signal.aborted) throw new Error("Device request closed.");
     player.addEventListener("error", ended, { once: true });
@@ -63,6 +65,8 @@ export async function capture(kind, { file, muted, send, tile, ended, signal }) 
         for (const byte of bytes) sum += ((byte - 128) / 128) ** 2;
         send({ op: "level", value: muted() ? 0 : Math.min(1, Math.sqrt(sum / bytes.length) * 2) });
       }, 50);
+    } else if (camera) {
+      await camera.publish(stream, signal, ended);
     } else {
       await player.play();
       if (signal.aborted) throw new Error("Device request closed.");

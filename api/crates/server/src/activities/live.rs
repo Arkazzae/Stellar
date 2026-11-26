@@ -1,3 +1,5 @@
+mod camera;
+
 use super::{Installed, LaunchMode, authority::Authority, hostname, invalid, library};
 use crate::{
     auth::{Caller, session},
@@ -25,6 +27,9 @@ use std::{
     sync::{Mutex, RwLock},
     time::{Duration, Instant},
 };
+
+use camera::CameraGrant;
+pub(super) use camera::hub_camera;
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
 pub(super) enum Scope {
@@ -60,6 +65,8 @@ impl Scope {
         }
     }
 }
+const LEASE_LIFETIME: Duration = Duration::from_secs(60);
+
 type Place = (Id, Scope);
 type Rooms = HashMap<Place, Mutex<Live>>;
 #[derive(Default)]
@@ -84,6 +91,7 @@ struct Lease {
     cookie: Id,
     touched: Instant,
     stream: Option<RoomStream>,
+    camera: Option<CameraGrant>,
 }
 /// A single wildcard-TLS label identifies the ZIP and its installation. Keeping
 /// the version in the origin lets absolute and relative URLs share the ZIP root.
@@ -98,7 +106,7 @@ struct Live {
     installed: Installed,
     authority: Authority,
     leases: HashMap<Id, Lease>,
-    pictures: HashMap<Id, (Instant, String)>,
+    camera_room: Id,
     used: Instant,
     /// Who launched the activity, or took it over from whoever did. Only the
     /// host ends it for everybody or swaps it for another; in a personal room
@@ -115,7 +123,7 @@ impl Live {
             asset_label: asset_label(&installed),
             installed,
             leases: HashMap::new(),
-            pictures: HashMap::new(),
+            camera_room: Id::random(),
             used: Instant::now(),
             host,
             arrivals: 0,
@@ -129,12 +137,11 @@ impl Live {
         inside.iter().map(|lease| lease.user).collect()
     }
     /// Takes somebody out: their lease, their part in the authority and their
-    /// picture. A host who leaves hands the activity to whoever has been inside
+    /// media session. A host who leaves hands the activity to whoever has been inside
     /// longest, and it keeps running.
     fn depart(&mut self, user: Id) {
         self.leases.remove(&user);
         self.authority.revoke(user);
-        self.pictures.remove(&user);
         if self.host == user
             && let Some(next) = self
                 .leases
@@ -153,8 +160,7 @@ impl Live {
             .leases
             .values()
             .filter(|lease| {
-                lease.touched.elapsed() > Duration::from_secs(60)
-                    || !seated(state, scope, lease.user)
+                lease.touched.elapsed() >= LEASE_LIFETIME || !seated(state, scope, lease.user)
             })
             .map(|lease| lease.user)
             .collect();
@@ -737,6 +743,7 @@ pub(super) async fn launch(
                 parent_origin: origin,
                 touched: Instant::now(),
                 stream: None,
+                camera: None,
             },
         );
         live.used = Instant::now();
@@ -818,7 +825,7 @@ pub(super) async fn end(
             {
                 return Err(Refusal::NotHost.into());
             }
-            // A room takes its authority with it: every lease, picture and the
+            // A room takes its authority with it: every lease, camera and the
             // session's state are gone, and a frame that still calls is told the
             // session ended.
             for key in ending {
@@ -908,7 +915,7 @@ async fn in_session<T>(
             l.account_session == caller.session
                 && l.parent_origin == origin
                 && l.token == input.access
-                && l.touched.elapsed() < Duration::from_secs(60)
+                && l.touched.elapsed() < LEASE_LIFETIME
         }) {
             lease.touched = Instant::now();
             live.used = Instant::now();
@@ -971,6 +978,7 @@ fn run_action(
     if let Some(lease) = live.leases.get_mut(&caller.user) {
         if op == "open" || op == "disconnect" {
             lease.stream = None;
+            lease.camera = None;
         } else if op == "read"
             && input["roomEvents"] == true
             && let (Some(connection), Some(frame)) = (connection, input["frame"].as_str())
@@ -1136,78 +1144,6 @@ pub(super) async fn room(
         .body(Body::from(value.to_string()))
         .unwrap())
 }
-pub(super) async fn tile(
-    State(state): State<AppState>,
-    caller: Caller,
-    Path(path): Path<String>,
-    ActivityParent(origin): ActivityParent,
-    Json(input): Json<Action>,
-) -> ApiResult<Json<Value>> {
-    let channel = Scope::from_path(&path, caller.user)?;
-    let _gate = state.activities().changes.read().await;
-    in_session(&state, channel, caller, &input, &origin, |live| {
-        if !live
-            .installed
-            .manifest
-            .permissions
-            .iter()
-            .any(|s| s == "media.cameraTile")
-        {
-            return Err(ApiError::forbidden());
-        }
-        live.pictures.retain(|id, (at, _)| {
-            at.elapsed() < Duration::from_millis(1800) && seated(&state, channel, *id)
-        });
-        let val = match input.action["op"].as_str() {
-            Some("clear") => {
-                live.pictures.remove(&caller.user);
-                json!({})
-            }
-            Some("put") => {
-                let image = input.action["image"]
-                    .as_str()
-                    .filter(|s| {
-                        s.len() <= 96 * 1024
-                            && s.strip_prefix("data:image/jpeg;base64,").is_some_and(|v| {
-                                !v.is_empty()
-                                    && v.bytes()
-                                        .all(|b| b.is_ascii_alphanumeric() || b"+/=".contains(&b))
-                            })
-                    })
-                    .ok_or_else(ApiError::bad_request)?;
-                if live
-                    .pictures
-                    .get(&caller.user)
-                    .is_some_and(|(at, _)| at.elapsed() < Duration::from_millis(100))
-                {
-                    return Err(ApiError::status(StatusCode::TOO_MANY_REQUESTS));
-                }
-                live.pictures
-                    .insert(caller.user, (Instant::now(), image.into()));
-                json!({})
-            }
-            Some("get") => {
-                let ids = input.action["ids"]
-                    .as_array()
-                    .filter(|ids| ids.len() <= 16)
-                    .ok_or_else(ApiError::bad_request)?;
-                let mut result = json!({});
-                for id in ids {
-                    let id = id
-                        .as_str()
-                        .and_then(Id::parse)
-                        .ok_or_else(ApiError::bad_request)?;
-                    result[id.to_string()] = json!(live.pictures.get(&id).map(|(_, s)| s));
-                }
-                result
-            }
-            _ => return Err(ApiError::bad_request()),
-        };
-        Ok(Json(val))
-    })
-    .await
-}
-
 const SDK: &str = include_str!("../../../../../sdk/client.js");
 const MEDIA: &str = include_str!("../../../../../sdk/media.js");
 fn media_type(path: &str) -> &'static str {
@@ -1316,7 +1252,7 @@ pub(super) async fn asset(
                 continue;
             }
             for lease in live.leases.values_mut() {
-                if lease.touched.elapsed() >= Duration::from_secs(60)
+                if lease.touched.elapsed() >= LEASE_LIFETIME
                     || !seated(&state, *channel, lease.user)
                 {
                     continue;
@@ -1515,17 +1451,16 @@ pub(super) async fn sandbox_asset(
                 }) {
                     return None;
                 }
-                (lease.touched.elapsed() < Duration::from_secs(60)
-                    && seated(&state, *scope, lease.user))
-                .then(|| {
-                    (
-                        *install,
-                        live.installed.digest.clone(),
-                        live.installed.manifest.clone(),
-                        lease.parent_origin.clone(),
-                        (lease.user, lease.account_version, lease.account_session),
-                    )
-                })
+                (lease.touched.elapsed() < LEASE_LIFETIME && seated(&state, *scope, lease.user))
+                    .then(|| {
+                        (
+                            *install,
+                            live.installed.digest.clone(),
+                            live.installed.manifest.clone(),
+                            lease.parent_origin.clone(),
+                            (lease.user, lease.account_version, lease.account_session),
+                        )
+                    })
             })
             .ok_or_else(ApiError::forbidden)?
     };

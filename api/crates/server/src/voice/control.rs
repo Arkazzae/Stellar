@@ -189,19 +189,31 @@ impl Control {
         }
     }
 
-    pub async fn create_session(&self, room: Id, user: Id) -> Result<Created, Unavailable> {
+    pub async fn create_session(
+        &self,
+        room: Id,
+        user: Id,
+        activity: bool,
+    ) -> Result<Created, Unavailable> {
+        // A dedicated route also fails closed against SFUs predating activity
+        // cameras. Sending a voice-session request there would replace the call.
+        let path = if activity {
+            "v1/activity-sessions"
+        } else {
+            "v1/sessions"
+        };
         let body = format!("{{\"roomId\":\"{room}\",\"userId\":\"{user}\"}}");
         let answer = self
-            .call(Method::POST, "v1/sessions", Some(body), self.timing.command)
+            .call(Method::POST, path, Some(body), self.timing.command)
             .await?;
         expect(&answer, StatusCode::CREATED)?;
-        let wire: WireCreated = read(&answer, "v1/sessions")?;
+        let wire: WireCreated = read(&answer, path)?;
         match wire {
             WireCreated {
                 session_id: Some(session_id),
                 epoch: Some(epoch),
             } if !session_id.is_empty() && !epoch.is_empty() => Ok(Created { session_id, epoch }),
-            _ => Err(malformed("v1/sessions")),
+            _ => Err(malformed(path)),
         }
     }
 

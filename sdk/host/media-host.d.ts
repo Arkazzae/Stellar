@@ -1,8 +1,17 @@
 export interface HostMediaControls { stopCamera(): void; dispose(): void }
+/** Owned by the parent. Tracks and streams never cross the iframe port. */
+export interface ActivityCamera {
+  publish(stream: MediaStream, signal: AbortSignal, ended: () => void): Promise<void>;
+  watch(participant: string, show: (stream: MediaStream | null) => void): () => void;
+  dispose(): void;
+}
 export function bindMediaHost(options: {
   frame: HTMLIFrameElement; origin: string; nonce?: string; youtube?: boolean; title: string; permissions?: string[]; controls: HTMLElement;
   volume: HTMLInputElement; muted?: () => boolean; fixtures?: boolean; language?: string | (() => string);
-  tile(action: Record<string, unknown>): Promise<Record<string, string | null>>;
+  camera?: () => ActivityCamera;
+  cloneLocalCamera?: () => MediaStreamTrack | undefined;
+  /** Image relay for standalone development previews. */
+  tile?(action: Record<string, unknown>): Promise<Record<string, string | null>>;
   /** Where camera images are drawn, over the frame; a positioned ancestor of it. The page's body without it. */
   overlay?: HTMLElement;
   /**

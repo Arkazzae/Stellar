@@ -66,7 +66,7 @@ try {
 
 ### Performer camera overlays (`media.cameraTile`)
 
-For games like charades or tabletop spotlighting, Stellarr renders the consenting player's video **outside** the activity iframe so everyone in the session sees the camera right inside your layout while your JavaScript never touches raw camera pixels:
+Calling `open()` asks the player for permission to share their camera with this activity, including when their call camera is already on. In installed activities, Stellarr sends video over WebRTC through a dedicated media room. Only players who have joined the activity can receive it. A player can stop sharing from the activity bar or by leaving the game. The game positions the tile and Stellarr plays the video above the iframe. Camera tracks and pixels stay in the parent page.
 
 ```ts
 // 1. On the active performer's client, ask permission to share their camera tile:
@@ -101,6 +101,8 @@ if (session.media.youtube) {
 Packages served on dedicated `STELLARR_ACTIVITY_DOMAIN` origins or inside local `stellarr dev` previews (where `session.media.youtube` is `undefined`) can load the YouTube IFrame API directly.
 
 ### Testing media without physical devices
+
+The local simulator and private development previews use an image relay to simulate camera tiles. Install the activity on a test instance to exercise WebRTC and call coexistence.
 
 In `npx stellarr dev`, declaring `media.microphoneLevel` or `media.cameraTile` adds simulated device controls to the simulator header:
 

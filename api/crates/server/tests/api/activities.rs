@@ -92,9 +92,153 @@ async fn announced(peer: &mut Peer, channel: Id, accept: impl Fn(&Value) -> bool
         .clone()
 }
 
+async fn browser(rig: &Rig, person: &Person) -> Peer {
+    use crate::support::{HubClient, upgrade_with};
+    let cookie = format!(
+        "stellarr-dev-session={}",
+        person.client.cookie("stellarr-dev-session").unwrap()
+    );
+    let upgraded = upgrade_with(
+        rig.server.address(),
+        "",
+        Some(&cookie),
+        "chat.test",
+        &[
+            ("Origin", ORIGIN),
+            ("X-Forwarded-Proto", "https"),
+            ("Sec-WebSocket-Protocol", "stellarr.v1"),
+        ],
+    )
+    .await;
+    Peer {
+        hub: HubClient::from_upgrade(upgraded).await,
+    }
+}
+
+#[tokio::test]
+async fn activity_cameras_share_only_the_activity_sfu_room_and_lose_access_on_departure() {
+    let rig = voice_rig().await;
+    let bob = rig.person("bob").await;
+    let guest = rig.person("guest").await;
+    install(
+        &rig.server,
+        INSTALL,
+        &json!({"id":"charades","name":"Charades","description":"Game",
+        "version":"1.0.0","protocol":1,"permissions":["media.cameraTile"]}),
+    );
+    let mut alice_ws = browser(&rig, &rig.owner).await;
+    let mut bob_ws = browser(&rig, &bob).await;
+    let mut guest_ws = browser(&rig, &guest).await;
+    for peer in [&mut alice_ws, &mut bob_ws, &mut guest_ws] {
+        peer.join(rig.salon).await;
+    }
+    let call = alice_ws.open_media(rig.salon).await;
+    let mut launches = Vec::new();
+    for person in [&rig.owner, &bob] {
+        let reply = launch_in(
+            person,
+            rig.salon,
+            json!({"install":INSTALL, "device":"desktop"}),
+        )
+        .await;
+        launches.push(reply.json::<Value>()["access"].clone());
+    }
+    let camera = |index: usize, action: Value| {
+        json!([rig.salon,{
+            "install":INSTALL, "access":launches[index], "action":action
+        }])
+    };
+    let open = json!({"op":"open"});
+    assert_eq!(
+        guest_ws.ok("ActivityCamera", camera(0, open.clone())).await["status"],
+        403
+    );
+    let alice = alice_ws.ok("ActivityCamera", camera(0, open.clone())).await["value"].clone();
+    let bob_cam = bob_ws.ok("ActivityCamera", camera(1, open.clone())).await["value"].clone();
+    let room = Id::parse(alice["channelId"].as_str().unwrap()).unwrap();
+    let id = alice["sessionId"].as_str().unwrap();
+    let viewer = bob_cam["sessionId"].as_str().unwrap();
+    assert_eq!(bob_cam["channelId"], json!(room));
+    assert_ne!(room, rig.salon);
+    assert_eq!(
+        rig.media.session_of(id),
+        Some((room.to_string(), rig.owner.id.clone()))
+    );
+    assert_eq!(
+        rig.media.session_of(viewer),
+        Some((room.to_string(), bob.id.clone()))
+    );
+    guest_ws
+        .refused(
+            "OpenMediaSession",
+            json!([room]),
+            "Not seated in this voice room.",
+        )
+        .await;
+    let subscriptions = r#"{"mids":[]}"#;
+    guest_ws
+        .media_refused(
+            room,
+            id,
+            "subscriptions",
+            subscriptions,
+            "Invalid media signal.",
+        )
+        .await;
+    alice_ws
+        .media(room, id, "subscriptions", subscriptions)
+        .await;
+    bob_ws
+        .media(room, viewer, "subscriptions", subscriptions)
+        .await;
+    alice_ws
+        .media(rig.salon, &call, "subscriptions", subscriptions)
+        .await;
+
+    rig.media.signal(viewer, "tracks", r#"{"tracks":[]}"#);
+    let event = bob_ws
+        .next_where("MediaSignal", |event| event["sessionId"] == viewer)
+        .await;
+    assert_eq!(event["channelId"], json!(room));
+    assert!(guest_ws.drain("MediaSignal").await.is_empty());
+
+    let leave = format!("/api/activities/{}/leave", rig.salon);
+    assert_eq!(
+        post(
+            &bob,
+            &leave,
+            json!({"install":INSTALL,"access":launches[1]})
+        )
+        .await
+        .status,
+        200
+    );
+    rig.media.delete_of(viewer).await;
+    bob_ws
+        .media_refused(
+            room,
+            viewer,
+            "subscriptions",
+            subscriptions,
+            "Invalid media signal.",
+        )
+        .await;
+    assert_eq!(
+        bob_ws.ok("ActivityCamera", camera(1, open)).await["status"],
+        403
+    );
+    alice_ws
+        .media(room, id, "subscriptions", subscriptions)
+        .await;
+    assert_eq!(end_in(&rig.owner, rig.salon).await.status, 200);
+    rig.media.delete_of(id).await;
+    alice_ws
+        .media(rig.salon, &call, "subscriptions", subscriptions)
+        .await;
+}
+
 #[tokio::test]
 async fn room_socket_delivers_to_the_subscribed_connection_and_wakes_host_commands() {
-    use crate::support::{HubClient, upgrade_with};
     let rig = voice_rig().await;
     let bob = rig.person("bob").await;
     install(
@@ -103,27 +247,6 @@ async fn room_socket_delivers_to_the_subscribed_connection_and_wakes_host_comman
         &json!({"id":"cards","name":"Cards","description":"Table",
         "version":"1.0.0","protocol":1,"authority":"host","seats":2}),
     );
-    async fn browser(rig: &Rig, person: &Person) -> Peer {
-        let cookie = format!(
-            "stellarr-dev-session={}",
-            person.client.cookie("stellarr-dev-session").unwrap()
-        );
-        let upgraded = upgrade_with(
-            rig.server.address(),
-            "",
-            Some(&cookie),
-            "chat.test",
-            &[
-                ("Origin", ORIGIN),
-                ("X-Forwarded-Proto", "https"),
-                ("Sec-WebSocket-Protocol", "stellarr.v1"),
-            ],
-        )
-        .await;
-        Peer {
-            hub: HubClient::from_upgrade(upgraded).await,
-        }
-    }
     let mut alice_ws = browser(&rig, &rig.owner).await;
     let mut bob_ws = browser(&rig, &bob).await;
     alice_ws.join(rig.salon).await;
@@ -154,6 +277,8 @@ async fn room_socket_delivers_to_the_subscribed_connection_and_wakes_host_comman
         body["action"] = action;
         json!([salon, body])
     };
+    let denied = alice_ws.ok("ActivityCamera", args(0, json!({"op":"open"}))).await;
+    assert_eq!(denied["status"], 403, "the manifest only requested room access");
     let read = json!({"op":"read","after":0,"roomEvents":true});
     assert_eq!(
         bob_ws.ok("ActivityRoom", args(0, read.clone())).await["status"],

@@ -191,8 +191,16 @@ export class WebSocketRealtimeClient implements RealtimeClient {
     return value;
   }
 
-  async activityRoom(place: string, input: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const reply = await this.invoke("ActivityRoom", place, input);
+  activityCamera(place: string, input: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.activityRequest("ActivityCamera", place, input);
+  }
+
+  activityRoom(place: string, input: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.activityRequest("ActivityRoom", place, input);
+  }
+
+  private async activityRequest(method: string, place: string, input: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const reply = await this.invoke(method, place, input);
     if (!isRecord(reply)) throw new Error("Invalid activity room response");
     if (typeof reply.error === "string") throw Object.assign(new Error(reply.error), { status: reply.status });
     if (!isRecord(reply.value)) throw new Error("Missing activity room response");

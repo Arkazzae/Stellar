@@ -38,7 +38,8 @@ For remote callers, advertise a reachable IPv4 candidate and forward both UDP an
 
 Implemented in `api/crates/server/src/voice/media.rs`:
 
-- **`OpenMediaSession(channelId) → { sessionId }`:** Requires an active voice seat ([Voice seats](./rtc-protocol.md#voice-seats-viewchannel-and-connect)). Replaces any prior session on the same `userId` without race clobbering. Throws `"Invalid channelId."`, `"Not seated in this voice room."`, or `"Media server is unavailable."`.
+- **`OpenMediaSession(channelId) → { sessionId }`:** Requires an active voice seat ([Voice seats](./rtc-protocol.md#voice-seats-viewchannel-and-connect)). Replaces the previous voice session on the same `userId` without race clobbering. Throws `"Invalid channelId."`, `"Not seated in this voice room."`, or `"Media server is unavailable."`.
+- `ActivityCamera(place, { install, access, action })` opens or closes a separate session for the signed-in activity participant. The server selects the media room and revokes access when the launch or hub connection ends.
 - **`SendMediaSignal` / `MediaSignal` (`protocolVersion: 1`, `≤ 128 KiB`):**
 
 | `kind` | Direction | Payload |
@@ -106,6 +107,7 @@ Authenticated with `Authorization: Bearer <media-control-secret>` on all routes 
 | `POST /v1/reset` | `200 { epoch, seq: 0 }` |
 | `POST /v1/sessions` | `201 { sessionId, epoch }` (`422 invalid-request`) |
 | `DELETE /v1/sessions/{id}` | `204` (idempotent) |
+| `POST /v1/activity-sessions` | Opens a camera session in a dedicated activity room. Reopening replaces the same account’s session in that activity. The account’s voice session continues independently. |
 | `POST /v1/sessions/{id}/{offer,answer,candidate,subscriptions}` | `204` (`404 unknown-session`, `409 stale-negotiation`, `422 invalid-*` / `limit-exceeded`, `413 payload-too-large`) |
 | `GET /v1/events?epoch=…&after=…&waitMs=…` | Long-polls up to `256` `signal`/`closed` events (`4,096`-event ring buffer; returns `reset: true` on epoch change or overflow) |
 | `GET /v1/stats` | Per-room/session `ingress`, `egress`, and GoogCC `downlink` (`estimateBps`, `forwardedBps`, `desiredBps`, `paddingBps`, `heldBack`, `holds`, `resumes`) |
