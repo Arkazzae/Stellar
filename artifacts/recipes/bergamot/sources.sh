@@ -9,7 +9,7 @@
 # __FILE__ in Marian's error messages, and with it the bytes match Mozilla's.
 set -eu
 
-checkout=/builds/worker/checkouts
+checkout=${1:-/builds/worker/checkouts}
 
 # mozilla/translations at v0.6.0 (inference/BERGAMOT_VERSION), the revision of
 # the bergamot-translator 3.0 that Firefox downloads from Remote Settings; built
@@ -32,7 +32,7 @@ inference/marian-fork/src/3rd_party/onnxjs https://github.com/browsermt/onnxjs.g
 inference/marian-fork/src/3rd_party/onnxjs/deps/eigen https://github.com/abhi-agg/eigen-git-mirror.git fff37f4ca0397af9ed7e04f3bd6b893a1ea2b08e
 "
 
-rm -rf "$checkout"
+mkdir -p "$checkout"
 git init --quiet "$checkout"
 git -C "$checkout" remote add origin "$translations_url"
 # Only inference/ is built; the training pipeline and its data stay behind.
