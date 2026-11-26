@@ -99,10 +99,3 @@ Read the full docs at [arkazzae.github.io/Stellarr](https://arkazzae.github.io/S
 ## License
 
 Source code is licensed under the [MIT License](LICENSE).
-
-## Name and logo policy
-
-The Stellarr name, logo, and mascot are not covered by the MIT License of the source code (see [`LICENSE`](LICENSE)):
-
-- You may run modified or unmodified builds for your own group, use the name and mark to refer to Stellarr, and state that your project is based on Stellarr.
-- Do not distribute modified forks under the Stellarr name or logo, imply official endorsement, or use the mark on commercial hosted services or merchandise without prior permission (open a GitHub issue to request permission).
