@@ -26,6 +26,7 @@ import { SpeechDetector } from "../capture/vad";
 import type { CallKeyEvent, CallKeys } from "../e2ee/callCrypto";
 import { GTCRN_WASM_URL, resetSuppressorCacheForTests } from "../capture/noiseSuppression";
 import { DOWNLOAD_SHOWN_AFTER_MS } from "../capture/suppressorDownload";
+import { TALK_RELEASE_TAIL_MS } from "../capture/webrtcMicrophone";
 import { RING_HOLD_MS } from "./speakingHold";
 import { WebRtcVoiceClient, type WebRtcVoiceClientOptions } from "./webrtc";
 import artifactSizes from "virtual:artifact-sizes";
@@ -3945,5 +3946,106 @@ describe("the chosen suppressor's download", () => {
     body!.close();
     await vi.advanceTimersByTimeAsync(0);
     expect(client.getSnapshot().suppressorDownload).toBeNull();
+  });
+});
+
+describe("push to talk", () => {
+  // No Web Audio here, so the microphone has no gate and push to talk
+  // switches its track: what the others get is what `enabled` says.
+  beforeEach(() => {
+    settings = { ...DEFAULT_SETTINGS, inputMode: "pushToTalk" };
+  });
+
+  it("sends only while the key is held and for the tail after, telling nobody", async () => {
+    const client = build();
+    await joined(client);
+    vi.useFakeTimers();
+    realtime.sent = [];
+    expect(micTrack.enabled).toBe(false);
+
+    client.setTalking(true);
+    expect(micTrack.enabled).toBe(true);
+    expect(client.getSnapshot().talking).toBe(true);
+
+    client.setTalking(false);
+    vi.advanceTimersByTime(TALK_RELEASE_TAIL_MS - 1);
+    expect(micTrack.enabled).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(micTrack.enabled).toBe(false);
+    expect(client.getSnapshot()).toMatchObject({ talking: false, muted: false });
+    // No mute flips for the others and nothing goes to the hub per press.
+    expect(realtime.sent).toEqual([]);
+  });
+
+  it("lights the ring only for speech that goes out, and at once when the key comes down mid-sentence", async () => {
+    const client = build();
+    await joined(client);
+    vi.useFakeTimers();
+
+    hear(client, "u-a", { speaking: true, level: 0.6 });
+    expect(peerOf(client, "u-a")?.speaking).toBe(false);
+
+    client.setTalking(true);
+    expect(peerOf(client, "u-a")?.speaking).toBe(true);
+
+    client.setTalking(false);
+    vi.advanceTimersByTime(TALK_RELEASE_TAIL_MS);
+    // Off with the microphone, without the hold a pause in speech gets.
+    expect(peerOf(client, "u-a")?.speaking).toBe(false);
+
+    // A pause just before the key comes up is held as ever, but only while
+    // the microphone is still open.
+    client.setTalking(true);
+    hear(client, "u-a", { speaking: false, level: 0.1 });
+    expect(peerOf(client, "u-a")?.speaking).toBe(true);
+    client.setTalking(false);
+    vi.advanceTimersByTime(TALK_RELEASE_TAIL_MS);
+    expect(RING_HOLD_MS).toBeGreaterThan(TALK_RELEASE_TAIL_MS);
+    expect(peerOf(client, "u-a")?.speaking).toBe(false);
+
+    client.setTalking(true);
+    client.setMuted(true);
+    expect(micTrack.enabled).toBe(false);
+    expect(peerOf(client, "u-a")?.speaking).toBe(false);
+  });
+
+  it("closes at once, tail and all, when the page is hidden", async () => {
+    const client = build();
+    await joined(client);
+    vi.useFakeTimers();
+    client.setTalking(true);
+    client.setTalking(false);
+
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    expect(micTrack.enabled).toBe(false);
+    expect(client.getSnapshot().talking).toBe(false);
+  });
+
+  it("stays as it was in voice activity: the microphone sends, and the key does nothing", async () => {
+    settings = { ...DEFAULT_SETTINGS };
+    const client = build();
+    await joined(client);
+
+    expect(micTrack.enabled).toBe(true);
+    client.setTalking(true);
+    client.setTalking(false);
+    expect(micTrack.enabled).toBe(true);
+    expect(client.getSnapshot().talking).toBe(false);
+  });
+
+  it("follows a switch of the mode in the call, ahead of any reopen", async () => {
+    settings = { ...DEFAULT_SETTINGS };
+    const client = build();
+    await joined(client);
+
+    void client.applySettings({ ...DEFAULT_SETTINGS, inputMode: "pushToTalk" });
+    expect(micTrack.enabled).toBe(false);
+
+    client.setTalking(true);
+    void client.applySettings({ ...DEFAULT_SETTINGS });
+    expect(micTrack.enabled).toBe(true);
+    expect(client.getSnapshot().talking).toBe(false);
   });
 });

@@ -87,6 +87,8 @@ export interface VoiceValue {
   soundboardEnabled: boolean;
   /** True while the current RTC room belongs to a two-person DM. */
   privateCall: boolean;
+  /** The microphone is set to push to talk, which the talk key then drives. */
+  pushToTalk: boolean;
 
   join: (channelId: string, presentation?: VoiceRoomPresentation) => void;
   leave: () => Promise<void>;
@@ -96,6 +98,8 @@ export interface VoiceValue {
   toggleDeafen: () => void;
   toggleCamera: () => void;
   toggleShare: () => void;
+  /** The talk key went down or came up; see `VoiceClient.setTalking`. The same function for good. */
+  setTalking: (held: boolean, cut?: boolean) => void;
   /** Opt in to one remote screen by its key; any other one stops being watched. */
   watchShare: (key: string) => void;
   stopWatchingShare: () => void;
@@ -284,6 +288,13 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     ports.soundboard.getSnapshot,
     ports.soundboard.getSnapshot,
   );
+  // One flag rather than the settings, so a dragged slider renders nothing here.
+  const pushToTalkChosen = () => ports.voiceSettings.getSnapshot().inputMode === "pushToTalk";
+  const pushToTalk = useSyncExternalStore(
+    ports.voiceSettings.subscribe,
+    pushToTalkChosen,
+    pushToTalkChosen,
+  );
 
   useVoiceSettingsSync({
     holder,
@@ -461,6 +472,13 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       : client.startCamera());
   }, [holder]);
 
+  // Stable: a press changes the call's state, and that must not rebuild the
+  // talk key's listeners, which would let the held key go.
+  const setTalking = useCallback(
+    (held: boolean, cut?: boolean) => holder.getClient()?.setTalking(held, cut),
+    [holder],
+  );
+
   const watchShare = useCallback((key: string) => setWatchedShareKey(key), []);
   const stopWatchingShare = useCallback(() => setWatchedShareKey(null), []);
 
@@ -587,6 +605,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       sounds: soundboard.sounds,
       soundboard,
       soundboardEnabled,
+      pushToTalk,
       join,
       leave,
       reconnect,
@@ -594,6 +613,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       toggleDeafen,
       toggleCamera,
       toggleShare,
+      setTalking,
       watchShare,
       stopWatchingShare,
       playSound,
@@ -609,6 +629,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       problem,
       soundboard,
       soundboardEnabled,
+      pushToTalk,
       join,
       leave,
       reconnect,
@@ -616,6 +637,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       toggleDeafen,
       toggleCamera,
       toggleShare,
+      setTalking,
       watchShare,
       stopWatchingShare,
       playSound,

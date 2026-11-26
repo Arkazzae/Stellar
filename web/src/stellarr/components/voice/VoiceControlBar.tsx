@@ -3,6 +3,7 @@ import { useState, useSyncExternalStore } from "react";
 import { Icon } from "@stellarr/icons";
 import { ActivityIcon } from "@/components/activities/ActivityIcon";
 import type { PopoverTriggerProps } from "@/components/primitives/Popover";
+import { keyChordParts, type KeyChord } from "@/lib/keybinds/keybinds";
 import type { Sound, SoundboardLive, SuppressorDownload, VoiceSettings } from "@/ports";
 import { useLanguage } from "@/state/LanguageProvider";
 
@@ -55,6 +56,10 @@ export type BarActivity =
 
 export interface VoiceControlBarProps {
   muted: boolean;
+  /** The talk key, which the microphone's title names in push to talk; null while none is set. */
+  talkKey?: KeyChord | null;
+  /** Push to talk has the microphone open: the button shows it on, as the camera's does. */
+  talking?: boolean;
   /** Everything you would hear is silenced: the call and the soundboard. */
   deafened: boolean;
   cameraOn: boolean;
@@ -115,6 +120,8 @@ export interface VoiceControlBarProps {
  */
 export function VoiceControlBar({
   muted,
+  talkKey = null,
+  talking = false,
   deafened,
   cameraOn,
   cameraPending = false,
@@ -180,7 +187,16 @@ export function VoiceControlBar({
 
   const cinemaTitle = cinema ? t("voiceBar.cinemaExit") : t("voiceBar.cinema");
   const fullscreenTitle = fullscreen ? t("voiceBar.fullscreenExit") : t("voiceBar.fullscreen");
-  const micTitle = muted ? t("voiceBar.unmute") : t("voiceBar.mute");
+  const muteTitle = muted ? t("voiceBar.unmute") : t("voiceBar.mute");
+  // The button still mutes. In push to talk its title also says which key
+  // opens the microphone, or that none does yet.
+  const pushToTalk = settings.inputMode === "pushToTalk";
+  const micTitle = !pushToTalk
+    ? muteTitle
+    : talkKey === null
+      ? t("voiceBar.pushToTalkNoKey", { action: muteTitle })
+      : t("voiceBar.pushToTalkTitle", { action: muteTitle, key: keyChordParts(talkKey).join("+") });
+  const micClass = muted ? "vc-btn muted" : pushToTalk && talking ? "vc-btn on" : "vc-btn";
   const soundTitle = deafened ? t("shell.unmuteSound") : t("shell.muteSound");
   const cameraTitle = cameraPending
     ? t("voiceBar.cameraStarting")
@@ -195,7 +211,7 @@ export function VoiceControlBar({
           <div className="vc-ctl">
             <button
               type="button"
-              className={muted ? "vc-btn muted" : "vc-btn"}
+              className={micClass}
               aria-pressed={muted}
               title={micTitle}
               aria-label={t("voice.microphone")}

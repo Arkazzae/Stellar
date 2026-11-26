@@ -16,6 +16,8 @@ const owners = vi.hoisted(() => ({
     toggleCamera: vi.fn(),
     toggleDeafen: vi.fn(),
     toggleMute: vi.fn(),
+    pushToTalk: false,
+    setTalking: vi.fn(),
   },
 }));
 
@@ -46,7 +48,35 @@ describe("KeybindProvider", () => {
   beforeEach(() => {
     window.localStorage.clear();
     owners.voice.channelId = "voice-1";
+    owners.voice.pushToTalk = false;
     vi.clearAllMocks();
+  });
+
+  it("holds push to talk with the talk key, only in that mode and in a call", () => {
+    const talk = { code: "KeyV", ctrl: false, alt: false, shift: false, meta: false };
+    writeStoredKeybindings({ ...DEFAULT_KEYBINDINGS, pushToTalk: talk });
+    owners.voice.pushToTalk = true;
+    const { rerender } = render(<KeybindProvider><span>call</span></KeybindProvider>);
+
+    fireEvent.keyDown(document, { code: "KeyV" });
+    fireEvent.keyUp(document, { code: "KeyV" });
+    expect(owners.voice.setTalking.mock.calls).toEqual([[true], [false, false]]);
+    expect(owners.voice.toggleMute).not.toHaveBeenCalled();
+
+    // Held as the call ends: let go at once, and nothing more after it.
+    fireEvent.keyDown(document, { code: "KeyV" });
+    owners.voice.channelId = null;
+    rerender(<KeybindProvider><span>idle</span></KeybindProvider>);
+    fireEvent.keyDown(document, { code: "KeyV" });
+    expect(owners.voice.setTalking.mock.calls.slice(2)).toEqual([[true], [false, true]]);
+
+    owners.voice.channelId = "voice-1";
+    owners.voice.pushToTalk = false;
+    rerender(<KeybindProvider><span>call</span></KeybindProvider>);
+    const press = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, code: "KeyV" });
+    document.dispatchEvent(press);
+    expect(owners.voice.setTalking).toHaveBeenCalledTimes(4);
+    expect(press.defaultPrevented).toBe(false);
   });
 
   it("routes default and custom shortcuts to their voice action owners", () => {

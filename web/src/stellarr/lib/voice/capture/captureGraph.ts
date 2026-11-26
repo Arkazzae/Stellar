@@ -3,7 +3,7 @@ import { usesWorkletSuppression, type WorkletSuppressor } from "../audioProfiles
 import { buildGateNode } from "./gateNode";
 import type { DetectorStages } from "./micCapture";
 import { attachSuppressor, type NoiseSuppressorHandle } from "./noiseSuppression";
-import { clampInputGain, type VoiceSettings } from "../settings";
+import { clampInputGain, wantsInputGate, type VoiceSettings } from "../settings";
 
 /**
  * The Web Audio graph between the device and the peers:
@@ -36,6 +36,7 @@ export interface CaptureGraph {
   levelling: boolean;
   setSensitivity(sensitivity: number): void;
   setInputGain(db: number): void;
+  holdGate(open: boolean | null): void;
   fadeIn(): void;
   resume(): Promise<boolean>;
   /** Idempotent; releases every node and closes the context. */
@@ -238,6 +239,14 @@ function controlsFor(
         // The port is closed; the next recapture picks the value up anyway.
       }
     },
+    holdGate(open) {
+      if (disposed || !detector || !stages.gate) return;
+      try {
+        detector.port.postMessage({ type: "hold", open });
+      } catch {
+        // The port is closed; the capture is on its way out.
+      }
+    },
     setInputGain(db) {
       if (disposed) return;
       gainTarget = dbToGain(clampInputGain(db));
@@ -289,14 +298,18 @@ export async function buildCaptureGraph(
     void closeContext(context);
   };
   const stages: DetectorStages = {
-    gate: settings.inputGate,
+    gate: wantsInputGate(settings),
     leveller: settings.autoGainControl,
   };
 
   try {
     const assembly = await assemble(context, raw, settings, stages, deps, owned);
     if (assembly) {
-      return controlsFor(context, assembly, stages, settings.inputGainDb, teardown);
+      const graph = controlsFor(context, assembly, stages, settings.inputGainDb, teardown);
+      // Made for push to talk, the gate starts shut: whoever sends this
+      // track opens it with the key, and nothing goes out before that.
+      if (settings.inputMode === "pushToTalk") graph.holdGate(false);
+      return graph;
     }
   } catch {
     // A node the context refuses to create; fall through to the clean-up.

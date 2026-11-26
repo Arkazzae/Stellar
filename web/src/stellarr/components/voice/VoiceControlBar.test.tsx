@@ -30,6 +30,7 @@ const settings: VoiceSettings = {
   vadSensitivity: 60,
   inputGainDb: 0,
   inputGate: true,
+  inputMode: "voiceActivity",
 };
 
 function props(

@@ -59,8 +59,9 @@ describe("KeybindsPane", () => {
   it("marks a shortcut that has no chord and cannot clear it again", () => {
     setup({ bindings: { ...DEFAULT_KEYBINDINGS, disconnect: null } });
 
-    // The camera has no default chord, and here the call shortcut was cleared too.
-    expect(screen.getAllByText("Nieprzypisany")).toHaveLength(2);
+    // The camera and the talk key have no default chord, and here the call
+    // shortcut was cleared too.
+    expect(screen.getAllByText("Nieprzypisany")).toHaveLength(3);
     expect(
       screen.getByRole("button", { name: "Wyczyść skrót: Rozłącz rozmowę" }),
     ).toBeDisabled();

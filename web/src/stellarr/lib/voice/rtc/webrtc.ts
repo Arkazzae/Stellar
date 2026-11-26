@@ -156,6 +156,13 @@ export class WebRtcVoiceClient implements VoiceClient {
   private channelId: ChannelId | null = null;
   private settings: VoiceSettings;
   private selfSpeaking = false;
+  /**
+   * What the detector last said of this side's own voice, before the mute
+   * and push to talk are applied. Kept so that pressing the talk key in the
+   * middle of a sentence lights the ring at once: the detector says nothing
+   * new for a voice that simply goes on.
+   */
+  private selfHeard = false;
   /** The screen this side watches, as last told to the others. */
   private watching: { userId: UserId; streamId: string } | null = null;
   private disposed = false;
@@ -214,8 +221,10 @@ export class WebRtcVoiceClient implements VoiceClient {
     });
     if (typeof document !== "undefined") {
       document.addEventListener("visibilitychange", this.restSpeechOutOfSight);
+      document.addEventListener("visibilitychange", this.cutTalkWhenAway);
       this.restSpeechOutOfSight();
     }
+    if (typeof window !== "undefined") window.addEventListener("pagehide", this.cutTalkWhenAway);
     this.lifecycle = new LifecycleWatcher({
       onResume: () => {
         void this.recoverAfterResume();
@@ -246,6 +255,7 @@ export class WebRtcVoiceClient implements VoiceClient {
       onDeviceLost: () => {
         void this.recaptureAfterDeviceLoss();
       },
+      talkingChanged: () => this.talkingChanged(),
     });
     this.health = new CallHealth({
       translate: this.t,
@@ -399,6 +409,7 @@ export class WebRtcVoiceClient implements VoiceClient {
     const session = ++this.session;
     this.channelId = channelId;
     this.settings = this.options.getSettings?.() ?? this.settings;
+    this.microphone.setInputMode(this.settings.inputMode);
     this.store.set({
       channelId,
       connection: "requesting-mic",
@@ -565,7 +576,9 @@ export class WebRtcVoiceClient implements VoiceClient {
     void this.leave();
     if (typeof document !== "undefined") {
       document.removeEventListener("visibilitychange", this.restSpeechOutOfSight);
+      document.removeEventListener("visibilitychange", this.cutTalkWhenAway);
     }
+    if (typeof window !== "undefined") window.removeEventListener("pagehide", this.cutTalkWhenAway);
     this.speech.dispose();
     this.remoteAudio.dispose();
     this.lifecycle.stop();
@@ -588,6 +601,11 @@ export class WebRtcVoiceClient implements VoiceClient {
     this.store.set({ muted });
     this.publishPeers();
     void this.broadcastState();
+  }
+
+  setTalking(held: boolean, cut = false): void {
+    if (this.disposed) return;
+    this.microphone.setTalking(held, cut);
   }
 
   setDeafened(deafened: boolean): void {
@@ -653,8 +671,12 @@ export class WebRtcVoiceClient implements VoiceClient {
    */
   applySettings(next: VoiceSettings): Promise<void> {
     // Before the queue: a download needs no capture, and outside a call there
-    // is none to wait for.
-    if (!this.disposed) this.downloads.choose(next.noiseSuppression);
+    // is none to wait for. The input mode too, so that choosing push to talk
+    // shuts the microphone now rather than after a reopen queued before it.
+    if (!this.disposed) {
+      this.downloads.choose(next.noiseSuppression);
+      this.microphone.setInputMode(next.inputMode);
+    }
     return this.settingsQueue.push({
       settings: next,
       recaptureMic: false,
@@ -788,6 +810,7 @@ export class WebRtcVoiceClient implements VoiceClient {
 
   private releaseMicrophone(): void {
     this.microphone.release();
+    this.selfHeard = false;
     this.selfSpeaking = false;
     this.ring.clear(this.options.selfUserId);
   }
@@ -1199,7 +1222,8 @@ export class WebRtcVoiceClient implements VoiceClient {
     const self = id === this.options.selfUserId;
     const person = self ? undefined : this.people.get(id);
     if (!self && person === undefined) return;
-    const speaking = self ? reading.speaking && !this.store.getSnapshot().muted : reading.speaking;
+    if (self) this.selfHeard = reading.speaking;
+    const speaking = self ? this.selfSent() : reading.speaking;
     if (speaking === (person === undefined ? this.selfSpeaking : person.speaking)) return;
     if (person === undefined) this.selfSpeaking = speaking;
     else person.speaking = speaking;
@@ -1219,6 +1243,48 @@ export class WebRtcVoiceClient implements VoiceClient {
   private readonly restSpeechOutOfSight = (): void => {
     this.speech.setResting(document.visibilityState === "hidden");
   };
+
+  /**
+   * Push to talk closes at once, tail and all, when the page is hidden or
+   * put away. The key's own listeners say the same; this side does not
+   * depend on them, and a tail timer in a hidden page may not run on time.
+   */
+  private readonly cutTalkWhenAway = (event: Event): void => {
+    if (event.type === "pagehide" || document.visibilityState === "hidden") {
+      this.microphone.setTalking(false, true);
+    }
+  };
+
+  /**
+   * This side's own voice as the others get it: the detector hears speech,
+   * and it goes out, neither muted nor held back by push to talk. The ring
+   * is lit from this, so it never shows a voice that is not being sent.
+   */
+  private selfSent(): boolean {
+    return this.selfHeard && !this.store.getSnapshot().muted && this.microphone.transmits;
+  }
+
+  /**
+   * Push to talk opened or closed the microphone. Nothing is signalled: the
+   * others see the ring their own detector draws from what reaches them.
+   * Here the ring follows at once, without the hold a pause in speech gets,
+   * as it does for a mute: what was just let go is not being sent.
+   */
+  private talkingChanged(): void {
+    this.store.set({ talking: this.microphone.talking });
+    const self = this.options.selfUserId;
+    // A pause just before the key came up left the ring held; with nothing
+    // sent any more, it goes now rather than when that hold runs out.
+    const wasHeld = !this.microphone.transmits && this.ring.clear(self);
+    const speaking = this.selfSent();
+    if (speaking === this.selfSpeaking) {
+      if (wasHeld) this.publishPeers();
+      return;
+    }
+    this.selfSpeaking = speaking;
+    this.ring.clear(self);
+    this.publishPeers();
+  }
 
   /** Whether this side is shown speaking: by the detector, or held a moment after it. */
   private selfShown(): boolean {

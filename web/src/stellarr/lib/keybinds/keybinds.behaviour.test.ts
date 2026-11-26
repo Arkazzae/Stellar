@@ -122,6 +122,64 @@ describe("validating a chord", () => {
   });
 });
 
+describe("the talk key", () => {
+  it("may be a single key, which the pressed actions still may not be", () => {
+    expect(validateKeyChord(chord("KeyV"), "pushToTalk")).toBe("valid");
+    expect(validateKeyChord(chord("Backquote", { shift: true }), "pushToTalk")).toBe("valid");
+    expect(validateKeyChord(chord("KeyV"), "toggleMute")).toBe("needs-modifier");
+    expect(validateKeyChord(chord("KeyV"))).toBe("needs-modifier");
+  });
+
+  it("refuses alone the keys that move the focus, press controls, close or scroll", () => {
+    for (const code of ["Escape", "Tab", "Enter", "NumpadEnter", "Space", "ArrowUp", "Home", "PageDown"]) {
+      expect(validateKeyChord(chord(code), "pushToTalk")).toBe("reserved");
+    }
+    expect(validateKeyChord(chord("Tab", { shift: true }), "pushToTalk")).toBe("reserved");
+    // With a modifier they no longer do their own job, so they may be held.
+    expect(validateKeyChord(chord("Space", { ctrl: true }), "pushToTalk")).toBe("valid");
+  });
+
+  it("refuses keys whose release does not reliably arrive, and the browser's own shortcuts", () => {
+    expect(validateKeyChord(chord("CapsLock"), "pushToTalk")).toBe("reserved");
+    expect(validateKeyChord(chord("CapsLock", { alt: true }), "pushToTalk")).toBe("reserved");
+    expect(validateKeyChord(chord("KeyW", { ctrl: true }), "pushToTalk")).toBe("reserved");
+  });
+
+  it("starts unbound, and bindings stored before it existed still read as they were", () => {
+    const parsed = parseKeybindings({
+      version: 1,
+      bindings: {
+        toggleMute: chord("KeyJ", { ctrl: true, alt: true }),
+        toggleDeafen: null,
+        toggleCamera: null,
+        disconnect: DEFAULT_KEYBINDINGS.disconnect,
+      },
+    });
+
+    expect(DEFAULT_KEYBINDINGS.pushToTalk).toBeNull();
+    expect(parsed).toEqual({
+      toggleMute: chord("KeyJ", { ctrl: true, alt: true }),
+      toggleDeafen: null,
+      toggleCamera: null,
+      disconnect: DEFAULT_KEYBINDINGS.disconnect,
+      pushToTalk: null,
+    });
+  });
+
+  it("keeps a single stored key for itself only, and a reserved one not at all", () => {
+    const parsed = parseKeybindings({
+      version: 1,
+      bindings: { ...DEFAULT_KEYBINDINGS, toggleCamera: chord("KeyV"), pushToTalk: chord("KeyV") },
+    });
+    expect(parsed.toggleCamera).toBeNull();
+    expect(parsed.pushToTalk).toEqual(chord("KeyV"));
+
+    expect(
+      parseKeybindings({ version: 1, bindings: { pushToTalk: chord("Tab") } }).pushToTalk,
+    ).toBeNull();
+  });
+});
+
 describe("matching key presses", () => {
   it("ignores a press made of modifiers only", () => {
     expect(chordFromEvent(new KeyboardEvent("keydown", { code: "ControlLeft", ctrlKey: true }))).toBeNull();

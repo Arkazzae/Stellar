@@ -55,6 +55,8 @@ vi.mock("@/state/hooks", () => ({
   useActivities: () => mocks.activities,
   useActivitySlot: () => mocks.activities.publishSlot.voice,
   useEmoji: () => ({ emoji: [] }),
+  // The call's bar names the talk key; none is set here.
+  useKeybinds: () => ({ bindings: { pushToTalk: null } }),
   useLanguage: () => mocks.language,
   useAccount: () => ({ preferences: { developerMode: false } }),
   useProfile: () => mocks.profile,

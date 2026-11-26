@@ -34,6 +34,18 @@ describe("voice settings on the account", () => {
     ).toMatchObject({ inputDeviceId: "mic-here", vadSensitivity: 30, inputGainDb: 6 });
   });
 
+  it("keep the input mode on this device, so a phone never inherits push to talk", () => {
+    const here = { ...DEFAULT_SETTINGS, inputMode: "pushToTalk" as const };
+
+    expect(voiceToWire(here)).not.toHaveProperty("inputMode");
+    expect(voiceFromWire({ ...DEFAULT_SETTINGS, inputMode: "pushToTalk" }, DEFAULT_SETTINGS)).toMatchObject({
+      inputMode: "voiceActivity",
+    });
+    expect(voiceFromWire({ ...DEFAULT_SETTINGS, inputMode: "voiceActivity" }, here)).toMatchObject({
+      inputMode: "pushToTalk",
+    });
+  });
+
   it("clamps what another build wrote instead of trusting it", () => {
     expect(voiceFromWire({ version: DEFAULT_SETTINGS.version, inputGainDb: 900 }, DEFAULT_SETTINGS)).toMatchObject({
       inputGainDb: 24,

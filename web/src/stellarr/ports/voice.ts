@@ -32,6 +32,8 @@ export {
   INPUT_GAIN_MAX_DB,
   INPUT_GAIN_MIN_DB,
   INPUT_GAIN_STEP_DB,
+  INPUT_MODE_HINT,
+  INPUT_MODE_LABEL,
   NOISE_MODE_HINT,
   NOISE_MODE_LABEL,
   OPUS_PROFILE_HINT,
@@ -44,6 +46,7 @@ export {
   PLAYBACK_TUNING_PRESETS,
 } from "@/lib/voice/settings";
 export type {
+  InputMode,
   NoiseSuppressionMode,
   OpusProfileId,
   OpusQualityId,

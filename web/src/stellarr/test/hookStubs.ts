@@ -1,6 +1,7 @@
 import { vi } from "vitest";
 
 import { IDLE_SOUNDBOARD } from "@/components/voice/soundboardLive";
+import { DEFAULT_KEYBINDINGS } from "@/lib/keybinds/keybinds";
 import type { Ports } from "@/ports";
 import type {
   AccountValue,
@@ -10,6 +11,7 @@ import type {
   EmojiValue,
   EncryptionValue,
   FriendsValue,
+  KeybindValue,
   ProfileValue,
   SessionValue,
   UiValue,
@@ -36,6 +38,7 @@ export interface HookStubs {
   emoji: EmojiValue;
   encryption: EncryptionValue;
   friends: FriendsValue;
+  keybinds: KeybindValue;
   ports: Ports;
   profile: ProfileValue;
   session: SessionValue;
@@ -156,6 +159,16 @@ function defaults(): HookStubs {
       remove: vi.fn(),
       block: vi.fn(),
       unblock: vi.fn(),
+    }),
+    keybinds: stub<KeybindValue>({
+      bindings: { ...DEFAULT_KEYBINDINGS },
+      recording: null,
+      recordingError: null,
+      beginRecording: vi.fn(),
+      cancelRecording: vi.fn(),
+      clearBinding: vi.fn(),
+      resetBindings: vi.fn(),
+      replaceBindings: vi.fn(),
     }),
     ports: stub<Ports>({
       admin: {
@@ -293,6 +306,7 @@ export const hooksModule = {
   useEmoji: () => stubs.emoji,
   useEncryption: () => stubs.encryption,
   useFriends: () => stubs.friends,
+  useKeybinds: () => stubs.keybinds,
   usePorts: () => stubs.ports,
   useProfile: () => stubs.profile,
   useSession: () => stubs.session,

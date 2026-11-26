@@ -30,6 +30,7 @@ const settings: VoiceSettings = {
   vadSensitivity: 60,
   inputGainDb: 0,
   inputGate: true,
+  inputMode: "voiceActivity",
 };
 
 const drum: Sound = {
@@ -219,13 +220,23 @@ describe("VoiceControlBar buttons", () => {
   it("shows the mute state on the microphone button and toggles it", async () => {
     const user = userEvent.setup();
     const onToggleMute = vi.fn();
-    render(<VoiceControlBar {...props({ muted: true, onToggleMute })} />);
+    const { rerender } = render(<VoiceControlBar {...props({ muted: true, onToggleMute })} />);
 
     const button = screen.getByRole("button", { name: "Mikrofon" });
     expect(button).toHaveAttribute("aria-pressed", "true");
     expect(button).toHaveAttribute("title", "Wyłącz wyciszenie");
     await user.click(button);
     expect(onToggleMute).toHaveBeenCalledOnce();
+
+    // In push to talk it still mutes, names the key, and is on while it sends.
+    const pushToTalk = { ...settings, inputMode: "pushToTalk" as const };
+    const talkKey = { code: "KeyV", ctrl: false, alt: false, shift: false, meta: false };
+    rerender(<VoiceControlBar {...props({ settings: pushToTalk, talkKey, talking: true })} />);
+    expect(button).toHaveAttribute("title", "Wycisz. Naciśnij i mów: przytrzymaj V");
+    expect(button).toHaveClass("on");
+    rerender(<VoiceControlBar {...props({ settings: pushToTalk, talkKey: null })} />);
+    expect(button.getAttribute("title")).toMatch(/^Wycisz\. Brak klawisza mówienia/);
+    expect(button).not.toHaveClass("on");
   });
 
   it("keeps the camera button off while it starts or when the browser has none", () => {

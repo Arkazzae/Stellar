@@ -315,3 +315,39 @@ describe("buildCaptureGraph gain control", () => {
     graph?.dispose();
   });
 });
+
+describe("buildCaptureGraph for push to talk", () => {
+  it("builds the gate even with the voice gate off, and sends it out held shut", async () => {
+    const fake = fakeContext();
+    const gate = detector();
+    const createGate = vi.fn(async () => gate as unknown as AudioWorkletNode);
+    const graph = await buildCaptureGraph(
+      raw,
+      settings({ inputGate: false, inputMode: "pushToTalk" }),
+      deps(fake, { createGate }),
+    );
+
+    expect(createGate).toHaveBeenCalledWith(expect.anything(), expect.any(Number), {
+      gate: true,
+      leveller: false,
+    });
+    expect(graph?.gateActive).toBe(true);
+    expect(gate.port.postMessage).toHaveBeenCalledExactlyOnceWith({ type: "hold", open: false });
+
+    graph?.holdGate(true);
+    expect(gate.port.postMessage).toHaveBeenLastCalledWith({ type: "hold", open: true });
+    graph?.dispose();
+  });
+
+  it("leaves a voice activity gate to its detector", async () => {
+    const gate = detector();
+    const graph = await buildCaptureGraph(
+      raw,
+      settings({ inputGate: true }),
+      deps(fakeContext(), { createGate: async () => gate as unknown as AudioWorkletNode }),
+    );
+
+    expect(gate.port.postMessage).not.toHaveBeenCalled();
+    graph?.dispose();
+  });
+});

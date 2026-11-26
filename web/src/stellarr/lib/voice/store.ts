@@ -75,6 +75,7 @@ function isSameState(a: VoiceState, b: VoiceState): boolean {
     a.connection === b.connection &&
     a.channelId === b.channelId &&
     a.muted === b.muted &&
+    a.talking === b.talking &&
     a.error?.kind === b.error?.kind &&
     a.error?.message === b.error?.message &&
     a.screenSharePending === b.screenSharePending &&

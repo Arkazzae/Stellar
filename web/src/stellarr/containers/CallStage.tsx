@@ -4,10 +4,12 @@ import type { ActivityMark } from "@/components/voice/ParticipantTiles";
 import { VoiceControlBar, type BarActivity } from "@/components/voice/VoiceControlBar";
 import { VoiceStage } from "@/components/voice/VoiceStage";
 import { isFull } from "@/lib/activities/api";
+import { TALK_ACTION } from "@/lib/keybinds/keybinds";
 import {
   useActivities,
   useActivitySlot,
   useDirectory,
+  useKeybinds,
   useLanguage,
   usePorts,
   useProfile,
@@ -41,6 +43,7 @@ export function CallStage({ fullscreenTarget }: CallStageProps) {
   const { user } = useSession();
   const { server, canManageServer } = useDirectory();
   const ports = usePorts();
+  const { bindings } = useKeybinds();
 
   // The device settings straight from the store the pipelines read, so what
   // the bar's arrows edit is what the call is running on.
@@ -126,6 +129,8 @@ export function CallStage({ fullscreenTarget }: CallStageProps) {
         <ActivityDevPreview key={"preview-" + joinedChannelId} channel={joinedChannelId} muted={voice.state.muted} cameraOn={voice.call?.cameraOn} />}
       <VoiceControlBar
         muted={voice.state.muted}
+        talkKey={bindings[TALK_ACTION]}
+        talking={voice.state.talking}
         deafened={voice.call?.deafened ?? false}
         cameraOn={voice.call?.cameraOn ?? false}
         cameraPending={voice.state.cameraPending}

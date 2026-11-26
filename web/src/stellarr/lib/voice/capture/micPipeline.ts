@@ -88,6 +88,7 @@ export async function captureMicrophone(
     echoCancellation: browser.echoCancellation,
     setSensitivity: (sensitivity) => graph?.setSensitivity(sensitivity),
     setInputGain: (db) => graph?.setInputGain(db),
+    holdGate: (open) => graph?.holdGate(open),
     fadeIn: () => graph?.fadeIn(),
     resume: async () => (graph ? graph.resume() : true),
     dispose() {
