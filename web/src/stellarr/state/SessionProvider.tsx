@@ -14,6 +14,7 @@ import {
 import type { MessageKey, Translator } from "@/i18n";
 import { dismissActivityNotifications } from "@/lib/platform/badge";
 import { clearDrafts, forgetServerDrafts } from "@/lib/platform/drafts";
+import { setShareOwner } from "@/lib/platform/sharedFiles";
 import { clearAll as clearTranslations } from "@/lib/chatTranslation/translationCache";
 import { wipeAll as wipeStoredMessages, wipeServer as wipeStoredServer } from "@/lib/messageStore/messageStore";
 import type { Account, AuthResult, ConnectionStatus, Presence, User } from "@/ports";
@@ -197,6 +198,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         // "not connected yet", not a deliberate invisible choice. Any other
         // status was advertised by another tab and is safe to inherit.
         setPresence(payload.user.presence === "offline" ? "online" : payload.user.presence);
+        void setShareOwner(payload.user.id).catch(() => undefined);
         ended.current = false;
         setBoot({
           phase: "ready",
@@ -360,6 +362,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (boot.phase !== "anonymous" && boot.phase !== "revoked") return;
     void clearDrafts().catch(() => undefined);
+    void setShareOwner(null).catch(() => undefined);
     void navigator.clearAppBadge?.().catch(() => undefined);
     void dismissActivityNotifications().catch(() => undefined);
     void ports.notificationDelivery.releaseDevice().catch(() => undefined);
