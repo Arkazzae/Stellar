@@ -89,7 +89,10 @@ pub fn confirmation(page: &Confirmation<'_>) -> Response {
 }
 
 /// The page with the headers that keep it where it was shown: out of caches,
-/// out of other sites' frames, and without a referrer on anything it leads to.
+/// out of other sites' frames, and without a referrer on anything that leads
+/// away from the instance. The policy is `same-origin`, not `no-referrer`: a
+/// browser writes `Origin: null` on a form it posts from a page that sends no
+/// referrer at all, and the approval takes only a post that names this origin.
 fn html_response(html: String, status: StatusCode) -> Response {
     let mut response = Response::new(Body::from(html));
     *response.status_mut() = status;
@@ -106,7 +109,7 @@ fn html_response(html: String, status: StatusCode) -> Response {
     );
     headers.insert(
         header::REFERRER_POLICY,
-        HeaderValue::from_static("no-referrer"),
+        HeaderValue::from_static("same-origin"),
     );
     headers.insert(
         header::X_CONTENT_TYPE_OPTIONS,
@@ -206,7 +209,7 @@ mod tests {
         assert_eq!(headers["content-type"], "text/html; charset=utf-8");
         assert_eq!(headers["cache-control"], "no-store");
         assert_eq!(headers["pragma"], "no-cache");
-        assert_eq!(headers["referrer-policy"], "no-referrer");
+        assert_eq!(headers["referrer-policy"], "same-origin");
         assert_eq!(headers["x-content-type-options"], "nosniff");
         assert_eq!(headers["content-security-policy"], POLICY);
         assert!(!headers.contains_key("x-frame-options"));

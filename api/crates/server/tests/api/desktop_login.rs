@@ -424,7 +424,7 @@ async fn approval_page_binds_the_request_to_the_account_and_session() {
     assert_eq!(page.header("content-type"), Some("text/html; charset=utf-8"));
     assert_eq!(page.header("cache-control"), Some("no-store"));
     assert_eq!(page.header("pragma"), Some("no-cache"));
-    assert_eq!(page.header("referrer-policy"), Some("no-referrer"));
+    assert_eq!(page.header("referrer-policy"), Some("same-origin"));
     assert_eq!(page.header("x-content-type-options"), Some("nosniff"));
     assert_eq!(
         page.header("content-security-policy"),
@@ -639,6 +639,35 @@ async fn a_post_from_another_site_is_refused_before_anything_is_read_and_costs_n
             .await;
         assert_eq!(accepted.status, 200, "{name}: {value}");
     }
+}
+
+/// The `Origin` a browser writes on a form that a page posts to its own
+/// origin, which the Fetch standard derives from the page's referrer policy:
+/// a page that sends no referrer at all sends `null` for its origin too.
+fn origin_of_own_form(referrer_policy: &str, own: &str) -> String {
+    match referrer_policy {
+        "no-referrer" => "null".to_string(),
+        _ => own.to_string(),
+    }
+}
+
+#[tokio::test]
+async fn a_browser_approves_with_the_origin_the_page_lets_its_own_form_send() {
+    let (server, maja) = with_provider().await;
+    let own = format!("http://{}", server.address());
+    let started = start(&server).await;
+    let page = maja.client.get(&page_of(&started.id)).await;
+    assert_eq!(page.status, 200, "{}", page.text());
+    let origin = origin_of_own_form(page.header("referrer-policy").unwrap_or(""), &own);
+
+    // The person's browser posts the page's form with their session cookie.
+    let form = format!("token={}", token_of(&page.text()));
+    let approved = maja
+        .client
+        .send(post(&started.id, &form).header("Origin", &origin))
+        .await;
+    assert_eq!(approved.status, 200, "Origin: {origin}");
+    assert!(row(&server.database(), &started.id).approved_at.is_some());
 }
 
 #[tokio::test]
