@@ -32,6 +32,8 @@ flowchart TD
 
 UI components read immutable `VoiceState` snapshots and call `VoiceClient` methods—never touching WebSockets, `RTCPeerConnection`, or `AudioWorklet` nodes directly. High-frequency RTP counters and audio meters stay out of React state so components re-render only on discrete transitions (join, leave, mute, speaking start/stop, stream toggle, or `heldBack` changes).
 
+Push to talk stays inside the client. `VoiceClient.setTalking(held, cut?)` reports the talk key going down or up; in push-to-talk mode the client holds the detector worklet's gate open or shut (`{ type: "hold", open }`, `null` hands it back to the VAD), keeps it open for a `200 ms` release tail unless `cut`, and closes it at once when the page is hidden. `VoiceState.talking` reflects it. Nothing is signalled per press: the `state` signal's `muted` is unchanged, and listeners' speaking rings follow the audio they receive. The input mode is a device setting and does not follow the account.
+
 ## Bootstrap configuration (`GET /api/bootstrap`)
 
 ```json
@@ -129,6 +131,7 @@ Clips decode locally in each listener's Web Audio `AudioContext` (never mixed in
 | `transport.signaling` | `idle`, `connecting`, `connected`, `reconnecting`, `disconnected` | `/hubs/app` WebSocket and negotiation state |
 | `transport.media` | `idle`, `ready`, `connecting`, `connected`, `degraded`, `failed` | WebRTC SFU session health (`ready` = connected alone; `degraded` = missing peer audio past `3 s` grace, stalled outbound RTP, or active replacement; see [Proving media quickly](./stellarr-media.md#proving-media-quickly)) |
 | `peerCount` / `connectedPeerCount` | `number` | Seated remote peers vs. peers with verified inbound audio |
+| `talking` | `boolean` | Push to talk has the microphone open: key held, or released within the `200 ms` tail. Always `false` in voice-activity mode; local only, never signalled |
 
 ---
 
@@ -169,7 +172,7 @@ flowchart LR
 ```
 
 - **WASM suppressors (`/audio/<engine>-worklet.js` + `.wasm`):** Debounced by `700 ms` with progress rings (`virtual:artifact-sizes`) and automatic fallback to `browser` on failure. Fixed unhashed worklet URLs use `Cache-Control: no-cache`, so breaking `postMessage` changes require a new worklet filename (`web/worklets.ts`).
-- **Detector worklet (`10 ms` frames):** Tracks noise floor, pitch voicing (`60–400 Hz`), stationary hum/buzz rejection, and click rejection; drives an `80 ms` lookahead gate (`6 ms` attack, `90 ms` release, `600 ms` unvoiced cap) and voiced-only auto-leveler (`+18 dB` max boost, `-6 dB` max cut).
+- **Detector worklet (`10 ms` frames):** Tracks noise floor, pitch voicing (`60–400 Hz`), stationary hum/buzz rejection, and click rejection; drives an `80 ms` lookahead gate (`6 ms` attack, `90 ms` release, `600 ms` unvoiced cap) and voiced-only auto-leveler (`+18 dB` max boost, `-6 dB` max cut). Push to talk holds the same gate open or shut, keeping its lookahead and ramps; a capture built for it starts held shut.
 - **Receive strip:** Independent per-speaker volume (`0–200%`), optional gate, and EQ presets (`Off`, `Natural`, `Studio`, `Broadcast`, `Custom` at `160 Hz`, `360 Hz`, `3.1 kHz`, `8 kHz`). Screen audio bypasses voice EQ. Regression-tested in [`web/bench/voice/`](../web/bench/voice/README.md).
 
 ### Screen sharing and camera profiles
