@@ -38,6 +38,7 @@ function mountUi(width = DESKTOP) {
 }
 
 beforeEach(() => {
+  localStorage.clear();
   harness.firstTextChannelId = "ch-general";
   harness.textChannels = [{ id: "ch-general" }, { id: "ch-random" }];
   harness.voice = { channelId: null, join: vi.fn(), leave: vi.fn(async () => {}) };
@@ -209,12 +210,54 @@ describe("UiProvider drawers", () => {
     expect(mountUi(PHONE).result.current.rosterOpen).toBe(false);
   });
 
-  it("remembers the person's choice for the wide roster", () => {
-    const { result } = mountUi(DESKTOP);
+  it("restores the roster and DM profile independently after reopening", () => {
+    const first = mountUi(DESKTOP);
+    act(() => first.result.current.toggleRoster());
+    first.unmount();
 
-    act(() => result.current.toggleRoster());
+    const second = mountUi(DESKTOP);
+    expect(second.result.current).toMatchObject({ rosterOpen: false, profilePanelOpen: true });
+    act(() => second.result.current.toggleRoster());
+    act(() => second.result.current.openDm("dm-1"));
+    act(() => second.result.current.toggleProfilePanel());
+    second.unmount();
 
-    expect(result.current.rosterOpen).toBe(false);
+    const third = mountUi(LAPTOP);
+    expect(third.result.current).toMatchObject({ rosterOpen: true, profilePanelOpen: false });
+  });
+
+  it("keeps the wide layout choice when navigation dismisses a phone drawer or a laptop panel", () => {
+    const first = mountUi(LAPTOP);
+    act(() => first.result.current.setRosterOpen(true));
+    act(() => first.result.current.setProfilePanelOpen(true));
+    act(() => first.result.current.toggleChannelPanel("links"));
+    expect(first.result.current.rosterOpen).toBe(false);
+    first.unmount();
+
+    const phone = mountUi(PHONE);
+    expect(phone.result.current).toMatchObject({ rosterOpen: false, profilePanelOpen: false });
+    act(() => phone.result.current.setRosterOpen(true));
+    act(() => phone.result.current.selectTextChannel("ch-random"));
+    act(() => phone.result.current.setProfilePanelOpen(true));
+    act(() => phone.result.current.openDm("dm-2"));
+    phone.unmount();
+
+    expect(mountUi(LAPTOP).result.current).toMatchObject({ rosterOpen: true, profilePanelOpen: true });
+  });
+
+  it("can still collapse the roster when storage is unavailable", () => {
+    const fail = () => { throw new Error("storage denied"); };
+    const read = vi.spyOn(localStorage, "getItem").mockImplementation(fail);
+    const write = vi.spyOn(localStorage, "setItem").mockImplementation(fail);
+    try {
+      const { result } = mountUi(DESKTOP);
+      expect(result.current.rosterOpen).toBe(true);
+      act(() => result.current.toggleRoster());
+      expect(result.current.rosterOpen).toBe(false);
+    } finally {
+      read.mockRestore();
+      write.mockRestore();
+    }
   });
 
   it("closes the rail, the roster and the channel panel when a channel is picked on a phone", () => {
