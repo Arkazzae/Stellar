@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 
 import { Icon } from "@stellarr/icons";
 import { useLanguage } from "@/state/LanguageProvider";
@@ -11,6 +11,7 @@ interface ActivityFrameProps {
   src: string;
   title: string;
   permissions: string[];
+  youtube?: boolean;
   muted?: boolean;
   cameraOn?: boolean;
   room: (action: Action, signal: AbortSignal) => Promise<Record<string, unknown>>;
@@ -18,8 +19,15 @@ interface ActivityFrameProps {
   onLost: () => void;
 }
 
-export function ActivityFrame({ children, hidden = false, src, title, permissions, muted = false, cameraOn, room, tile, onLost }: ActivityFrameProps) {
+export function ActivityFrame({ children, hidden = false, src, title, permissions, youtube, muted = false, cameraOn, room, tile, onLost }: ActivityFrameProps) {
   const { t } = useLanguage();
+  const target = useMemo(() => {
+    const url = new URL(src, window.location.href);
+    const local = url.origin === window.location.origin;
+    const nonce = local ? crypto.randomUUID() : undefined;
+    if (nonce) url.hash = "stellarr=" + nonce;
+    return { src: url.href, origin: local ? "null" : url.origin, nonce };
+  }, [src]);
   const frame = useRef<HTMLIFrameElement>(null);
   const volume = useRef<HTMLInputElement>(null);
   const controls = useRef<HTMLSpanElement>(null);
@@ -31,15 +39,17 @@ export function ActivityFrame({ children, hidden = false, src, title, permission
   useEffect(() => {
     if (!volume.current || !controls.current || !frame.current) return;
     const controller = new AbortController();
-    const origin = new URL(src).origin;
-    media.current = bindMediaHost({ frame: frame.current, origin, title, permissions, controls: controls.current,
+    const { origin, nonce } = target;
+    media.current = bindMediaHost({ frame: frame.current, origin, nonce, youtube, title, permissions, controls: controls.current,
       volume: volume.current, language: document.documentElement.lang, muted: () => callMuted.current,
       tile: action => tile(action, controller.signal) });
     let frameId: string | undefined;
     let connected: MessagePort | undefined;
     function bind(event: MessageEvent) {
       if (event.source !== frame.current?.contentWindow || event.origin !== origin ||
-          event.data !== "stellarr:dev-connect:v1" || !event.ports[0]) return;
+          !event.ports[0]) return;
+      if (nonce ? connected || event.data?.type !== "stellarr:dev-connect:v1" || event.data?.nonce !== nonce
+                : event.data !== "stellarr:dev-connect:v1") return;
       connected?.close();
       connected = event.ports[0];
       const port = connected;
@@ -48,7 +58,10 @@ export function ActivityFrame({ children, hidden = false, src, title, permission
         if (!data || !Number.isSafeInteger(data.id) || !data.input) return;
         try {
           const value = await room({ ...data.input, frame: id }, controller.signal);
-          if (data.input.op === "open") value.volume = Number(volume.current?.value ?? 100) / 100;
+          if (data.input.op === "open") {
+            value.volume = Number(volume.current?.value ?? 100) / 100;
+            value.youtube = Boolean(nonce && youtube);
+          }
           if (!controller.signal.aborted) port.postMessage({ id: data.id, value });
         } catch (error) {
           if (controller.signal.aborted) return;
@@ -67,7 +80,7 @@ export function ActivityFrame({ children, hidden = false, src, title, permission
       connected?.close();
       window.removeEventListener("message", bind);
     };
-  }, [src, title, permissions, room, tile, onLost]);
+  }, [target, title, permissions, youtube, room, tile, onLost]);
 
   return <>
     <div className="activity-frame-controls">
@@ -79,8 +92,8 @@ export function ActivityFrame({ children, hidden = false, src, title, permission
       <span ref={controls} />
     </div>
     <div className="activity-viewport" hidden={hidden}>
-      <iframe ref={frame} src={src} title={title} referrerPolicy="no-referrer"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-presentation" allow="autoplay; fullscreen" />
+      <iframe ref={frame} src={target.src} title={title} referrerPolicy="no-referrer"
+        sandbox={target.nonce ? "allow-scripts allow-forms allow-presentation" : "allow-scripts allow-same-origin allow-forms allow-presentation"} allow="autoplay; fullscreen" />
     </div>
   </>;
 }

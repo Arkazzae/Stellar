@@ -1,13 +1,16 @@
 import { capture } from "./devices.js";
 
+import { createYouTubeHost } from "./youtube.js";
+
 const kinds = ["microphoneLevel", "cameraTile"];
-export function bindMediaHost({ frame, origin, title, permissions = [], controls, tile, volume, muted = () => false, fixtures = false, language = "en" }) {
+export function bindMediaHost({ frame, origin, nonce, youtube, title, permissions = [], controls, tile, volume, muted = () => false, fixtures = false, language = "en" }) {
   const pl = language.startsWith("pl");
   const words = (en, polish) => pl ? polish : en;
   const deviceName = kind => kind === "microphoneLevel" ? words("Microphone", "Mikrofon") : words("Camera", "Kamera");
   const deviceFiles = new Map(), active = new Map(), mounts = new Map();
   let port, prompt, simMuted = false, disposed = false, requestingImages = false;
   function send(data) { port?.postMessage(data); }
+  const player = youtube && nonce ? createYouTubeHost(frame, send) : undefined;
   function stop(kind, reason) {
     const device = active.get(kind);
     if (!device) return;
@@ -122,6 +125,7 @@ export function bindMediaHost({ frame, origin, title, permissions = [], controls
   const volumeChanged = () => send({ op: "volume", value: Number(volume.value) / 100 });
   volume.addEventListener("input", volumeChanged);
   function reset() {
+    player?.stop();
     prompt?.cancel();
     for (const kind of active.keys()) stop(kind, "closed");
     for (const id of mounts.keys()) removeMount(id);
@@ -129,12 +133,14 @@ export function bindMediaHost({ frame, origin, title, permissions = [], controls
     port = undefined;
   }
   function bind(event) {
-    if (event.source !== frame.contentWindow || event.origin !== origin || event.data !== "stellarr:media:v1" || !event.ports[0]) return;
+    if (event.source !== frame.contentWindow || event.origin !== origin || !event.ports[0]) return;
+    if (nonce ? port || event.data?.type !== "stellarr:media:v1" || event.data?.nonce !== nonce : event.data !== "stellarr:media:v1") return;
     reset();
     port = event.ports[0];
     port.onmessage = ({ data }) => {
       if (disposed || !data) return;
       switch (data.op) {
+        case "youtubeOpen": case "youtubeClose": case "youtubeLayout": case "youtubeCommand": return player?.handle(data);
         case "open": return open(data.kind, data.id);
         case "stop": return stop(data.kind, "stopped");
         case "cancel":
@@ -158,6 +164,7 @@ export function bindMediaHost({ frame, origin, title, permissions = [], controls
     dispose() {
       disposed = true;
       reset();
+      player?.dispose();
       clearInterval(refresh);
       toolbar.remove();
       volume.removeEventListener("input", volumeChanged);

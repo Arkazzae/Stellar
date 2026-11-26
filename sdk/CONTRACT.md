@@ -122,7 +122,7 @@ While a disconnected host holds its place, host operations pause. On transfer, t
 
 *Proposed.*
 
-The activity runs in a frame that has its own name on the instance. A frame without a name of its own was ruled out: a YouTube player did not start in one (section 14), and such a frame has no browser storage to keep anything in, which was not tested here.
+A fresh instance serves installed packages on its existing HTTPS address. The browser gives each activity frame an opaque origin. The SDK connects it to its room through a private message port. Native browser storage is unavailable in this mode. An owner can opt into dedicated activity hostnames when a package needs origin-bound APIs.
 
 | The frame is meant to allow | Activities in the owner's registry that need it |
 | --- | --- |
@@ -273,17 +273,15 @@ The library entry shows the installed version and whether the activity is enable
 
 The proposed installer pins the selected release to its exact source revision and a checksum of the files approved by the owner. If the download or verification fails, Cockpit reports the failure. A first install creates a library entry only after success. A failed update preserves the installed version and its enabled or disabled state.
 
-Each installed release has a dedicated HTTPS origin derived from the installation and its approved ZIP checksum. The ZIP root is the origin root. For example, `/assets/game.js` loads the pinned build’s `assets/game.js`, including when an older session loads a module after an update. Relative URLs resolve normally, and `/_stellarr/` is reserved for the host and SDK. Starting a different release or reinstalling an activity gives it a distinct origin and browser storage. Access to the page and its files requires a live launch on that origin.
+By default, Stellarr serves files under a private, per-launch directory pinned to the approved ZIP. Use relative paths for package assets and modules (for example, `./assets/game.js`). Use the reserved absolute URL `/_stellarr/sdk/v1.js` for the instance SDK. Session state is available through the SDK. To embed YouTube in this mode, declare `www.youtube-nocookie.com` in `connects` and mount the host player through `session.media.youtube`.
+
+With dedicated hosting, each installed release has a dedicated HTTPS origin derived from the installation and its approved ZIP checksum. The ZIP root is the origin root. For example, `/assets/game.js` loads the pinned build’s `assets/game.js`, including when an older session loads a module after an update. Relative URLs resolve normally, and `/_stellarr/` is reserved for the host and SDK. Starting a different release or reinstalling an activity gives it a distinct origin and browser storage. Access to the page and its files requires a live launch on that origin.
 
 **Decided.** Before offering to start or join, Stellarr checks device support for the release the participant would actually open. On an unsupported device a running activity can still appear with a short inline label such as “Available on desktop”. Its page and assets are loaded only on a supported device after launch.
 
 ### Names and certificates
 
-- **Decided:** each activity gets its own name. A wildcard domain is acceptable for that.
-- **Proposed:** the base of those names is a setting of its own, not necessarily a subdomain of the instance's name.
-- The owner supplies a DNS record that covers those names and a certificate that covers them. Stellarr does not obtain certificates: by default it makes a self-signed one for a single name.
-- A request from a page on a sibling origin to the instance can carry the instance's session cookie (section 14). Operations acting on that cookie must reject unauthorized callers. Protocol endpoints intended for external callers, such as identity-provider callbacks, retain their own validation.
-- **Open:** an instance reached by a bare IP address, or with the default self-signed certificate, cannot give activities their own names. Proposed: such an instance runs only the activities that ship with Stellarr.
+Fresh installations reuse the instance's HTTPS address, including its port and certificate. Paste a GitHub repository or release in Cockpit and approve the package and its requested hosts. The same flow supports privately authored activities with a public Stellarr release. An owner enabling dedicated activity hosts supplies wildcard DNS, TLS and routing for those hosts.
 
 ### Large assets
 

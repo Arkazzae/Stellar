@@ -15,7 +15,7 @@ use std::collections::HashSet;
 /// the one of a desktop sign-in waiting in the browser: whoever opens its page
 /// signed in binds the request to themselves. An activity file path can carry
 /// a one-time launch ticket.
-pub const SECRETS: &[&str] = &["code", "path", "request_id"];
+pub const SECRETS: &[&str] = &["asset_key", "code", "path", "request_id"];
 
 /// What stands in the log for a secret.
 pub const MARK: &str = "***";

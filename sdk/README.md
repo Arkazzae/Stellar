@@ -35,7 +35,7 @@ npx stellarr pack --dir activities/synctube/dist --out release/synctube
 
 Use the tag `synctube/v1.0.0`, the release title **SyncTube 1.0.0** and that version’s changelog entry. Attach the generated `stellarr-release.json` and the ZIP it names. Each sibling activity keeps its own tags and assets. The public example automates these steps when the author pushes a scoped tag. Packaging uses the system’s `zip` program on macOS/Linux and PowerShell on Windows. [Public release workflow](https://github.com/Arkazzae/StellarrActivities/blob/main/.github/workflows/release.yml)
 
-The instance owner pastes the repository URL in **Cockpit → Activities**. Cockpit finds a stable release for each published activity and opens a picker when several are available. A direct release URL selects that particular release. Older releases with a shared multi-activity index remain supported. Selecting one shows that activity’s metadata, download size, device permissions and external hosts. **Install and enable** adds just that activity. The owner can use the same URL again for another activity. Updates, enable/disable and uninstall apply to the selected library entry. For hosting, configure the instance’s dedicated wildcard domain and TLS. [Instance configuration](../docs/install/configuration.md)
+The instance owner pastes the repository URL in **Cockpit → Activities**. Cockpit finds a stable release for each published activity and opens a picker when several are available. A direct release URL selects that particular release. Older releases with a shared multi-activity index remain supported. Selecting one shows that activity’s metadata, download size, device permissions and external hosts. **Install and enable** adds just that activity. The owner can use the same URL again for another activity. Updates, enable/disable and uninstall apply to the selected library entry. Installed packages run inside the container using the existing Stellarr HTTPS address. Use package-relative asset URLs and import the SDK from `/_stellarr/sdk/v1.js`. A dedicated wildcard domain is optional. [Instance configuration](../docs/install/configuration.md)
 
 ## Choose where people can launch
 
@@ -74,6 +74,9 @@ Declare `media.microphoneLevel` or `media.cameraTile` in `permissions`. A game c
 The local toolbar accepts an audio or video file for the current tab. Select a file, request the input from the game, then allow it in the Stellarr dialog. Audio loops and produces levels from 0 to 1. For camera input, mount a tile with `session.media.cameraTile.mount(playerId, element)`. The parent renders the image over that element. Open a second tab to see it. **Stop**, microphone mute and a denied request can all be tested without a physical device. Preview camera tiles use low-resolution JPEG frames. [Media API declarations](media.d.ts)
 
 Apply `session.media.volume.get()` to each player or audio graph at startup and subscribe for subsequent changes. Each participant’s **Game audio** slider controls their own playback.
+
+For a YouTube activity, declare `www.youtube-nocookie.com` in the manifest’s `connects`. On the instance hostname, `session.media.youtube.mount(videoId, element, events)` displays one player inside the activity viewport. Call `prepare(positionInSeconds, playing)` from the ready handler. The handle provides play, pause, seek, volume (0–1), fullscreen and destroy. Dedicated-host packages and local previews can use the YouTube IFrame API directly when this handle is unavailable. [API declarations](media.d.ts)
+
 
 ## Test with someone in a voice channel
 

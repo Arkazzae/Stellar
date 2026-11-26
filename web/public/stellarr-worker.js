@@ -185,7 +185,7 @@ const ADOPT_MESSAGE = "stellarr-adopt";
 
 // What nginx hands to the API; never the web client's address, whatever the
 // path rules say. Repeats infra/nginx.conf.
-const API_PATH = /^\/(api|assets|health|hubs|\.well-known)(\/|$)/;
+const API_PATH = /^\/(api|assets|health|hubs|_activity|_stellarr|\.well-known)(\/|$)/;
 const BUILD_FILE_PATH = /^\/(static|fonts)\//;
 
 function mergeSlashes(pathname) {
