@@ -3,7 +3,7 @@
 //! `schema.sql` is the schema the first server creates on an empty folder,
 //! dumped from a real run and kept as it is: nothing in it is renamed,
 //! retyped or tidied, so that both servers can run on copies of one file.
-//! Additive tables are installed when an existing database is opened.
+//! Ordered migrations bring that baseline and existing files up to date.
 
 use rusqlite::{Connection, TransactionBehavior};
 
@@ -23,6 +23,18 @@ const IMPLICIT_TABLE: &str = "CREATE TABLE sqlite_sequence(name,seq);\n";
 /// run; whatever writes data later has to write what they would have.
 const ONE_TIME_STEPS: [&str; 2] = ["ordinary-permissions", "view-channel"];
 
+/// Append each new schema change here. Version zero includes installations
+/// that already have some or all of the original additive tables.
+const MIGRATIONS: &[&str] = &[concat!(
+    include_str!("../discord_import/jobs.sql"),
+    "\n",
+    include_str!("../link_previews/imported.sql"),
+    "\n",
+    include_str!("upload_limits.sql"),
+    "\n",
+    include_str!("../activities/schema.sql"),
+)];
+
 /// Sets the journal mode, which the database file remembers, and gives an
 /// empty file its schema.
 pub fn prepare(connection: &mut Connection) -> Result<(), DbError> {
@@ -33,11 +45,23 @@ pub fn prepare(connection: &mut Connection) -> Result<(), DbError> {
         )));
     }
     let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let version: i64 = transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    let pending = usize::try_from(version)
+        .ok()
+        .and_then(|v| MIGRATIONS.get(v..))
+        .ok_or_else(|| {
+            DbError::Task(format!(
+                "unsupported database schema version {version} (this server supports 0 through {})",
+                MIGRATIONS.len()
+            ))
+        })?;
     // Decided inside the write lock, so that two processes starting on one
     // empty file do not both create the tables.
-    let tables: i64 =
-        transaction.query_row("SELECT count(*) FROM sqlite_master", [], |row| row.get(0))?;
-    if tables == 0 {
+    if version == 0
+        && !transaction.query_row("SELECT EXISTS (SELECT 1 FROM sqlite_master)", [], |row| {
+            row.get::<_, bool>(0)
+        })?
+    {
         // `IMPLICIT_TABLE` is dropped because SQLite refuses to create a table
         // whose name starts with `sqlite_`, and it has made this one itself
         // by the time the statement would run.
@@ -50,10 +74,12 @@ pub fn prepare(connection: &mut Connection) -> Result<(), DbError> {
             )?;
         }
     }
-    transaction.execute_batch(include_str!("../discord_import/jobs.sql"))?;
-    transaction.execute_batch(include_str!("../link_previews/imported.sql"))?;
-    transaction.execute_batch(include_str!("upload_limits.sql"))?;
-    transaction.execute_batch(include_str!("../activities/schema.sql"))?;
+    if !pending.is_empty() {
+        for sql in pending {
+            transaction.execute_batch(sql)?;
+        }
+        transaction.pragma_update(None, "user_version", MIGRATIONS.len() as i64)?;
+    }
     transaction.commit()?;
     Ok(())
 }
