@@ -40,6 +40,7 @@ vi.mock("@/state/FriendsProvider", () => ({ FriendsProvider: providerNamed("Frie
 vi.mock("@/state/ChatProvider", () => ({ ChatProvider: providerNamed("Chat") }));
 vi.mock("@/state/ProfileProvider", () => ({ ProfileProvider: providerNamed("Profile") }));
 
+vi.mock("./AppBadge", () => ({ AppBadge: () => null }));
 vi.mock("./AppAppearance", () => ({ AppAppearance: () => null }));
 vi.mock("./ServerRailContainer", () => ({ ServerRailContainer: standIn("server-rail") }));
 vi.mock("./RailContainer", () => ({ RailContainer: standIn("channel-rail") }));

@@ -427,11 +427,25 @@ self.addEventListener("message", (event) => {
   event.waitUntil(reply.then((result) => (port === undefined ? undefined : port.postMessage(result))));
 });
 
+// Read the absolute count so repeated or out-of-order deliveries converge.
+let badgeRevision = 0;
+async function refreshBadge() {
+  const revision = ++badgeRevision;
+  const badge = self.navigator;
+  if (typeof badge?.setAppBadge !== "function") return;
+  const response = await fetch("/api/me/app-badge", { credentials: "same-origin", cache: "no-store", redirect: "error" });
+  if (!response.ok && response.status !== 401) return;
+  const unread = response.ok ? (await response.json()).unread : 0;
+  if (revision !== badgeRevision || !Number.isSafeInteger(unread) || unread < 0) return;
+  if (unread) await badge.setAppBadge(unread);
+  else await badge.clearAppBadge();
+}
+
 self.addEventListener("push", (event) => {
   const payload = parsePayload(event.data) ?? {
     title: "Stellarr", body: "", tag: "stellarr-activity", url: HOME_URL,
   };
-  event.waitUntil(showPushNotification(payload).catch(() => undefined));
+  event.waitUntil(Promise.all([showPushNotification(payload), refreshBadge()].map(task => task.catch(() => undefined))));
 });
 
 self.addEventListener("notificationclick", (event) => {

@@ -8,6 +8,7 @@
 //! answer from the point the server is known to be the person's own carries
 //! `Cache-Control: no-store`.
 
+mod badge;
 mod entry;
 mod page;
 mod query;
@@ -19,6 +20,8 @@ use crate::http::Endpoints;
 
 pub fn routes() -> Endpoints {
     Endpoints::new()
+        .get("/api/me/app-badge", badge::read)
+        .authorized()
         .get("/api/notifications", page::list)
         .authorized()
         .put("/api/notifications/{notificationId}/read", page::mark_read)
