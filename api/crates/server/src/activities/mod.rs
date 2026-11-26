@@ -414,6 +414,20 @@ mod manifest_tests {
     }
 
     #[test]
+    fn production_raw_manifest_matches_sdk_duplicate_field_cases() {
+        let fixture: Value = serde_json::from_str(FIXTURE).unwrap();
+        let base = fixture["base"].to_string();
+        let prefix = base.strip_suffix('}').unwrap();
+        for case in fixture["rawCases"].as_array().unwrap() {
+            let members = case["members"].as_str().unwrap();
+            let raw = format!("{prefix},{members}}}");
+            let accepted = serde_json::from_str::<Manifest>(&raw)
+                .is_ok_and(|manifest| manifest.check().is_ok());
+            assert_eq!(accepted, case["valid"].as_bool().unwrap(), "{}", case["label"]);
+        }
+    }
+
+    #[test]
     fn unsigned_manifest_fields_reject_decimal_and_exponential_tokens() {
         let fixture: Value = serde_json::from_str(FIXTURE).unwrap();
         let base = fixture["base"].to_string();
