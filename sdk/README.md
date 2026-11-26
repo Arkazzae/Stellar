@@ -12,10 +12,10 @@ node sdk/cli.js dev --dir /path/to/activity
 
 Open the printed address. In voice mode, choose **New player** to join the same room from another tab. Each tab gets its own identity, which survives a reload. To test an activity that supports both launch modes, add `--mode personal` for a private room per tab or `--mode voice` for a shared room. The CLI defaults to voice when the manifest supports it, otherwise to personal. The game runs in its own origin inside a Stellarr frame. Changes to game files appear on refresh. Restart the command after editing the manifest. Use `--port 0` for an available port.
 
-To use the local package from an activity project, run:
+Install the SDK in your activity project, then validate and preview its published directory.
 
 ```sh
-npm install --save-dev /path/to/Stellarr/sdk
+npm install --save-dev @stellarr/sdk
 npx stellarr validate --dir dist
 npx stellarr dev --dir dist
 ```

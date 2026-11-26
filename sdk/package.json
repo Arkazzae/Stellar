@@ -28,5 +28,14 @@
   "engines": {
     "node": ">=22"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "description": "Browser client and development CLI for Stellarr activities",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Arkazzae/Stellarr.git",
+    "directory": "sdk"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }
