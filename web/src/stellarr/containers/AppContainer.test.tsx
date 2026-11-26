@@ -52,6 +52,7 @@ vi.mock("./RosterContainer", () => ({ RosterContainer: standIn("roster") }));
 vi.mock("./DmProfileContainer", () => ({ DmProfileContainer: standIn("dm-profile") }));
 vi.mock("./DmCallChatContainer", () => ({ DmCallChatContainer: standIn("dm-call-chat") }));
 vi.mock("./ModalsContainer", () => ({ ModalsContainer: standIn("modals") }));
+vi.mock("./ActivityPicker", () => ({ ActivityPicker: standIn("activity-picker") }));
 vi.mock("./UserSettingsContainer", () => ({ UserSettingsContainer: standIn("user-settings") }));
 vi.mock("./EncryptionDialogsContainer", () => ({ EncryptionDialogsContainer: standIn("encryption-dialogs") }));
 vi.mock("./ClientSettingsSync", () => ({ ClientSettingsSync: standIn("client-settings-sync") }));
@@ -152,7 +153,7 @@ describe("AppContainer", () => {
   it("mounts the overlays outside the grid", () => {
     render(<AppContainer />);
 
-    for (const id of ["modals", "user-settings", "client-settings-sync", "mini-profile", "incoming-call"]) {
+    for (const id of ["modals", "activity-picker", "user-settings", "client-settings-sync", "mini-profile", "incoming-call"]) {
       expect(screen.getByTestId(id)).toBeInTheDocument();
       expect(screen.getByTestId(id).closest(".app")).toBeNull();
     }
