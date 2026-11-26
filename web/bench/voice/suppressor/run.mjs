@@ -263,7 +263,12 @@ function serve(distRoot, earlier, outputs, afterWasm) {
         const relative = pathname === "/" ? "/index.html" : decodeURIComponent(pathname);
         let file = resolve(distRoot, `.${relative}`);
         if (!file.startsWith(distRoot + sep)) throw new Error("outside the build");
-        if (!existsSync(file) && relative.startsWith("/audio/")) file = resolve(publicAudio, `.${relative.slice(6)}`);
+        const packaged = process.env.STELLARR_AUDIO_ROOT;
+        if (relative.startsWith("/audio/") && (packaged || !existsSync(file))) {
+          const root = resolve(packaged || publicAudio);
+          file = resolve(root, `.${relative.slice(6)}`);
+          if (!file.startsWith(root + sep)) throw new Error("outside the audio files");
+        }
         if (relative.startsWith("/audio/") && relative.endsWith(".wasm")) state.lastBinary = relative.slice(1);
         body = await readFile(file);
         type = MIME[extname(file)] ?? "application/octet-stream";

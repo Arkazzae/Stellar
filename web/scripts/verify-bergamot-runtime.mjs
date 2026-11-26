@@ -13,7 +13,8 @@ import { extname, join, resolve, sep } from "node:path";
 
 import { assemble } from "../../artifacts/assemble.mjs";
 
-const publicRoot = resolve(import.meta.dirname, "..", "public");
+const appPublic = resolve(import.meta.dirname, "..", "public");
+const publicRoot = process.env.STELLARR_TRANSLATION_ROOT ? resolve(process.env.STELLARR_TRANSLATION_ROOT) : appPublic;
 const chromium = process.env.STELLARR_CHROMIUM ?? "/usr/bin/chromium";
 const startupTimeoutMs = 15_000;
 const runTimeoutMs = 180_000;
@@ -153,8 +154,9 @@ const fixturePage = `<!doctype html>
 let downloadedModelFiles = 0;
 
 async function serveStatic(pathname, response) {
-  const file = resolve(publicRoot, `.${pathname}`);
-  if (!file.startsWith(publicRoot + sep)) {
+  const root = pathname === "/bergamot-worker.js" ? appPublic : publicRoot;
+  const file = resolve(root, `.${pathname}`);
+  if (!file.startsWith(root + sep)) {
     response.writeHead(404).end();
     return;
   }
@@ -290,7 +292,7 @@ function check(session, { translations, report, keys }, listedHashes) {
   }
 }
 
-const problems = await assemble({ log: console.log });
+const problems = publicRoot === appPublic ? await assemble({ log: console.log }) : [];
 if (problems.length > 0) {
   for (const problem of problems) console.error(`  - ${problem}`);
   throw new Error("The artifacts in public/ do not match artifacts/manifest.json.");

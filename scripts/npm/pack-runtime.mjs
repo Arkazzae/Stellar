@@ -69,7 +69,8 @@ try {
     for (const engine of ["speex", "rnnoise"]) {
       await worklet(engine, join(root, "web/src/stellarr/lib/voice/capture", engine, "processor.ts"));
     }
-    await worklet("gtcrn", join(inputs, "gtcrn/worklet/src/gtcrn/workletProcessor.ts"), {
+    await worklet("gtcrn", join(root, "artifacts/recipes/gtcrn/worklet.js"), {
+      "gtcrn-frame-processor": join(inputs, "gtcrn/worklet/src/gtcrn/processor.ts"),
       "@sapphi-red/gtcrn-wasm": join(inputs, "gtcrn/src/index.ts"),
     });
   } else {
