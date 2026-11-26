@@ -25,7 +25,7 @@ Sensitive mutations gated by the 5-minute fresh MFA window include creating or d
 | **Activities** | `/cockpit/activities` | Install static multiplayer activities from GitHub repository/release URLs, review permissions and external hosts, enable/disable/update/uninstall entries, and issue dev preview pairing codes ([Activity SDK](../sdk/getting-started.md)). |
 | **Backups** | `/cockpit/backups` | On-demand `.db` snapshots and full `.zip` archives, SHA-256 verification, archive downloads, and [automated backup schedules](backups.md). |
 | **Integrations** | `/cockpit/integrations` | Resend email API, GIPHY toggle and key validation, Web Push VAPID status, per-provider OIDC invite sign-up toggles, and [Cloudflare R2](cloudflare-r2.md) (`s3` or `worker`) with connection tests. |
-| **Settings** | `/cockpit/settings` | Instance name, time zone, file storage quota, retention windows (`backups-days`, `logs-days`, `orphans-days`) and hourly cleanup, SMTP server, [MFA policy](account-security.md#instance-mfa-policy-operators), desktop client version floors, and Cockpit UI locale (`en` / `pl`). |
+| **Settings** | `/cockpit/settings` | Instance name, time zone, file storage quota, retention windows (`backups-days`, `logs-days`, `orphans-days`) and hourly cleanup, SMTP server, [MFA policy](account-security.md#instance-mfa-policy-operators), desktop client version floors, and Cockpit UI locale (`en`, `pl` or `de`). |
 
 ## Sealed secrets and log redaction
 
@@ -43,4 +43,4 @@ Cockpit's **Logs** buffer retains up to `10,000` lines (`2 KiB` ceiling per line
 
 ## Interface language
 
-Cockpit persists its UI locale (`en` or `pl`) in `localStorage` under `stellarr.cockpit.locale`, independent of both the chat client's user locale and `STELLARR_LANGUAGE`.
+Cockpit persists its UI locale (`en`, `pl` or `de`) in `localStorage` under `stellarr.cockpit.locale`, independent of both the chat client's user locale and `STELLARR_LANGUAGE`.
