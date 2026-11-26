@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { Icon } from "@stellarr/icons";
 import { ActivityIcon } from "@/components/activities/ActivityIcon";
 import { Avatar } from "@/components/primitives/Avatar";
-import { ConfirmDialog } from "@/components/primitives/ConfirmDialog";
+import { ConfirmDialog, useConfirm } from "@/components/primitives/ConfirmDialog";
 import { Popover } from "@/components/primitives/Popover";
 import { useChromeIdle } from "@/components/voice/useChromeIdle";
 import { activitiesApi } from "@/lib/activities/api";
@@ -141,7 +141,8 @@ export function ActivityPanel({ slot, session, target }: PanelProps) {
   const ui = useUi();
   const call = useVoiceCall();
   const { user } = useSession();
-  const { members } = useDirectory();
+  const { members, channelName } = useDirectory();
+  const confirm = useConfirm();
   const [panel, setPanel] = useState<HTMLElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [consent, setConsent] = useState<Consent | null>(null);
@@ -204,6 +205,26 @@ export function ActivityPanel({ slot, session, target }: PanelProps) {
     [place, install, access],
   );
   const lost = useCallback(() => lose(slot, access), [lose, slot, access]);
+
+  // Ending it for everyone asks first, with the app's card, which full
+  // screen would hide.
+  const endForAll = async () => {
+    setMenuOpen(false);
+    if (document.fullscreenElement) await document.exitFullscreen?.().catch(() => undefined);
+    await confirm({
+      title: t("activities.endTitle", { name: session.title }),
+      description: t("activities.endDetail", {
+        count: summary?.participants.length ?? 1,
+        channel: channelName(session.place),
+      }),
+      confirmLabel: t("activities.end"),
+      cancelLabel: t("common.cancel"),
+      busyLabel: t("activities.ending"),
+      danger: true,
+      run: () => end(session.place),
+      failure: t("activities.error.generic"),
+    });
+  };
 
   const toggleFullscreen = () => {
     if (document.fullscreenElement) {
@@ -364,10 +385,7 @@ export function ActivityPanel({ slot, session, target }: PanelProps) {
                 <button
                   type="button"
                   className="qm-more danger"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    void end(session.place).catch(() => undefined);
-                  }}
+                  onClick={() => void endForAll()}
                 >
                   <span className="qm-more-icon" aria-hidden="true">
                     <Icon name="stop" size={15} />

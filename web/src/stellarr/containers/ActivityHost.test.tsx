@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 
+import { ConfirmProvider } from "@/components/primitives/ConfirmDialog";
 import type { ActivitySession } from "@/state/hooks";
 import { resetStubs, setStubs, stubs } from "@/test/hookStubs";
 
@@ -38,13 +39,18 @@ function inside(host: string) {
       ]),
     },
   });
-  return render(<ActivityPanel slot="voice" session={session} target={null} />);
+  return render(
+    <ConfirmProvider>
+      <ActivityPanel slot="voice" session={session} target={null} />
+    </ConfirmProvider>,
+  );
 }
 
 beforeEach(() => {
   resetStubs();
   setStubs({
     directory: {
+      channelName: () => "voice",
       members: [
         { id: "u-maja", username: "maja", displayName: "Maja", presence: "online" },
         { id: "u-ada", username: "ada", displayName: "Ania Mazur", presence: "online" },
@@ -53,7 +59,7 @@ beforeEach(() => {
   });
 });
 
-it("gives the host a menu to change the activity or end it for everyone", () => {
+it("gives the host a menu to change the activity or, once asked, end it for everyone", async () => {
   inside("u-maja");
   const bar = within(screen.getByRole("region", { name: "SyncTube" }));
 
@@ -64,7 +70,15 @@ it("gives the host a menu to change the activity or end it for everyone", () => 
   expect(stubs.activities.openPicker).toHaveBeenCalledWith({ scope: "voice", channelId: "voice-1", change: true });
 
   fireEvent.click(bar.getByRole("button", { name: "Więcej" }));
-  fireEvent.click(bar.getByRole("button", { name: "Zakończ dla wszystkich" }));
+  await act(async () => {
+    fireEvent.click(bar.getByRole("button", { name: "Zakończ dla wszystkich" }));
+  });
+  const question = screen.getByRole("dialog", { name: "Zakończyć SyncTube dla wszystkich?" });
+  expect(question).toHaveTextContent("Aktywność zamknie się u 2 os. na kanale voice.");
+  expect(stubs.activities.end).not.toHaveBeenCalled();
+  await act(async () => {
+    fireEvent.click(within(question).getByRole("button", { name: "Zakończ" }));
+  });
   expect(stubs.activities.end).toHaveBeenCalledWith("voice-1");
 });
 
@@ -82,7 +96,11 @@ it("lets anyone else only leave, and says who hosts", () => {
 it("asks with the app's card before an activity gets the camera, and refuses on no", async () => {
   const camera = { ...session, permissions: ["media.cameraTile"] };
   setStubs({ activities: { voice: camera, live: new Map() } });
-  render(<ActivityPanel slot="voice" session={camera} target={null} />);
+  render(
+    <ConfirmProvider>
+      <ActivityPanel slot="voice" session={camera} target={null} />
+    </ConfirmProvider>,
+  );
   const frame = screen.getByTitle<HTMLIFrameElement>("SyncTube");
   const port = { postMessage: vi.fn(), close: vi.fn(), onmessage: null as null | ((event: unknown) => void) };
   const hello = Object.assign(new Event("message"), {
