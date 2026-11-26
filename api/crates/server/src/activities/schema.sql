@@ -13,3 +13,9 @@ CREATE TABLE IF NOT EXISTS ActivityFiles (
     PRIMARY KEY (Install, Digest, Path),
     FOREIGN KEY (Install, Digest) REFERENCES ActivityVersions(Install, Digest) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS ActivityProgress (
+    UserId TEXT NOT NULL REFERENCES Users(Id) ON DELETE CASCADE,
+    Source TEXT NOT NULL, Activity TEXT NOT NULL,
+    Revision INTEGER NOT NULL, Data TEXT NOT NULL,
+    PRIMARY KEY (UserId, Source, Activity)
+);

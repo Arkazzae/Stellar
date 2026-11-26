@@ -176,11 +176,15 @@ pub async fn remove(
 /// Tells everybody what the person looks like now, and the person what they
 /// themselves look like (their own status shows as it is).
 pub(crate) async fn broadcast_user_updated(state: &AppState, user: Id) -> Result<(), ApiError> {
+    // Order the profile snapshot with activity opens that also read the account.
+    let activity_change = state.activities().changes.write().await;
     let row = state
         .database()
         .read(move |db| -> Result<Option<User>, DbError> { Ok(User::find(db, user)?) })
         .await?;
     let Some(row) = row else { return Ok(()) };
+    state.activities().update_profile(&row)?;
+    drop(activity_change);
     let public = row.dto(&state.presence().public_presence_of(user, None));
     let own = row.dto(&state.presence_of(user));
     state

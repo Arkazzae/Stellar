@@ -33,6 +33,7 @@ impl Authority {
                     try { return JSON.stringify({ value: room(JSON.parse(person), JSON.parse(input)) }); }
                     catch(e) { return JSON.stringify({ status: e.status || 500, error: String(e.message) }); }
                 };
+                globalThis.updateProfile = person => room.updateProfile(JSON.parse(person));
                 globalThis.revoke = id => room.revoke(id);
                 globalThis.expired = () => room.expired();
             "#)
@@ -49,6 +50,15 @@ impl Authority {
             })
             .map_err(ApiError::internal)?;
         serde_json::from_str(&output).map_err(ApiError::internal)
+    }
+    pub fn update_profile(&self, person: &Value) -> Result<(), ApiError> {
+        self.context
+            .with(|ctx| {
+                ctx.globals()
+                    .get::<_, Function>("updateProfile")?
+                    .call::<_, ()>((person.to_string(),))
+            })
+            .map_err(ApiError::internal)
     }
     pub fn revoke(&self, id: Id) {
         let _ = self.context.with(|ctx| -> rquickjs::Result<()> {

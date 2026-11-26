@@ -67,6 +67,47 @@ Set a seat count, such as `"seats": 2`, to allow spectators. A host command can 
 
 Use `session.now()` for a shared playback clock. Use `send(kind, data, { to, latest })` for a transient event. With `latest: true`, queued events of the same kind can replace earlier ones. Check the return value to detect a locally rejected send. Subscribe to `connection` to display reconnecting or closed states. [Browser API declarations](client.d.ts)
 
+## Adapt the game to its players
+
+Declare `"devices": ["phone", "tablet", "desktop"]` in `stellarr.json`, or omit it when the game supports all three. The launcher and game use the same classification. A coarse primary pointer and a shorter screen dimension of at least 600 CSS pixels identify a tablet. Smaller touchscreens are phones. A fine primary pointer identifies a desktop. Use responsive CSS for the available frame size and provide touch and keyboard controls as appropriate.
+
+Read `session.context.locale` for the active Stellarr interface language. A local preview uses the browser language, which may include a region such as `pl-PL`. Subscriptions run immediately and when the setting changes, including during a round. The game supplies its own translations.
+
+```js
+session.locale.subscribe(locale => {
+  document.documentElement.lang = locale;
+  renderLabels(locale);
+});
+session.device.subscribe(device => {
+  document.documentElement.dataset.device = device;
+});
+```
+
+The Stellarr frame displays the participants. Inside a scoreboard, subscribe to `session.participants` and match scores to `player.id`. Each entry includes the display name, optional account username, current avatar URL or `null`, and connection status. The roster and `session.context.me` reflect profile edits during play. Show the name or initials when an image is unavailable.
+
+## Save a player's progress
+
+`session.progress.load()` reads the signed-in player's private save on this instance. A first visit returns `{ revision: 0, data: null }`. Call `save(data, expectedRevision)` at a checkpoint with a complete JSON object of up to 64 KiB. Its result is the committed revision. This save follows the account across devices, voice and personal sessions, server restarts, updates and reinstalls from the same source. Removing the account deletes its saves.
+
+```js
+async function finishLevel(level) {
+  for (;;) {
+    const { data, revision } = await session.progress.load();
+    if ((data?.highestLevel ?? 0) >= level) return;
+    try {
+      await session.progress.save({ ...data, highestLevel: level }, revision);
+      return;
+    } catch (error) {
+      if (error.status !== 409) throw error;
+    }
+  }
+}
+```
+
+A conflicting change returns HTTP 409. Read the new revision and merge according to the game's rules. Retrying an acknowledged revision with the same data succeeds while that revision is current. The SDK retries interrupted requests with the original revision, so an old save cannot overwrite newer progress. Bundled games supporting older hosts can check `session.capabilities.includes("progress")`.
+
+The CLI stores test saves under `~/.stellarr-preview/progress` for the project, port and simulated player. Reload the same tab to resume. A paired development preview keeps separate tester saves across uploads for the lifetime of the pairing.
+
 ## Test camera and microphone input
 
 Declare `media.microphoneLevel` or `media.cameraTile` in `permissions`. A game calls `session.media.microphoneLevel.open()` or `session.media.cameraTile.open()`. Stellarr asks that player for consent. Handle a rejected request and use the handle’s `onEnded` to restore touch or keyboard controls.

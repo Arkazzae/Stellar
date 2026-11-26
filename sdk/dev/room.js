@@ -108,7 +108,7 @@ export function createRoom({ authority = "shared", seats, permissions = [], limi
     }
   }
 
-  function publicPerson({ id, name, avatar, connected }) { return { id, name, avatar, connected }; }
+  function publicPerson({ id, name, username, avatar, connected }) { return { id, name, username, avatar, connected }; }
   function view(member, time) {
     return {
       version, now: time, host, epoch,
@@ -160,7 +160,7 @@ export function createRoom({ authority = "shared", seats, permissions = [], limi
       if (member.frame) retired.add(member.frame);
       Object.assign(member, { frame: input.frame, sequence: 0, committedRevision: 0, messages: [] });
     }
-    Object.assign(member, { name: person.name, avatar: person.avatar ?? null, connected: true, suspended: false, lastSeen: time });
+    Object.assign(member, { name: person.name, username: person.username, avatar: person.avatar ?? null, connected: true, suspended: false, lastSeen: time });
     emptyAt = null;
     state ??= input.initialState;
     version++;
@@ -269,6 +269,7 @@ export function createRoom({ authority = "shared", seats, permissions = [], limi
       version++;
       elect();
     }
+    if (typeof person.name === "string") updateProfile(person);
     member.lastSeen = time;
     switch (input.op) {
       case "read": {
@@ -280,6 +281,14 @@ export function createRoom({ authority = "shared", seats, permissions = [], limi
         }
         return response;
       }
+      // The transport owns private storage. Validate the frame and payload here first.
+      case "loadProgress": return {};
+      case "saveProgress":
+        checkObject(input.data, 64 * 1024);
+        if (!Number.isSafeInteger(input.expected) || input.expected < 0 || input.expected >= Number.MAX_SAFE_INTEGER)
+          fail(400, "Expected a progress revision.");
+        acceptRate(member.writes, limits.writesPerSecond, time);
+        return {};
       case "sync": return { ...view(member, time), changes: changes(input.after) };
       case "write": {
         requireSeat(member);
@@ -334,6 +343,14 @@ export function createRoom({ authority = "shared", seats, permissions = [], limi
       default: fail(400, "Unknown session operation.");
     }
   }
+  function updateProfile({ id, name, username, avatar = null }) {
+    const member = members.get(id);
+    if (member && (member.name !== name || member.username !== username || member.avatar !== avatar)) {
+      Object.assign(member, { name, username, avatar });
+      version++;
+    }
+  }
+  room.updateProfile = updateProfile;
   const originalSessionId = sessionId;
   room.expired = () => {
     expire(clock());

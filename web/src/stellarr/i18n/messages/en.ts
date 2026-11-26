@@ -1868,6 +1868,8 @@ export const en = {
   "share.pictureInPicture": "Picture in picture",
   "share.watchedBy": "Watching: {names}",
   "stage.callView": "Call view",
+  "stage.activityPlayers": "Participants",
+  "stage.activityDisconnected": "Disconnected",
   "stage.gameAudio": "Game audio",
   "friends.tabActivities": "Activities",
   "stage.voicePickerTitle": "Shared activity",

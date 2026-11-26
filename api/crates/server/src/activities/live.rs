@@ -61,7 +61,7 @@ impl Scope {
 type Place = (Id, Scope);
 #[derive(Default)]
 pub(crate) struct Sessions {
-    pub(super) changes: tokio::sync::RwLock<()>,
+    pub(crate) changes: tokio::sync::RwLock<()>,
     rooms: Mutex<HashMap<Place, Live>>,
 }
 struct Lease {
@@ -130,7 +130,31 @@ fn broadcast_voice_activity(state: &AppState, channel: Id, activity: Option<Valu
     );
 }
 
+fn participant(user: &User) -> Value {
+    let avatar = user
+        .avatar_url
+        .as_deref()
+        .and_then(|url| url.strip_prefix("/assets/"))
+        .and_then(Id::parse)
+        .map(|asset| format!("/_stellarr/avatars/{}/{asset}", user.id));
+    json!({ "id": user.id, "name": user.display_name, "username": user.username, "avatar": avatar })
+}
+
 impl Sessions {
+    pub(crate) fn update_profile(&self, user: &User) -> ApiResult<()> {
+        let person = participant(user);
+        for live in self
+            .rooms
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|live| live.leases.contains_key(&user.id))
+        {
+            live.authority.update_profile(&person)?;
+        }
+        Ok(())
+    }
+
     pub(super) fn pinned_digest(&self, id: Id, channel: Scope) -> Option<String> {
         self.rooms
             .lock()
@@ -568,7 +592,7 @@ pub(super) async fn room(
     State(state): State<AppState>,
     caller: Caller,
     Path(path): Path<String>,
-    ActivityParent(origin): ActivityParent,
+    _: ActivityParent,
     Json(input): Json<Action>,
 ) -> ApiResult<Response> {
     let channel = Scope::from_path(&path, caller.user)?;
@@ -580,14 +604,9 @@ pub(super) async fn room(
             .read(move |db| User::find(db, caller.user))
             .await?
             .ok_or_else(ApiError::forbidden)?;
-        person["name"] = json!(user.display_name);
-        person["avatar"] = json!(
-            user.avatar_url
-                .filter(|path| path.starts_with("/assets/"))
-                .map(|path| format!("{origin}{path}"))
-        );
+        person = participant(&user);
     }
-    let result = in_session(&state, channel, caller, &input, |live| {
+    let (mut output, progress) = in_session(&state, channel, caller, &input, |live| {
         let stale: Vec<Id> = live
             .leases
             .keys()
@@ -600,44 +619,55 @@ pub(super) async fn room(
             live.pictures.remove(&id);
         }
         let output = live.authority.run(&person, &input.action)?;
-        if let Some(error) = output.get("error") {
-            let status = output["status"]
-                .as_u64()
-                .and_then(|s| StatusCode::from_u16(s as u16).ok())
-                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-            return Ok(Response::builder()
-                .status(status)
-                .header(header::CONTENT_TYPE, "text/plain")
-                .body(Body::from(
-                    error
-                        .as_str()
-                        .unwrap_or("Activity rejected the operation.")
-                        .to_owned(),
-                ))
-                .unwrap());
-        }
-        let mut value = output["value"].clone();
-        if input.action["op"] == "open" {
-            value["place"] = channel.place();
-            value["launchMode"] = json!(channel.mode());
-            value["standalone"] = json!(false);
-        }
-        if input.action["op"] == "close" {
+        let progress = matches!(
+            input.action["op"].as_str(),
+            Some("loadProgress" | "saveProgress")
+        )
+        .then(|| super::progress::ProgressKey {
+            user: caller.user,
+            source: live.installed.source.clone(),
+            activity: live.installed.manifest.id.clone(),
+        });
+        if input.action["op"] == "close" && output.get("error").is_none() {
             live.leases.remove(&caller.user);
             live.pictures.remove(&caller.user);
         }
-        Ok(Response::builder()
-            .header(header::CONTENT_TYPE, "application/json")
-            .header(header::CACHE_CONTROL, "no-store")
-            .body(Body::from(value.to_string()))
-            .unwrap())
-    });
-    if input.action["op"] == "close"
+        Ok((output, progress))
+    })?;
+    if let Some(error) = output.get("error") {
+        let status = output["status"]
+            .as_u64()
+            .and_then(|s| StatusCode::from_u16(s as u16).ok())
+            .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        return Ok(Response::builder()
+            .status(status)
+            .header(header::CONTENT_TYPE, "text/plain")
+            .body(Body::from(
+                error
+                    .as_str()
+                    .unwrap_or("Activity rejected the operation.")
+                    .to_owned(),
+            ))
+            .unwrap());
+    }
+    let mut value = output["value"].take();
+    if let Some(key) = progress {
+        value = key.run(&state, input.action).await?;
+    } else if input.action["op"] == "open" {
+        value["place"] = channel.place();
+        value["launchMode"] = json!(channel.mode());
+        value["standalone"] = json!(false);
+        value["progress"] = json!(true);
+    } else if input.action["op"] == "close"
         && let Scope::Voice(ch) = channel
     {
         state.activities().sync_voice_channel(&state, ch);
     }
-    result
+    Ok(Response::builder()
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::CACHE_CONTROL, "no-store")
+        .body(Body::from(value.to_string()))
+        .unwrap())
 }
 pub(super) async fn tile(
     State(state): State<AppState>,
@@ -793,6 +823,7 @@ pub(super) async fn asset(
     let label = host
         .strip_suffix(&format!(".{domain}"))
         .ok_or_else(ApiError::not_found)?;
+    let avatar = avatar_path(&path)?;
     let (cookie, install, digest, manifest, credential) = {
         let mut rooms = state.activities().rooms.lock().unwrap();
         let received: HashSet<_> = headers
@@ -807,7 +838,11 @@ pub(super) async fn asset(
         let ticket = path.strip_prefix("_stellarr/start/").and_then(Id::parse);
         let mut found = None;
         for ((installation, channel), live) in rooms.iter_mut() {
-            if live.asset_label != label {
+            if live.asset_label != label
+                || avatar.is_some_and(|(owner, _)| {
+                    !live.leases.contains_key(&owner) || !seated(&state, *channel, owner)
+                })
+            {
                 continue;
             }
             for lease in live.leases.values_mut() {
@@ -840,6 +875,9 @@ pub(super) async fn asset(
         found.ok_or_else(ApiError::forbidden)?
     };
     verify_asset_session(&state, credential).await?;
+    if let Some((owner, asset)) = avatar {
+        return serve_avatar(&state, credential, owner, asset, headers).await;
+    }
     if let Some((cookie, scope)) = cookie {
         let key = match scope {
             Scope::Personal(id) => format!("personal-{id}"),
@@ -874,6 +912,54 @@ pub(super) async fn asset(
             "camera=(), microphone=(), display-capture=()",
         );
     Ok(asset_content(builder, &headers, content_type, bytes))
+}
+
+fn avatar_path(path: &str) -> ApiResult<Option<(Id, Id)>> {
+    let Some(suffix) = path.strip_prefix("_stellarr/avatars/") else {
+        return Ok(None);
+    };
+    let (owner, asset) = suffix.split_once('/').ok_or_else(ApiError::not_found)?;
+    Ok(Some((
+        Id::parse(owner).ok_or_else(ApiError::not_found)?,
+        Id::parse(asset).ok_or_else(ApiError::not_found)?,
+    )))
+}
+
+async fn serve_avatar(
+    state: &AppState,
+    credential: (Id, i64, Id),
+    owner: Id,
+    asset: Id,
+    headers: HeaderMap,
+) -> ApiResult<Response> {
+    let current = state
+        .database()
+        .read(move |db| -> ApiResult<bool> {
+            Ok(db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM Users WHERE Id=?1 AND AvatarUrl=?2)",
+                rusqlite::params![owner, format!("/assets/{asset}")],
+                |row| row.get(0),
+            )?)
+        })
+        .await?;
+    if !current {
+        return Err(ApiError::forbidden());
+    }
+    let mut response = crate::assets::download(
+        State(state.clone()),
+        Caller {
+            user: credential.0,
+            session: credential.2,
+        },
+        Path(asset),
+        headers,
+    )
+    .await?;
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("private, no-store"),
+    );
+    Ok(response)
 }
 
 async fn verify_asset_session(state: &AppState, credential: (Id, i64, Id)) -> ApiResult<()> {
@@ -946,12 +1032,18 @@ pub(super) async fn sandbox_asset(
         return Err(ApiError::forbidden());
     }
     let _gate = state.activities().changes.read().await;
+    let avatar = avatar_path(&path)?;
     let (install, digest, manifest, origin, credential) = {
         let rooms = state.activities().rooms.lock().unwrap();
         rooms
             .iter()
             .find_map(|((install, scope), live)| {
                 let lease = live.leases.values().find(|l| l.cookie == key)?;
+                if avatar.is_some_and(|(owner, _)| {
+                    !live.leases.contains_key(&owner) || !seated(&state, *scope, owner)
+                }) {
+                    return None;
+                }
                 (lease.touched.elapsed() < Duration::from_secs(60)
                     && seated(&state, *scope, lease.user))
                 .then(|| {
@@ -967,6 +1059,9 @@ pub(super) async fn sandbox_asset(
             .ok_or_else(ApiError::forbidden)?
     };
     verify_asset_session(&state, credential).await?;
+    if let Some((owner, asset)) = avatar {
+        return serve_avatar(&state, credential, owner, asset, headers).await;
+    }
     let (mime, bytes) = read_asset(&state, install, digest, path).await?;
     let files = format!("{origin}/_activity/{key}/");
     let external = manifest

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { connect } from "../client.js";
+import { previewProgress } from "../dev/progress.js";
 import { createRoom } from "../dev/room.js";
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -22,6 +23,8 @@ test("two embedded SDK clients handle packet loss, ordered state, private messag
     if (previousWindow) globalThis.window = previousWindow;
     else delete globalThis.window;
   });
+  const saves = new Map();
+  let locale = "pl", device = "phone", dropSave = true;
   let dropWrite = true, dropDecision = true, dropResult = true;
   async function join(id) {
     page.parent = { postMessage(kind, _, [port]) {
@@ -29,7 +32,13 @@ test("two embedded SDK clients handle packet loss, ordered state, private messag
       if (kind !== "stellarr:dev-connect:v1") return;
       port.onmessage = ({ data: { id: serial, input } }) => {
         try {
-          const value = room({ id, name: id }, input);
+          let value = room(input.op === "open" ? { id, name: id } : { id }, input);
+          if (input.op === "open" || input.op === "read") Object.assign(value, { locale, device });
+          if (input.op === "open") value.progress = true;
+          if (input.op === "loadProgress" || input.op === "saveProgress") {
+            value = previewProgress(saves.get(id), input, next => saves.set(id, next));
+            if (dropSave && input.op === "saveProgress") { dropSave = false; throw new Error("Lost save acknowledgement"); }
+          }
           if (input.op === "open") Object.assign(value, { standalone: true, volume: 0.4 });
           if (input.op === "write" && dropWrite) { dropWrite = false; throw new Error("Lost write reply"); }
           if (input.op === "decide" && dropDecision) { dropDecision = false; throw new Error("Lost decision reply"); }
@@ -43,6 +52,25 @@ test("two embedded SDK clients handle packet loss, ordered state, private messag
     return session;
   }
   const alice = await join("alice"), bob = await join("bob");
+  assert.equal(alice.context.device, "phone");
+  const languages = [], devices = [];
+  alice.locale.subscribe(value => languages.push(value));
+  alice.device.subscribe(value => devices.push(value));
+  locale = "en"; device = "tablet";
+  room.updateProfile({ id: "alice", name: "Alicja", avatar: "/portrait" });
+  await eventually(() => alice.context.me.name === "Alicja" && bob.participants.get()[0].avatar === "/portrait");
+  assert.deepEqual(languages, ["pl", "en"]);
+  assert.deepEqual(devices, ["phone", "tablet"]);
+  assert.equal(alice.context.locale, "en");
+  assert.equal(alice.context.device, "tablet");
+  assert.ok(alice.capabilities.includes("progress"));
+  const circular = {};
+  circular.self = circular;
+  await assert.rejects(alice.progress.save(circular, 0), TypeError);
+  assert.equal(await alice.progress.save({ level: 3 }, 0), 1);
+  assert.deepEqual(await alice.progress.load(), { data: { level: 3 }, revision: 1 });
+  assert.deepEqual(await bob.progress.load(), { data: null, revision: 0 });
+  await assert.rejects(alice.progress.save({ level: 4 }, 0), { status: 409 });
   assert.equal(alice.context.standalone, true);
   assert.equal(alice.context.launchMode, "voice");
   assert.equal(alice.media.volume.get(), 0.4);

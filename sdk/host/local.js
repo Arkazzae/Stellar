@@ -1,3 +1,4 @@
+import { detectDevice } from "/_stellarr/sdk/v1.js";
 import { bindMediaHost } from "./media-host.js";
 
 const config = await (await fetch("/_stellarr/config")).json();
@@ -32,11 +33,16 @@ window.addEventListener("message", event => {
     if (!data || !Number.isSafeInteger(data.id) || !data.input) return;
     try {
       const result = await call("room", { ...data.input, frame: id });
-      if (data.input.op === "open") Object.assign(result, { standalone: true, locale: navigator.language, volume: Number(slider.value)/100 });
+      if (data.input.op === "read" || data.input.op === "open") {
+        result.locale = navigator.language;
+        result.device = detectDevice();
+      }
+      if (data.input.op === "open") Object.assign(result, { standalone: true, volume: Number(slider.value)/100 });
       port.postMessage({ id: data.id, value: result });
     } catch (error) { port.postMessage({ id: data.id, error: error.message, status: error.status }); }
   };
 });
 bindMediaHost({ frame, origin: config.frame, title: config.name, permissions: config.permissions, controls: document.querySelector("#devices"),
-  volume: slider, tile: action => call("tile", action), fixtures: true });
-frame.src = config.frame + "/";
+  volume: slider, language: () => navigator.language, tile: action => call("tile", action), fixtures: true });
+if (!config.devices || config.devices.includes(detectDevice())) frame.src = config.frame + "/";
+else frame.replaceWith(document.createTextNode("Available on: " + config.devices.join(", ")));
