@@ -18,7 +18,7 @@ use crate::values::Id;
 const FILE_NAME: &str = "instance-id";
 const API_PROTOCOL: u32 = 1;
 const RTC_PROTOCOL: u32 = 1;
-const FALLBACK_INSTANCE_NAME: &str = "Stellarr";
+const PRODUCT_NAME: &str = "Stellarr";
 const SIGN_IN_METHODS: [&str; 2] = ["password", "invite"];
 
 #[derive(Serialize)]
@@ -46,24 +46,15 @@ struct DesktopVersions {
 }
 
 /// Public installation identity for this origin, shared by all its servers.
-pub async fn manifest(State(state): State<AppState>) -> ApiResult<axum::response::Response> {
+pub async fn manifest(State(state): State<AppState>) -> axum::response::Response {
     use axum::http::{HeaderValue, StatusCode, header};
-    use rusqlite::OptionalExtension;
 
-    let name = state.database().read(|db| -> Result<Option<String>, DbError> {
-        Ok(db.query_row(r#"SELECT "Name" FROM "Servers" ORDER BY "CreatedAt", "Id" LIMIT 1"#,
-            [], |row| row.get(0)).optional()?)
-    }).await?;
-    let name = match name.as_deref() {
-        None | Some("") | Some("Stellarr") => "Stellarr".to_string(),
-        Some(instance) => format!("Stellarr · {instance}"),
-    };
     let (inbox, messages) = match state.messages().language() {
         stellarr_messages::Language::Polish => ("Powiadomienia", "Wiadomości"),
         _ => ("Notifications", "Messages"),
     };
     let manifest = serde_json::json!({
-        "id": "/", "name": name, "short_name": name, "start_url": "/", "scope": "/",
+        "id": "/", "name": PRODUCT_NAME, "short_name": PRODUCT_NAME, "start_url": "/", "scope": "/",
         "display": "standalone", "background_color": "#111111", "theme_color": "#111111",
         "share_target": {
             "action": "/pwa/share", "method": "POST", "enctype": "multipart/form-data",
@@ -87,7 +78,7 @@ pub async fn manifest(State(state): State<AppState>) -> ApiResult<axum::response
     });
     let mut response = crate::http::json_response(StatusCode::OK, &manifest);
     response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("application/manifest+json"));
-    Ok(response)
+    response
 }
 
 pub async fn describe(
@@ -138,7 +129,7 @@ pub async fn describe(
         product: "stellarr",
         instance_id,
         instance_name: found
-            .map_or_else(|| FALLBACK_INSTANCE_NAME.to_string(), |(_, name)| name),
+            .map_or_else(|| PRODUCT_NAME.to_string(), |(_, name)| name),
         canonical_origin: if desktop.canonical_origin.is_empty() {
             let (scheme, host) = super::requested_origin(&headers, client.as_ref().map(|c| &c.0));
             format!("{scheme}://{host}")
