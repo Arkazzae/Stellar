@@ -98,7 +98,7 @@ Local testing works right away on your machine. Before inviting friends over the
 
 Read the full docs at [arkazzae.github.io/Stellarr](https://arkazzae.github.io/Stellarr/) or browse [`docs/`](docs/README.md):
 
-- **Self-hosting:** [Quick start](docs/install/quick-start.md) · [Requirements](docs/install/requirements.md) · [Configuration](docs/install/configuration.md) · [Reverse proxy and TLS](docs/install/reverse-proxy-and-tls.md) · [Unraid](docs/install/unraid.md) · [Upgrading](docs/install/upgrading.md)
+- **Self-hosting:** [Quick start](docs/install/quick-start.md) · [Requirements](docs/install/requirements.md) · [Configuration](docs/install/configuration.md) · [Reverse proxy and TLS](docs/install/reverse-proxy-and-tls.md) · [Hosting without port forwarding](docs/install/no-port-forwarding.md) · [Unraid](docs/install/unraid.md) · [Upgrading](docs/install/upgrading.md)
 - **Administration:** [Servers and features](docs/admin/servers-and-features.md) · [Stellarr Cockpit](docs/admin/cockpit.md) · [Operator CLI](docs/admin/cli.md) · [Account security](docs/admin/account-security.md) · [Automatic backups](docs/admin/backups.md) · [Cloudflare R2](docs/admin/cloudflare-r2.md) · [Notifications](docs/admin/notifications.md)
 - **Reference:** [Architecture](docs/architecture.md) · [Themes and appearance](docs/themes.md) · [RTC and ports](docs/rtc-and-ports.md) · [Voice and RTC protocol](docs/rtc-protocol.md) · [Stellarr Media SFU](docs/stellarr-media.md) · [Localization](docs/localization.md)
 - **Development:** [Local setup](docs/development/local-setup.md) · [Codebase and testing](docs/development/codebase-and-testing.md)
