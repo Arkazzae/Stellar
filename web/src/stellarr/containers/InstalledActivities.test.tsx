@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { request } from "@/lib/api/transport";
-import { InstalledActivities } from "./InstalledActivities";
+import { InstalledActivities, type VoiceActivityBarControl } from "./InstalledActivities";
 
 vi.mock("@/lib/api/transport", () => ({ request: vi.fn() }));
 vi.mock("@/state/LanguageProvider", () => ({
@@ -24,7 +24,7 @@ function server() {
   vi.mocked(request).mockImplementation((path, init) => new Promise((resolve, reject) => {
     pending.push({ path, input: JSON.parse(String(init.body)), resolve, reject });
   }));
-  function take(path: "list" | "launch") {
+  function take(path: "list" | "launch" | "leave") {
     const call = pending.find(item => item.path.endsWith("/" + path));
     if (!call) throw new Error("Missing " + path + " request");
     pending.splice(pending.indexOf(call), 1);
@@ -136,13 +136,13 @@ it("discards a late successful launch after a list response invalidates the pend
   expect(screen.getByTitle(entry.name)).toHaveAttribute("src", "https://game.test/new-lease");
 });
 
-it("keeps all ten games inside the voice dialog and distinguishes start, join and unsupported devices", async () => {
+it("keeps all ten games inside the voice dialog, supports search and distinguishes start, join and unsupported devices", async () => {
   const api = server();
   render(<VoiceLibrary />);
   const description = "A game for the whole channel.";
   const games = Array.from({ length: 10 }, (_, i) => ({
     ...entry, install: String(i), name: "Game " + i, running: i === 0, supported: i !== 9,
-    artwork: { cover: "/cover.png", icon: "/icon.png" }, description, devices: ["tablet"],
+    artwork: { cover: "/cover.png", icon: "/icon.png" }, description, devices: ["tablet"], seats: 8,
   }));
   expect(request).not.toHaveBeenCalled();
   expect(screen.getAllByRole("button")).toHaveLength(1);
@@ -150,17 +150,71 @@ it("keeps all ten games inside the voice dialog and distinguishes start, join an
   opener.focus();
   openPicker();
   await api.take("list").reply(games);
-  const dialog = within(screen.getByRole("dialog", { name: "friends.tabActivities" }));
+  const dialog = within(screen.getByRole("dialog", { name: "stage.voicePickerTitle" }));
   expect(dialog.getAllByRole("listitem")).toHaveLength(10);
   const join = dialog.getByRole("button", { name: "Game 0 · stage.joinActivity" });
   expect(join).toBeEnabled();
   expect(join).toHaveAccessibleDescription(description);
   expect(within(join).getAllByRole("presentation")).toHaveLength(2);
-  expect(dialog.getByRole("button", { name: "Game 1 · stage.startActivity" })).toBeEnabled();
+  expect(dialog.getByRole("button", { name: "Game 1 · stage.beginActivity" })).toBeEnabled();
   expect(dialog.getByRole("button", { name: "Game 9 · tablet" })).toBeDisabled();
+
+  const search = dialog.getByRole("searchbox", { name: "stage.searchActivities" });
+  fireEvent.change(search, { target: { value: "Game 7" } });
+  expect(dialog.getAllByRole("listitem")).toHaveLength(1);
+  expect(dialog.getByRole("button", { name: "Game 7 · stage.beginActivity" })).toBeEnabled();
+
+  fireEvent.change(search, { target: { value: "no-such-game" } });
+  expect(dialog.getByRole("status")).toHaveTextContent("stage.noActivityMatch");
+  fireEvent.click(dialog.getByRole("button", { name: "stage.clearActivitySearch" }));
+  expect(dialog.getAllByRole("listitem")).toHaveLength(10);
+
   fireEvent.keyDown(document, { key: "Escape" });
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(opener).toHaveFocus();
+});
+
+it("joins a channel activity directly from the voice bar control and notifies the server on leave", async () => {
+  const api = server();
+  const state: { bar: VoiceActivityBarControl | null } = { bar: null };
+  render(<InstalledActivities channel="voice" onVoiceBarChange={next => { state.bar = next; }} />);
+  expect(state.bar?.live).toBeNull();
+  expect(state.bar?.joined).toBe(false);
+
+  await act(async () => { state.bar?.join(); });
+  await api.take("list").reply([entry]);
+  const directLaunch = api.take("launch");
+  expect(directLaunch.input).toEqual({ device: "desktop" });
+  await directLaunch.reply({ ...launchReply("bar-lease"), install: "game" });
+  await api.take("list").reply([entry]);
+
+  expect(state.bar?.joined).toBe(true);
+  expect(state.bar?.live).toEqual({ install: "game", name: entry.name, icon: null });
+  expect(screen.getByTitle(entry.name)).toHaveAttribute("src", "https://game.test/bar-lease");
+
+  await act(async () => { state.bar?.leave(); });
+  const leaveReq = api.take("leave");
+  expect(leaveReq.input).toEqual({ install: "game", access: "bar-lease" });
+  await leaveReq.reply({ ok: true, running: false });
+  expect(state.bar?.joined).toBe(false);
+  expect(state.bar?.live).toBeNull();
+});
+
+it("falls back to joining the active voice session when another member wins a launch race with 409", async () => {
+  const api = server();
+  render(<VoiceLibrary />);
+  openPicker();
+  const other = { ...entry, install: "other", name: "Other game", running: false };
+  await api.take("list").reply([{ ...entry, running: false }, other]);
+  fireEvent.click(screen.getByRole("button", { name: /Other game/ }));
+  await api.take("list").reply([entry, other]);
+  await api.take("launch").reply("Conflict", 409);
+  const fallback = api.take("launch");
+  expect(fallback.input).toEqual({ device: "desktop" });
+  await fallback.reply({ ...launchReply("joined-lease"), install: "game" });
+  await api.take("list").reply([entry, other]);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.getByTitle(entry.name)).toHaveAttribute("src", "https://game.test/joined-lease");
 });
 
 it("shows an empty voice library inside the dialog", async () => {
