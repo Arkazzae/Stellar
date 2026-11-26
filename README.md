@@ -103,10 +103,6 @@ Read the full docs at [arkazzae.github.io/Stellar](https://arkazzae.github.io/St
 - **Reference:** [Architecture](docs/architecture.md) · [Themes and appearance](docs/themes.md) · [RTC and ports](docs/rtc-and-ports.md) · [Voice and RTC protocol](docs/rtc-protocol.md) · [Stellarr Media SFU](docs/stellarr-media.md) · [Localization](docs/localization.md)
 - **Development:** [Local setup](docs/development/local-setup.md) · [Codebase and testing](docs/development/codebase-and-testing.md)
 
-## About the name
-
-Stellarr is its own project. It is not part of the Servarr (*arr) family of media apps and does not need any of them.
-
 ## License
 
 Source code is licensed under the [MIT License](LICENSE).
