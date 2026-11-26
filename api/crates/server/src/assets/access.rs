@@ -14,7 +14,7 @@ use crate::values::Id;
 /// enough.
 pub fn can_read(db: &Connection, user: Id, attachment: Id) -> rusqlite::Result<bool> {
     let url = format!("/assets/{attachment}");
-    let by_a_rule: bool = db.query_row(
+    let by_a_rule: bool = db.prepare_cached(
         "SELECT EXISTS (
             SELECT 1 FROM \"ImageAttachments\" a WHERE a.\"Id\" = ?1 AND (
                 a.\"UploadedById\" = ?2
@@ -46,26 +46,22 @@ pub fn can_read(db: &Connection, user: Id, attachment: Id) -> rusqlite::Result<b
                             WHERE (c.\"UserAId\" = p.\"UserId\" AND c.\"UserBId\" = ?2)
                                OR (c.\"UserBId\" = p.\"UserId\" AND c.\"UserAId\" = ?2)))))
         )",
-        params![attachment, user, url],
-        |row| row.get(0),
-    )?;
+    )?.query_row(params![attachment, user, url], |row| row.get(0))?;
     if by_a_rule {
         return Ok(true);
     }
-    // The channels it is posted in, on servers the person is a member of: one
-    // of them seen is enough.
-    let mut statement = db.prepare(
-        "SELECT DISTINCT c.\"Id\" FROM \"Channels\" c
-         WHERE EXISTS (SELECT 1 FROM \"ServerMembers\" m WHERE m.\"ServerId\" = c.\"ServerId\" AND m.\"UserId\" = ?2)
-           AND EXISTS (SELECT 1 FROM \"Messages\" msg WHERE msg.\"ChannelId\" = c.\"Id\" AND (
-                EXISTS (SELECT 1 FROM \"MessageAttachments\" l WHERE l.\"MessageId\" = msg.\"Id\" AND l.\"AttachmentId\" = ?1)
-                OR EXISTS (SELECT 1 FROM \"MessageEmbeds\" e WHERE e.\"MessageId\" = msg.\"Id\" AND e.\"ThumbnailAttachmentId\" = ?1)))",
+    // Find the messages through the two attachment indexes. A link in any
+    // channel the user currently sees is sufficient.
+    let mut statement = db.prepare_cached(
+        "SELECT DISTINCT ChannelId FROM Messages WHERE Id IN (
+            SELECT MessageId FROM MessageAttachments WHERE AttachmentId = ?1
+            UNION ALL
+            SELECT MessageId FROM MessageEmbeds WHERE ThumbnailAttachmentId = ?1
+        )",
     )?;
-    let channels: Vec<Id> = statement
-        .query_map(params![attachment, user], |row| row.get(0))?
-        .collect::<rusqlite::Result<_>>()?;
+    let channels = statement.query_map([attachment], |row| row.get::<_, Id>(0))?;
     for channel in channels {
-        if visibility::views(db, user, channel)? {
+        if visibility::views(db, user, channel?)? {
             return Ok(true);
         }
     }
