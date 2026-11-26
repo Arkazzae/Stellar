@@ -49,6 +49,7 @@ import {
 } from "@/components/account/panes/AppearancePane";
 import { type Translator } from "@/i18n";
 import { translateForDocument } from "@/i18n/defaultLocale";
+import { TALK_ACTION } from "@/lib/keybinds/keybinds";
 import type { Account } from "@/ports";
 
 import {
@@ -155,8 +156,12 @@ export function UserSettings({
 
   // Recording is owned above the dialog so a shortcut keeps working after it
   // closes, but leaving its pane must not leave a keyboard capture behind.
+  // Two panes record: the shortcuts, and the voice pane its talk key.
+  const recordingPane = useRef<UserSettingsPaneKey | null>(null);
   useEffect(() => {
-    if (!open || active !== "skroty") cancelRecording();
+    const left = recordingPane.current !== null && recordingPane.current !== active;
+    recordingPane.current = open ? active : null;
+    if (!open || left || (active !== "skroty" && active !== "glos")) cancelRecording();
   }, [active, open, cancelRecording]);
 
   // A new pane starts at the top instead of wherever the last one was scrolled.
@@ -213,7 +218,20 @@ export function UserSettings({
       case "dzwieki":
         return <SoundsPane {...sounds} />;
       case "glos":
-        return <VoicePane {...voice} />;
+        return (
+          <VoicePane
+            {...voice}
+            // Push to talk without a key sends nothing, so the key is set
+            // where the mode is chosen, by the same recorder as the shortcuts.
+            talkKey={{
+              binding: recorder.bindings[TALK_ACTION],
+              listening: recorder.recording === TALK_ACTION,
+              error: recorder.recordingError,
+              onRecord: () => recorder.beginRecording(TALK_ACTION),
+              onClear: () => recorder.clearBinding(TALK_ACTION),
+            }}
+          />
+        );
       case "skroty":
         return <KeybindsPane {...recorder} />;
       case "zaawansowane":

@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -12,6 +13,7 @@ import {
   DEFAULT_KEYBINDINGS,
   KEYBIND_ACTIONS,
   KEYBIND_STORAGE_KEY,
+  TALK_ACTION,
   actionForKeyboardEvent,
   chordFromEvent,
   chordsEqual,
@@ -23,7 +25,9 @@ import {
   type KeybindAction,
   type KeybindRecordingError,
   type Keybindings,
+  type ToggleAction,
 } from "@/lib/keybinds/keybinds";
+import { TalkKey, listenForTalkKey } from "@/lib/keybinds/talkKey";
 
 import { useUiContext } from "./UiProvider";
 import { useVoiceContext } from "./VoiceProvider";
@@ -51,7 +55,7 @@ function refusalFor(
   action: KeybindAction,
   chord: KeyChord,
 ): KeybindRecordingError | null {
-  const validation = validateKeyChord(chord);
+  const validation = validateKeyChord(chord, action);
   if (validation !== "valid") return { kind: validation };
   const holder = KEYBIND_ACTIONS.find((other) => {
     const bound = bindings[other];
@@ -65,10 +69,15 @@ function refusalFor(
  *
  * The listener runs in the capture phase so that a shortcut works wherever focus
  * is, and so that recording swallows the key before anything else sees it.
+ *
+ * The talk key is held rather than pressed, so it has listeners of its own
+ * (`TalkKey`, `listenForTalkKey`). They stand down while a shortcut is being
+ * recorded, and no other action can share its chord.
  */
 export function KeybindProvider({ children }: { children: ReactNode }) {
   const { leaveCall } = useUiContext();
-  const { channelId, toggleMute, toggleDeafen, toggleCamera } = useVoiceContext();
+  const { channelId, toggleMute, toggleDeafen, toggleCamera, pushToTalk, setTalking } =
+    useVoiceContext();
   const [bindings, setBindings] = useState(readStoredKeybindings);
   const [recording, setRecording] = useState<KeybindAction | null>(null);
   const [recordingError, setRecordingError] =
@@ -125,7 +134,7 @@ export function KeybindProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const run: Record<KeybindAction, () => void> = {
+    const run: Record<ToggleAction, () => void> = {
       toggleMute,
       toggleDeafen,
       toggleCamera,
@@ -152,7 +161,8 @@ export function KeybindProvider({ children }: { children: ReactNode }) {
       }
 
       const action = actionForKeyboardEvent(bindings, event);
-      if (action === null || channelId === null) return;
+      // The talk key is held, not pressed: its own listeners below take it.
+      if (action === null || action === TALK_ACTION || channelId === null) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       run[action]();
@@ -172,6 +182,30 @@ export function KeybindProvider({ children }: { children: ReactNode }) {
     clearBinding,
     cancelRecording,
   ]);
+
+  // Built once, not with the shortcuts above: a press changes the call's
+  // state, and rebuilding the key then would let it go mid-hold.
+  const talkKey = useRef<TalkKey | null>(null);
+  useEffect(() => {
+    const key = new TalkKey((change) => {
+      if (change === "held") setTalking(true);
+      else setTalking(false, change === "cut");
+    });
+    talkKey.current = key;
+    const stop = listenForTalkKey(key);
+    return () => {
+      stop();
+      if (talkKey.current === key) talkKey.current = null;
+    };
+  }, [setTalking]);
+
+  // It acts in a call, in push to talk, and not while a shortcut is being
+  // recorded; any change, and a new key, let a held one go.
+  const talkBinding = bindings[TALK_ACTION];
+  const talkActive = pushToTalk && channelId !== null && recording === null;
+  useEffect(() => {
+    talkKey.current?.configure(talkBinding, talkActive);
+  }, [setTalking, talkBinding, talkActive]);
 
   const value = useMemo<KeybindValue>(
     () => ({

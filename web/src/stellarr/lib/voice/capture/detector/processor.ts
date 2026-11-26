@@ -33,6 +33,8 @@ class DetectorProcessor extends AudioWorkletProcessor {
   private readonly leveller: Leveller | null;
   private readonly results: VadFrameResult[] = [];
   private alive = true;
+  /** Push to talk's hold on the gate; null while the detector opens it. */
+  private held: boolean | null = null;
 
   constructor(options?: AudioWorkletNodeOptions) {
     super();
@@ -79,6 +81,8 @@ class DetectorProcessor extends AudioWorkletProcessor {
         this.gate?.setEnabled(data.enabled !== false);
       } else if (data.type === "leveller") {
         this.leveller?.setEnabled(data.enabled !== false);
+      } else if (data.type === "hold") {
+        this.held = typeof data.open === "boolean" ? data.open : null;
       }
     };
   }
@@ -105,7 +109,8 @@ class DetectorProcessor extends AudioWorkletProcessor {
         if (this.gate) {
           // `speaking` includes the hangover, so pauses between words stay
           // open; nothing voiceless ever sets it, so a crunch stays shut.
-          this.gate.setOpen(this.vad.speaking);
+          // Push to talk, when it holds the gate, decides instead.
+          this.gate.setOpen(this.held ?? this.vad.speaking);
           this.gate.process(channel, output, channel.length);
         } else {
           output.set(channel);

@@ -413,6 +413,8 @@ export class FakeVoiceClient implements VoiceClient {
     });
   });
 
+  setTalking = vi.fn<(held: boolean, cut?: boolean) => void>();
+
   setDeafened = vi.fn();
 
   setReceivePreferences = vi.fn<(preferences: VoiceReceivePreferences) => void>();

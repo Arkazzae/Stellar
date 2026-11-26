@@ -30,6 +30,7 @@ export const voiceSettings: VoiceSettings = {
   vadSensitivity: 60,
   inputGainDb: 0,
   inputGate: true,
+  inputMode: "voiceActivity",
 };
 
 /** A microphone that is present and idle. */

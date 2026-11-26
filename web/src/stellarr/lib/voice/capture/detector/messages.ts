@@ -36,7 +36,14 @@ export type DetectorCommand =
   | { type: "stop" }
   | { type: "config"; config?: Partial<Record<keyof VadConfig, unknown>> }
   | { type: "gate"; enabled?: boolean }
-  | { type: "leveller"; enabled?: boolean };
+  | { type: "leveller"; enabled?: boolean }
+  /**
+   * Push to talk: `true` holds the gate open whatever the detector hears,
+   * `false` holds it shut, `null` hands it back to the detector. The gate
+   * keeps its lookahead and its ramps either way, so a press neither clicks
+   * nor clips the syllable said with it.
+   */
+  | { type: "hold"; open?: boolean | null };
 
 /** What the detector posts to the main thread. */
 export interface SpeechPost {

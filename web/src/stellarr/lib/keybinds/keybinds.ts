@@ -5,9 +5,19 @@ export const KEYBIND_ACTIONS = [
   "toggleDeafen",
   "toggleCamera",
   "disconnect",
+  "pushToTalk",
 ] as const;
 
 export type KeybindAction = (typeof KEYBIND_ACTIONS)[number];
+
+/**
+ * The action that is held rather than pressed: the talk key, which opens the
+ * microphone for as long as it is down. Every other action fires once per press.
+ */
+export const TALK_ACTION = "pushToTalk" satisfies KeybindAction;
+
+/** The actions that fire once on a key press. */
+export type ToggleAction = Exclude<KeybindAction, typeof TALK_ACTION>;
 
 export interface KeyChord {
   code: string;
@@ -63,6 +73,44 @@ const RESERVED_SHIFT_COMMAND_CODES: ReadonlySet<string> = new Set([
   "KeyI",
 ]);
 
+/**
+ * Keys the talk key may not be without Ctrl, Alt or Meta: held down as the
+ * talk key, each would stop doing its own job everywhere outside a text
+ * field, which is to move the focus (Tab, the arrows), press the focused
+ * control (Enter, Space), close what is open (Escape) or scroll (Home, End,
+ * Page Up, Page Down).
+ */
+const RESERVED_PLAIN_TALK_CODES: ReadonlySet<string> = new Set([
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+  "ArrowUp",
+  "End",
+  "Enter",
+  "Escape",
+  "Home",
+  "NumpadEnter",
+  "PageDown",
+  "PageUp",
+  "Space",
+  "Tab",
+]);
+
+/**
+ * Keys that cannot be the talk key at all, because a press does not reliably
+ * come with its release. A lock key reports going down when it switches on and
+ * up when it switches off, on two separate presses on macOS, which would leave
+ * the microphone open in between; the menu and print keys give the page only
+ * one half of the press on some systems.
+ */
+const RESERVED_TALK_CODES: ReadonlySet<string> = new Set([
+  "CapsLock",
+  "ContextMenu",
+  "NumLock",
+  "PrintScreen",
+  "ScrollLock",
+]);
+
 function ctrlShift(code: string): KeyChord {
   return Object.freeze({ code, ctrl: true, alt: false, shift: true, meta: false });
 }
@@ -72,6 +120,9 @@ export const DEFAULT_KEYBINDINGS: Keybindings = Object.freeze({
   toggleDeafen: ctrlShift("KeyE"),
   toggleCamera: null,
   disconnect: ctrlShift("KeyH"),
+  // Unbound until the person picks one: any key chosen for them would be
+  // one they also need for something else.
+  pushToTalk: null,
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -82,7 +133,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * Reads one stored binding. `null` is a deliberately cleared action, while
  * `undefined` means the stored value is unusable and the default applies.
  */
-function parseStoredChord(value: unknown): KeyChord | null | undefined {
+function parseStoredChord(value: unknown, action: KeybindAction): KeyChord | null | undefined {
   if (value === null) return null;
   if (!isRecord(value)) return undefined;
 
@@ -99,7 +150,7 @@ function parseStoredChord(value: unknown): KeyChord | null | undefined {
   }
 
   const chord: KeyChord = { code, ctrl, alt, shift, meta };
-  return validateKeyChord(chord) === "valid" ? chord : undefined;
+  return validateKeyChord(chord, action) === "valid" ? chord : undefined;
 }
 
 /** Restores bindings from untrusted storage, never leaving two actions on one chord. */
@@ -113,7 +164,7 @@ export function parseKeybindings(value: unknown): Keybindings {
 
   const taken: KeyChord[] = [];
   for (const action of KEYBIND_ACTIONS) {
-    const parsed = parseStoredChord(stored[action]);
+    const parsed = parseStoredChord(stored[action], action);
     const candidate = parsed === undefined ? DEFAULT_KEYBINDINGS[action] : parsed;
     const duplicate =
       candidate !== null && taken.some((chord) => chordsEqual(chord, candidate));
@@ -172,12 +223,36 @@ export function chordFromEvent(event: KeyboardEvent): KeyChord | null {
   };
 }
 
-export function validateKeyChord(chord: KeyChord): KeybindValidation {
-  const isFunctionKey = /^F(?:[1-9]|1\d|2[0-4])$/.test(chord.code);
+function isFunctionKey(code: string): boolean {
+  return /^F(?:[1-9]|1\d|2[0-4])$/.test(code);
+}
+
+/**
+ * True for a chord that types: no Ctrl, Alt or Meta, and not a function key.
+ * Shift alone still types, a capital. Only the talk key may be one.
+ */
+function isPlainChord(chord: KeyChord): boolean {
+  return !chord.ctrl && !chord.alt && !chord.meta && !isFunctionKey(chord.code);
+}
+
+/**
+ * Whether `chord` may be bound to `action`. Without an action the rules of the
+ * pressed actions apply, which need a modifier.
+ */
+export function validateKeyChord(chord: KeyChord, action?: KeybindAction): KeybindValidation {
   const isCommand = chord.ctrl || chord.meta;
 
-  // Shift alone is not enough: it would fire on ordinary typing.
-  if (!isCommand && !chord.alt && !isFunctionKey) return "needs-modifier";
+  if (action === TALK_ACTION) {
+    // The talk key is held, not typed: a plain key is the usual choice, and
+    // in a text field it types as before (see `TalkKey`).
+    if (RESERVED_TALK_CODES.has(chord.code)) return "reserved";
+    if (!isCommand && !chord.alt && RESERVED_PLAIN_TALK_CODES.has(chord.code)) {
+      return "reserved";
+    }
+  } else if (isPlainChord(chord)) {
+    // Shift alone is not enough: it would fire on ordinary typing.
+    return "needs-modifier";
+  }
 
   if (isCommand && !chord.alt) {
     if (RESERVED_COMMAND_CODES.has(chord.code)) return "reserved";
@@ -198,15 +273,19 @@ export function chordsEqual(left: KeyChord, right: KeyChord): boolean {
   );
 }
 
+/** The chord a key press makes, unless it is not one a shortcut may answer. */
+function pressedChord(event: KeyboardEvent): KeyChord | null {
+  // AltGr reports Ctrl+Alt on Windows, and a composing IME is mid-word.
+  if (event.isComposing || event.getModifierState("AltGraph")) return null;
+  return chordFromEvent(event);
+}
+
 /** The action a key press triggers, if any. */
 export function actionForKeyboardEvent(
   bindings: Keybindings,
   event: KeyboardEvent,
 ): KeybindAction | null {
-  // AltGr reports Ctrl+Alt on Windows, and a composing IME is mid-word.
-  if (event.isComposing || event.getModifierState("AltGraph")) return null;
-
-  const pressed = chordFromEvent(event);
+  const pressed = pressedChord(event);
   if (pressed === null) return null;
 
   return (
@@ -214,6 +293,26 @@ export function actionForKeyboardEvent(
       const bound = bindings[action];
       return bound !== null && chordsEqual(bound, pressed);
     }) ?? null
+  );
+}
+
+/** Whether this key press is `chord`, by the same rules `actionForKeyboardEvent` uses. */
+export function pressMatches(chord: KeyChord, event: KeyboardEvent): boolean {
+  const pressed = pressedChord(event);
+  return pressed !== null && chordsEqual(chord, pressed);
+}
+
+const MODIFIER_CODES_OF: Readonly<Record<"ctrl" | "alt" | "shift" | "meta", readonly string[]>> = {
+  ctrl: ["ControlLeft", "ControlRight"],
+  alt: ["AltLeft", "AltRight"],
+  shift: ["ShiftLeft", "ShiftRight"],
+  meta: ["MetaLeft", "MetaRight"],
+};
+
+/** Whether `code` is one of the modifiers `chord` is held with. */
+export function isModifierOf(chord: KeyChord, code: string): boolean {
+  return (["ctrl", "alt", "shift", "meta"] as const).some(
+    (modifier) => chord[modifier] && MODIFIER_CODES_OF[modifier].includes(code),
   );
 }
 

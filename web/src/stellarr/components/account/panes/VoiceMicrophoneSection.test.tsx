@@ -4,10 +4,16 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { MicTest, VoiceSettings } from "@/ports";
 
-import { MicrophoneCheck, VoiceMicrophoneSection } from "./VoiceMicrophoneSection";
+import {
+  MicrophoneCheck,
+  VoiceMicrophoneSection,
+  type TalkKeyControl,
+} from "./VoiceMicrophoneSection";
 import { idleMic, voiceSettings } from "./voiceTestFixtures";
 
-function setup(options: { settings?: Partial<VoiceSettings>; mic?: Partial<MicTest> } = {}) {
+function setup(
+  options: { settings?: Partial<VoiceSettings>; mic?: Partial<MicTest>; talkKey?: TalkKeyControl } = {},
+) {
   const onChange = vi.fn();
   const onVadCommit = vi.fn();
   const view = render(
@@ -16,6 +22,7 @@ function setup(options: { settings?: Partial<VoiceSettings>; mic?: Partial<MicTe
       onChange={onChange}
       onVadCommit={onVadCommit}
       mic={{ ...idleMic, ...options.mic }}
+      talkKey={options.talkKey}
     />,
   );
   return { onChange, onVadCommit, ...view };
@@ -214,5 +221,26 @@ describe("VoiceMicrophoneSection levels", () => {
       />,
     );
     expect(screen.queryByText(/nie obsługuje bramki mikrofonu/)).toBeNull();
+  });
+});
+
+describe("VoiceMicrophoneSection input mode", () => {
+  it("switches to push to talk, where a missing talk key is said and recorded in the gate's place", async () => {
+    const user = userEvent.setup();
+    const { onChange, unmount } = setup();
+    await user.click(screen.getByRole("radio", { name: "Naciśnij i mów" }));
+    expect(onChange).toHaveBeenCalledWith({ inputMode: "pushToTalk" });
+    unmount();
+
+    const onRecord = vi.fn();
+    setup({
+      settings: { inputMode: "pushToTalk" },
+      talkKey: { binding: null, listening: false, error: null, onRecord, onClear: vi.fn() },
+    });
+
+    expect(screen.getByText(/Nie ma klawisza mówienia/)).toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "Bramka mikrofonu" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Zmień skrót: Klawisz mówienia" }));
+    expect(onRecord).toHaveBeenCalledOnce();
   });
 });

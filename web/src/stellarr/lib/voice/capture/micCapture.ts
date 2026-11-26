@@ -83,6 +83,13 @@ export interface MicCapture {
   /** Retune the fixed gain without rebuilding the graph. No-op without one. */
   setInputGain(db: number): void;
   /**
+   * Push to talk: hold the gate open (`true`) or shut (`false`) whatever the
+   * detector hears, or hand it back to the detector (`null`). A capture made
+   * for push to talk starts held shut. No-op while `gateActive` is false:
+   * without a gate in the path, the caller has to switch the track instead.
+   */
+  holdGate(open: boolean | null): void;
+  /**
    * Ramps this capture up from silence.
    *
    * Called by whoever puts the new track on the wire. Changing the suppressor

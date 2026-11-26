@@ -2,7 +2,7 @@ import type { Translator } from "@/i18n";
 import type { UserId } from "@/lib/api/types";
 import { profileFor, usesWorkletSuppression } from "../audioProfiles";
 import { captureMicrophone, type MicCapture } from "./micPipeline";
-import { needsRecapture, type VoiceSettings } from "../settings";
+import { needsRecapture, type InputMode, type VoiceSettings } from "../settings";
 import type { VoiceStateStore } from "../store";
 import type { SpeechDetector } from "./vad";
 import { degradedNotice, micError, micSwapFailedError } from "../rtc/webrtcErrors";
@@ -25,12 +25,27 @@ export interface LocalMicrophoneEnv {
   rebuildLink(link: Link): Promise<void>;
   /** The device ended underneath the call, e.g. a headset was unplugged. */
   onDeviceLost(): void;
+  /** `talking` or `transmits` changed: push to talk opened or closed the microphone. */
+  talkingChanged(): void;
 }
 
 interface MicrophoneTarget {
   readonly link: Link;
   readonly sender: RTCRtpSender;
 }
+
+/**
+ * How long push to talk keeps the microphone open after its key comes up.
+ *
+ * The gate sends what it lets through 80 ms late (its lookahead, see
+ * `GATE_DEFAULTS`), so the first 80 ms of any tail only let out what was said
+ * before the key came up; anything shorter would cut the last word. 200 ms
+ * leaves another 120 ms after the release for the end of that word, a final
+ * consonant or a vowel dying away, and the gate's own 90 ms release then
+ * fades it rather than snapping it off. Much longer and the breath after the
+ * sentence goes out with it.
+ */
+export const TALK_RELEASE_TAIL_MS = 200;
 
 /**
  * The microphone this client sends: its capture, mute state, and the swap to
@@ -44,6 +59,20 @@ export class LocalMicrophone {
   private active: MicCapture | null = null;
   /** The settings that produced `active`. */
   private activeSettings: VoiceSettings | null = null;
+  /** The mode chosen now, which may be newer than `activeSettings`. */
+  private pushToTalk = false;
+  private keyHeld = false;
+  /** Running while the microphone stays open after the key came up. */
+  private tail: ReturnType<typeof setTimeout> | null = null;
+  /** What `talking` and `transmits` were when last reported. */
+  private shownTalking = false;
+  private shownTransmits = true;
+  /**
+   * Captures whose gate push to talk holds, or which were made for push to
+   * talk and so start held shut: back in voice activity mode, each has to be
+   * handed back to its detector.
+   */
+  private readonly heldGates = new WeakSet<MicCapture>();
 
   constructor(private readonly env: LocalMicrophoneEnv) {}
 
@@ -51,11 +80,57 @@ export class LocalMicrophone {
     return this.active;
   }
 
+  /** Push to talk lets the microphone through: its key is down, or just came up. */
+  get talking(): boolean {
+    return this.pushToTalk && (this.keyHeld || this.tail !== null);
+  }
+
+  /** False only while push to talk keeps the microphone shut; a mute is separate. */
+  get transmits(): boolean {
+    return !this.pushToTalk || this.talking;
+  }
+
+  /**
+   * Follow the chosen mode at once, ahead of any reopen it may need. Either
+   * way the talk key starts released: a mode left while talking closes the
+   * microphone, and one entered opens nothing until the key is pressed.
+   */
+  setInputMode(mode: InputMode): void {
+    const pushToTalk = mode === "pushToTalk";
+    if (pushToTalk === this.pushToTalk) return;
+    this.pushToTalk = pushToTalk;
+    this.keyHeld = false;
+    this.stopTail();
+    this.applyTalk();
+  }
+
+  /**
+   * The talk key went down or came up. Coming up keeps the microphone open
+   * for `TALK_RELEASE_TAIL_MS` unless `cut`; going down again within that
+   * time simply carries on. Ignored in voice activity mode.
+   */
+  setTalking(held: boolean, cut = false): void {
+    if (!this.pushToTalk) return;
+    const tailing = this.tail !== null;
+    if (held === this.keyHeld && !(cut && tailing)) return;
+    const wasOpen = this.talking;
+    this.keyHeld = held;
+    this.stopTail();
+    if (!held && !cut && wasOpen) {
+      this.tail = setTimeout(() => {
+        this.tail = null;
+        this.applyTalk();
+      }, TALK_RELEASE_TAIL_MS);
+    }
+    this.applyTalk();
+  }
+
   /** Start sending `capture`, which was opened with `settings`. */
   adopt(capture: MicCapture, settings: VoiceSettings): void {
     this.active = capture;
     this.activeSettings = settings;
     capture.rawTrack.contentHint = profileFor(settings).contentHint;
+    this.noteBuiltFor(capture, settings);
     this.applyMute(capture, this.env.store.getSnapshot().muted);
     // The detector listens before the gate: the ring must light from the same
     // decision that opens the gate, not from audio the gate already cut.
@@ -70,7 +145,12 @@ export class LocalMicrophone {
         this.env.translate,
         settings.noiseSuppression,
         capture.noiseSuppression,
-        { requested: settings.inputGate, active: capture.gateActive },
+        // Push to talk without a gate still keeps the microphone shut, by
+        // switching the track, so a missing gate is news only to the gate.
+        {
+          requested: settings.inputGate && settings.inputMode !== "pushToTalk",
+          active: capture.gateActive,
+        },
         { requested: settings.autoGainControl, active: capture.autoGain },
       ),
     });
@@ -89,13 +169,16 @@ export class LocalMicrophone {
     }
   }
 
-  /** Stop the device and forget the capture. */
+  /** Stop the device and forget the capture, and the talk key with it: the next call starts released. */
   release(): void {
     this.env.speech.remove(this.env.selfUserId);
     if (this.active) this.active.rawTrack.onended = null;
     this.active?.dispose();
     this.active = null;
     this.activeSettings = null;
+    this.keyHeld = false;
+    this.stopTail();
+    this.applyTalk();
   }
 
   /** Only the microphone: shared system sound is content, not the person's voice. */
@@ -157,6 +240,9 @@ export class LocalMicrophone {
       return false;
     }
 
+    // Before the track reaches any sender: a capture for push to talk goes
+    // on the wire shut unless the key is down.
+    this.noteBuiltFor(capture, next);
     this.applyMute(capture, this.env.store.getSnapshot().muted);
     // Up from silence rather than straight in at level: a suppressor or gate
     // change swaps the track under a running call, and two graphs never meet
@@ -241,8 +327,50 @@ export class LocalMicrophone {
     return false;
   }
 
+  /**
+   * What the capture lets out: nothing while muted, and in push to talk
+   * nothing while the key is up.
+   *
+   * Push to talk works at the gate when there is one: it holds the gate the
+   * detector would otherwise open, which keeps the lookahead (the syllable
+   * said with the press is not clipped) and the ramps (a press does not
+   * click). Without a gate in the path, which a browser without AudioWorklet
+   * leaves, the track itself is switched instead, so the key still decides.
+   * The mute is the track switch either way, and wins over the key.
+   */
   private applyMute(capture: MicCapture, muted: boolean): void {
-    capture.rawTrack.enabled = !muted;
-    if (capture.track !== capture.rawTrack) capture.track.enabled = !muted;
+    if (capture.gateActive) {
+      if (this.pushToTalk) {
+        capture.holdGate(this.talking);
+        this.heldGates.add(capture);
+      } else if (this.heldGates.has(capture)) {
+        capture.holdGate(null);
+        this.heldGates.delete(capture);
+      }
+    }
+    const enabled = !muted && (capture.gateActive || this.transmits);
+    capture.rawTrack.enabled = enabled;
+    if (capture.track !== capture.rawTrack) capture.track.enabled = enabled;
+  }
+
+  /** A capture made for push to talk has its gate held shut from the start. */
+  private noteBuiltFor(capture: MicCapture, settings: VoiceSettings): void {
+    if (capture.gateActive && settings.inputMode === "pushToTalk") this.heldGates.add(capture);
+  }
+
+  private stopTail(): void {
+    if (this.tail === null) return;
+    clearTimeout(this.tail);
+    this.tail = null;
+  }
+
+  /** Puts the key's state on the running capture, and says when `talking` or `transmits` changed. */
+  private applyTalk(): void {
+    if (this.active) this.applyMute(this.active, this.env.store.getSnapshot().muted);
+    const { talking, transmits } = this;
+    if (talking === this.shownTalking && transmits === this.shownTransmits) return;
+    this.shownTalking = talking;
+    this.shownTransmits = transmits;
+    this.env.talkingChanged();
   }
 }

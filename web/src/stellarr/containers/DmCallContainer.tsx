@@ -5,8 +5,10 @@ import type { CallVM, PersonVM } from "@/components/view-models";
 import { VoiceControlBar } from "@/components/voice/VoiceControlBar";
 import { CALL_STATUS } from "@/components/voice/VoiceDock";
 import type { MessageKey } from "@/i18n";
+import { TALK_ACTION } from "@/lib/keybinds/keybinds";
 import {
   useFriends,
+  useKeybinds,
   useLanguage,
   usePorts,
   useProfile,
@@ -43,6 +45,7 @@ export function DmCallContainer({ fullscreenTarget }: DmCallContainerProps) {
   const ports = usePorts();
   const { user } = useSession();
   const { t } = useLanguage();
+  const { bindings } = useKeybinds();
 
   // The device settings straight from the store the pipelines read, as the
   // channel call's bar has them.
@@ -108,6 +111,8 @@ export function DmCallContainer({ fullscreenTarget }: DmCallContainerProps) {
         // calls do not play.
         <VoiceControlBar
           muted={voice.state.muted}
+          talkKey={bindings[TALK_ACTION]}
+          talking={voice.state.talking}
           deafened={call?.deafened ?? false}
           cameraOn={call?.cameraOn ?? false}
           cameraPending={voice.state.cameraPending}

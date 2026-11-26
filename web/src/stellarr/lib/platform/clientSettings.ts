@@ -110,10 +110,19 @@ export function keybindsFromWire(value: Wire): Keybindings | null {
 }
 
 /**
- * What stays with the machine: the devices are this computer's own, and the
- * speech sensitivity already has an account field of its own.
+ * What stays with the machine: the devices are this computer's own, the
+ * speech sensitivity already has an account field of its own, and the input
+ * mode depends on a keyboard. Push to talk chosen on a computer would leave a
+ * phone signed in to the same account, which has no key to hold, sending
+ * nothing at all.
  */
-const VOICE_DEVICE_ONLY = ["inputDeviceId", "outputDeviceId", "videoDeviceId", "vadSensitivity"] as const;
+const VOICE_DEVICE_ONLY = [
+  "inputDeviceId",
+  "outputDeviceId",
+  "videoDeviceId",
+  "vadSensitivity",
+  "inputMode",
+] as const;
 
 export function voiceToWire(settings: VoiceSettings): Wire {
   const wire: Wire = { ...settings };

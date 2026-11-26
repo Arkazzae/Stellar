@@ -8,7 +8,11 @@ import type {
 import { useLanguage } from "@/state/hooks";
 
 import { VoiceCameraCheck } from "./VoiceCameraSection";
-import { MicrophoneCheck, VoiceMicrophoneSection } from "./VoiceMicrophoneSection";
+import {
+  MicrophoneCheck,
+  VoiceMicrophoneSection,
+  type TalkKeyControl,
+} from "./VoiceMicrophoneSection";
 import { SpeakerCheck, VoicePlaybackSection } from "./VoicePlaybackSection";
 import { VoiceProcessingSection } from "./VoiceProcessingSection";
 import { VoiceAudioQualityRow } from "./VoiceQualitySections";
@@ -26,6 +30,8 @@ export interface VoicePaneProps {
   camera: CameraTest;
   /** The chosen noise suppressor's files on their way, shown on its choice. */
   suppressorDownload?: SuppressorDownload | null;
+  /** The talk key, for push to talk, recorded from here as from the shortcuts. */
+  talkKey?: TalkKeyControl;
 }
 
 /**
@@ -42,7 +48,7 @@ export interface VoicePaneProps {
  * Every setting is backed by the voice settings store, which the audio pipeline
  * reads live, so a change lands on a call in progress without dropping it. The
  * store keeps them in this browser and the account keeps a copy, all but the
- * chosen devices, which belong to this computer.
+ * chosen devices and the input mode, which belong to this computer.
  */
 export function VoicePane({
   settings,
@@ -53,6 +59,7 @@ export function VoicePane({
   output,
   camera,
   suppressorDownload = null,
+  talkKey,
 }: VoicePaneProps) {
   const { t } = useLanguage();
 
@@ -68,6 +75,7 @@ export function VoicePane({
                 onChange={onChange}
                 onVadCommit={onVadCommit}
                 mic={mic}
+                talkKey={talkKey}
               />
               <VoiceProcessingSection
                 settings={settings}

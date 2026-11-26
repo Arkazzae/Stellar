@@ -53,6 +53,7 @@ const voiceSettings: VoiceSettings = {
   vadSensitivity: 60,
   inputGainDb: 0,
   inputGate: true,
+  inputMode: "voiceActivity",
 };
 
 /** A microphone that is present and idle; the tests that care override it. */
@@ -472,7 +473,8 @@ describe("UserSettings", () => {
     expect(props.keybinds.beginRecording).toHaveBeenCalledExactlyOnceWith(
       "toggleMute",
     );
-    expect(screen.getByText("Nieprzypisany")).toBeInTheDocument();
+    // The camera and the talk key start without a chord.
+    expect(screen.getAllByText("Nieprzypisany")).toHaveLength(2);
   });
 
   it("explains a conflict while recording a shortcut", async () => {

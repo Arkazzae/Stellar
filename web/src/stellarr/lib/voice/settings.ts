@@ -59,6 +59,16 @@ export function opusCeilingKbps(quality: OpusQualityId): number {
 const NOISE_MODES = ["browser", "rnnoise", "gtcrn", "speex", "off"] as const;
 export type NoiseSuppressionMode = (typeof NOISE_MODES)[number];
 
+/**
+ * When the microphone sends. `voiceActivity` sends whenever it hears you,
+ * with the gate (`inputGate`) deciding what counts; `pushToTalk` sends only
+ * while the talk key is held, and the gate's detector no longer decides.
+ * The choice stays on this device and is never put on the account (see
+ * `VOICE_DEVICE_ONLY` in `lib/platform/clientSettings.ts`).
+ */
+const INPUT_MODES = ["voiceActivity", "pushToTalk"] as const;
+export type InputMode = (typeof INPUT_MODES)[number];
+
 const PLAYBACK_PROFILE_IDS = ["off", "natural", "studio", "broadcast", "custom"] as const;
 export type PlaybackProfileId = (typeof PLAYBACK_PROFILE_IDS)[number];
 
@@ -142,6 +152,8 @@ export interface VoiceSettings {
    * between sentences. `vadSensitivity` decides how eagerly it opens.
    */
   inputGate: boolean;
+  /** Voice activity, or push to talk; see `InputMode`. */
+  inputMode: InputMode;
 }
 
 export const DEFAULT_SETTINGS: VoiceSettings = Object.freeze({
@@ -168,6 +180,7 @@ export const DEFAULT_SETTINGS: VoiceSettings = Object.freeze({
   inputGainDb: 0,
   vadSensitivity: 60,
   inputGate: true,
+  inputMode: "voiceActivity",
 });
 
 /**
@@ -206,6 +219,16 @@ export const NOISE_MODE_HINT: Record<NoiseSuppressionMode, MessageKey> = {
   gtcrn: "voice.noise.gtcrnHint",
   speex: "voice.noise.speexHint",
   off: "voice.noise.offHint",
+};
+
+export const INPUT_MODE_LABEL: Record<InputMode, MessageKey> = {
+  voiceActivity: "voice.inputMode.voiceActivity",
+  pushToTalk: "voice.inputMode.pushToTalk",
+};
+
+export const INPUT_MODE_HINT: Record<InputMode, MessageKey> = {
+  voiceActivity: "voice.inputMode.voiceActivityHint",
+  pushToTalk: "voice.inputMode.pushToTalkHint",
 };
 
 const SCREEN_QUALITY_IDS = Object.keys(SCREEN_SHARE_PROFILES) as ScreenShareQualityId[];
@@ -334,7 +357,17 @@ export function parseVoiceSettings(value: unknown): VoiceSettings {
     inputGainDb: clampInputGain(value["inputGainDb"]),
     vadSensitivity: clampSensitivity(value["vadSensitivity"]),
     inputGate: booleanOr(value["inputGate"], DEFAULT_SETTINGS.inputGate),
+    inputMode: oneOf(INPUT_MODES, value["inputMode"], DEFAULT_SETTINGS.inputMode),
   };
+}
+
+/**
+ * True when the gate is in the capture graph: for the voice activity gate,
+ * or for push to talk, which holds that same gate open while the key is down
+ * and shut while it is up.
+ */
+export function wantsInputGate(settings: VoiceSettings): boolean {
+  return settings.inputGate || settings.inputMode === "pushToTalk";
 }
 
 /**
@@ -347,7 +380,7 @@ export function parseVoiceSettings(value: unknown): VoiceSettings {
 export function wantsCaptureGraph(settings: VoiceSettings): boolean {
   return (
     usesWorkletSuppression(settings.noiseSuppression) ||
-    settings.inputGate ||
+    wantsInputGate(settings) ||
     settings.autoGainControl ||
     settings.inputGainDb !== 0
   );
@@ -361,8 +394,10 @@ export function needsRecapture(a: VoiceSettings, b: VoiceSettings): boolean {
     a.echoCancellation !== b.echoCancellation ||
     a.autoGainControl !== b.autoGainControl ||
     // The gate is a node in the capture graph; adding or removing it rebuilds
-    // that graph, and the recapture is what swaps the track.
-    a.inputGate !== b.inputGate ||
+    // that graph, and the recapture is what swaps the track. Push to talk
+    // only holds a gate that is there, so switching the mode reopens nothing
+    // unless the gate has to come or go with it.
+    wantsInputGate(a) !== wantsInputGate(b) ||
     // A fixed gain is retuned live once its node exists. It forces a reopen only
     // when it is the sole reason a graph is needed at all.
     wantsCaptureGraph(a) !== wantsCaptureGraph(b)

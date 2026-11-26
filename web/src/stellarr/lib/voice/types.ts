@@ -140,6 +140,11 @@ export interface VoiceState {
   transport: VoiceTransportState;
   channelId: ChannelId | null;
   muted: boolean;
+  /**
+   * Push to talk lets the microphone through: its key is held, or came up
+   * less than the release tail ago. Always false in voice activity mode.
+   */
+  talking: boolean;
   peers: VoicePeer[];
   error: VoiceError | null;
   /** The local share, when this user is the one sharing. */
@@ -181,6 +186,7 @@ export const IDLE_VOICE_STATE: VoiceState = Object.freeze({
   transport: IDLE_VOICE_TRANSPORT,
   channelId: null,
   muted: false,
+  talking: false,
   peers: [],
   error: null,
   localScreen: null,
@@ -230,6 +236,14 @@ export interface VoiceClient {
   /** Updates the local identity without reopening any call media. */
   setDisplayName(displayName: string): void;
   setMuted(muted: boolean): void;
+  /**
+   * Push to talk: the talk key went down (`true`) or came up. A release
+   * keeps the microphone open for the release tail, so the end of the last
+   * word goes out; `cut` closes it at once, for a release nobody chose.
+   * Local to the microphone: nothing is signalled, and a mute still wins.
+   * Ignored in voice activity mode.
+   */
+  setTalking(held: boolean, cut?: boolean): void;
   /** Silences or restores every remote voice and screen sink; capture is unaffected. */
   setDeafened(deafened: boolean): void;
   /** Select what the media server forwards; microphone speech is always received. */

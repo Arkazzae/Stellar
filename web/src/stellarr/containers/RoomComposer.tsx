@@ -49,7 +49,13 @@ export function RoomComposer({ channelName, threadRootId }: RoomComposerProps) {
 
   const openVoiceMessageMicrophone = useCallback(async () => {
     try {
-      const capture = await captureMicrophone(voiceSettings, { translate: t });
+      // Push to talk belongs to calls. A recording is started and stopped by
+      // its own button, so it is processed as in voice activity, or its gate
+      // would stay shut with no key to open it.
+      const capture = await captureMicrophone(
+        { ...voiceSettings, inputMode: "voiceActivity" },
+        { translate: t },
+      );
       return {
         stream: capture.stream,
         inputTrack: capture.rawTrack,

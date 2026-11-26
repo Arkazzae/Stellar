@@ -56,6 +56,7 @@ const VALID: VoiceSettings = {
   vadSensitivity: 80,
   inputGainDb: 0,
   inputGate: true,
+  inputMode: "voiceActivity",
 };
 
 describe("parseVoiceSettings", () => {

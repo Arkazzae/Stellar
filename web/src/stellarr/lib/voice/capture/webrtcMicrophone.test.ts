@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
 import { polish } from "@/test/translators";
 
@@ -7,7 +7,7 @@ import type * as MicPipeline from "./micPipeline";
 import { DEFAULT_SETTINGS, type VoiceSettings } from "../settings";
 import { VoiceStateStore } from "../store";
 import type { SpeechDetector } from "./vad";
-import { LocalMicrophone } from "./webrtcMicrophone";
+import { LocalMicrophone, TALK_RELEASE_TAIL_MS } from "./webrtcMicrophone";
 import type { Link } from "../rtc/webrtcPeer";
 
 vi.mock("./micPipeline", async (importOriginal) => ({
@@ -42,6 +42,7 @@ let microphone: LocalMicrophone;
 let peers: Map<string, Link>;
 let applyEncoding: Mock<() => Promise<void>>;
 let rebuildLink: Mock<(link: Link) => Promise<void>>;
+let talkingChanged: Mock<() => void>;
 /** The stream the microphone and the camera are both sent in. */
 const VOICE_STREAM = { id: "voice-a" } as MediaStream;
 
@@ -53,6 +54,7 @@ beforeEach(() => {
   onDeviceLost = vi.fn<() => void>();
   applyEncoding = vi.fn(async () => undefined);
   rebuildLink = vi.fn(async () => undefined);
+  talkingChanged = vi.fn<() => void>();
   microphone = new LocalMicrophone({
     translate: polish,
     selfUserId: "u-a",
@@ -63,7 +65,12 @@ beforeEach(() => {
     applyEncoding,
     rebuildLink,
     onDeviceLost,
+    talkingChanged,
   });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("LocalMicrophone", () => {
@@ -456,5 +463,148 @@ describe("LocalMicrophone", () => {
       expect(rebuildLink).not.toHaveBeenCalled();
       if (stage === "moving") expect(late.dispose).toHaveBeenCalledOnce();
     });
+  });
+});
+
+describe("push to talk", () => {
+  const PTT: VoiceSettings = { ...DEFAULT_SETTINGS, inputMode: "pushToTalk" };
+
+  /** A capture with the gate in its path, whose holds are recorded. */
+  function gated() {
+    const holdGate = vi.fn<(open: boolean | null) => void>();
+    const processed = { enabled: true } as MediaStreamTrack;
+    const capture = fakeCapture({ gateActive: true, holdGate, track: processed });
+    return { capture, holdGate, processed };
+  }
+
+  function sending(capture: MicCapture): boolean[] {
+    return [capture.rawTrack.enabled, capture.track.enabled];
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    microphone.setInputMode("pushToTalk");
+  });
+
+  it("holds the gate shut until the key is down, and open for the tail after it comes up", () => {
+    const { capture, holdGate } = gated();
+    microphone.adopt(capture, PTT);
+    expect(holdGate).toHaveBeenLastCalledWith(false);
+    talkingChanged.mockClear();
+
+    microphone.setTalking(true);
+    expect(holdGate).toHaveBeenLastCalledWith(true);
+    expect(microphone.talking).toBe(true);
+
+    microphone.setTalking(false);
+    vi.advanceTimersByTime(TALK_RELEASE_TAIL_MS - 1);
+    expect(holdGate).toHaveBeenLastCalledWith(true);
+    expect(microphone.talking).toBe(true);
+
+    vi.advanceTimersByTime(1);
+    expect(holdGate).toHaveBeenLastCalledWith(false);
+    expect(microphone.talking).toBe(false);
+    // The gate does the work: the tracks stay on, so nothing clicks.
+    expect(sending(capture)).toEqual([true, true]);
+    expect(talkingChanged).toHaveBeenCalledTimes(2);
+  });
+
+  it("carries on through a press within the tail, and closes at once when cut", () => {
+    const { capture, holdGate } = gated();
+    microphone.adopt(capture, PTT);
+    microphone.setTalking(true);
+    microphone.setTalking(false);
+    vi.advanceTimersByTime(TALK_RELEASE_TAIL_MS / 2);
+    microphone.setTalking(true);
+    vi.advanceTimersByTime(TALK_RELEASE_TAIL_MS * 4);
+    expect(microphone.talking).toBe(true);
+    // Shut once, when it was adopted, and open ever since the first press.
+    expect(holdGate.mock.calls.map(([open]) => open).lastIndexOf(false)).toBe(0);
+
+    microphone.setTalking(false, true);
+    expect(holdGate).toHaveBeenLastCalledWith(false);
+
+    // A cut also ends a tail that is already running.
+    microphone.setTalking(true);
+    microphone.setTalking(false);
+    microphone.setTalking(false, true);
+    expect(microphone.talking).toBe(false);
+    expect(holdGate).toHaveBeenLastCalledWith(false);
+  });
+
+  it("sends nothing while muted, key or not", () => {
+    const { capture } = gated();
+    store.set({ muted: true });
+    microphone.adopt(capture, PTT);
+
+    microphone.setTalking(true);
+    expect(sending(capture)).toEqual([false, false]);
+
+    microphone.setMuted(false);
+    expect(sending(capture)).toEqual([true, true]);
+  });
+
+  it("switches the track itself where there is no gate to hold", () => {
+    const processed = { enabled: true } as MediaStreamTrack;
+    const holdGate = vi.fn();
+    const capture = fakeCapture({ gateActive: false, holdGate, track: processed });
+    microphone.adopt(capture, PTT);
+    expect(sending(capture)).toEqual([false, false]);
+
+    microphone.setTalking(true);
+    expect(sending(capture)).toEqual([true, true]);
+
+    microphone.setMuted(true);
+    expect(sending(capture)).toEqual([false, false]);
+    microphone.setMuted(false);
+
+    microphone.setTalking(false);
+    vi.advanceTimersByTime(TALK_RELEASE_TAIL_MS);
+    expect(sending(capture)).toEqual([false, false]);
+    expect(holdGate).not.toHaveBeenCalled();
+  });
+
+  it("lets the key go and hands the gate back when the mode returns to voice activity", () => {
+    const { capture, holdGate } = gated();
+    microphone.adopt(capture, PTT);
+    microphone.setTalking(true);
+
+    microphone.setInputMode("voiceActivity");
+
+    expect(holdGate).toHaveBeenLastCalledWith(null);
+    expect(microphone.talking).toBe(false);
+    expect(sending(capture)).toEqual([true, true]);
+
+    // A capture made for push to talk starts held shut; it is handed back too.
+    const late = gated();
+    microphone.adopt(late.capture, PTT);
+    expect(late.holdGate).toHaveBeenCalledExactlyOnceWith(null);
+  });
+
+  it("lets the key go at the end of the call, with no tail left to run", () => {
+    const { capture } = gated();
+    microphone.adopt(capture, PTT);
+    microphone.setTalking(true);
+    microphone.setTalking(false);
+
+    microphone.release();
+    expect(microphone.talking).toBe(false);
+    const reported = talkingChanged.mock.calls.length;
+    vi.advanceTimersByTime(TALK_RELEASE_TAIL_MS * 2);
+    expect(talkingChanged).toHaveBeenCalledTimes(reported);
+  });
+
+  it("leaves voice activity as it was: the key does nothing and the gate is never held", () => {
+    microphone.setInputMode("voiceActivity");
+    const { capture, holdGate } = gated();
+    microphone.adopt(capture, DEFAULT_SETTINGS);
+
+    microphone.setTalking(true);
+    microphone.setMuted(true);
+    microphone.setMuted(false);
+
+    expect(holdGate).not.toHaveBeenCalled();
+    expect(microphone.talking).toBe(false);
+    expect(sending(capture)).toEqual([true, true]);
   });
 });
