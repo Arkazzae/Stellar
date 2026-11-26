@@ -281,6 +281,9 @@ function ActivitiesForScope({
             install: runningEntry.install,
             name: runningEntry.name,
             icon: runningEntry.artwork?.icon ?? null,
+            host: "",
+            participants: [],
+            seats: runningEntry.seats ?? null,
           } : null);
         }
         if (selection?.session && !list.some(item => item.install === selection.session?.install && item.running)) {
@@ -386,6 +389,9 @@ function ActivitiesForScope({
             install: resolvedInstall,
             name: opened.title,
             icon: matched?.artwork?.icon ?? (prev?.install === resolvedInstall ? prev.icon : null),
+            host: "",
+            participants: [],
+            seats: matched?.seats ?? null,
           }));
         }
         onClosePickerRef.current?.();
@@ -409,7 +415,9 @@ function ActivitiesForScope({
     ?? (liveRemote?.install === liveInstall ? liveRemote?.icon : null)
     ?? null;
   const liveSummary = useMemo<VoiceActivitySummary | null>(
-    () => (liveInstall && liveName !== null ? { install: liveInstall, name: liveName, icon: liveIcon } : null),
+    () => (liveInstall && liveName !== null
+      ? { install: liveInstall, name: liveName, icon: liveIcon, host: "", participants: [], seats: null }
+      : null),
     [liveIcon, liveInstall, liveName],
   );
   const joined = Boolean(session);

@@ -6,6 +6,7 @@ import { LaunchTarget, type LaunchProps } from "./LaunchTarget";
 import { ConfirmProvider } from "@/components/primitives/ConfirmDialog";
 import { AppShell } from "@/components/shell/AppShell";
 import { AccountProvider } from "@/state/AccountProvider";
+import { ActivitiesProvider } from "@/state/ActivitiesProvider";
 import { ChatProvider } from "@/state/ChatProvider";
 import { DirectoryProvider } from "@/state/DirectoryProvider";
 import { EmojiProvider } from "@/state/EmojiProvider";
@@ -43,6 +44,8 @@ import { UserSettingsContainer } from "./UserSettingsContainer";
  *   Ui         → Chat     the transcript follows the active text channel
  *   Ui         → Friends  opening a conversation is a navigation, and reading
  *                         it is what marks it read
+ *   Voice + Ui → Activities  a channel's activity lives in its call, and
+ *                         joining one from outside first joins the call
  *
  * `Profile` depends on none of them (it holds one open card and the element it
  * hangs off), so it sits innermost, next to the tree that raises it. `Account`
@@ -71,7 +74,9 @@ export function AppContainer(props: LaunchProps = {}) {
                       <FriendsProvider>
                         <ChatProvider>
                           <ProfileProvider>
-                            <Shell {...props} />
+                            <ActivitiesProvider>
+                              <Shell {...props} />
+                            </ActivitiesProvider>
                           </ProfileProvider>
                         </ChatProvider>
                       </FriendsProvider>
