@@ -437,26 +437,120 @@
     margin: 0 0 var(--sp-2);
   }
 
+  /*
+   * Voice channel activity picker: a single-column Settings sheet that adapts
+   * its width to the number of installed activities instead of leaving an empty
+   * 1120x800 frame around one or two cards. Cards show their banner, corner
+   * emblem and copy at rest; hovering or focusing a supported card brings up a
+   * frosted veil with one primary Start button.
+   */
   .sv.activity-picker {
+    --set-pad: 24px;
     display: flex;
     flex-direction: column;
+    width: min(920px, 100%);
+    height: auto;
+    max-height: min(760px, calc(100vh - 48px));
+    max-height: min(760px, calc(100dvh - 48px));
   }
 
-  .activity-picker-grid {
+  .sv.activity-picker[data-count="pair"] {
+    width: min(680px, 100%);
+  }
+
+  .sv.activity-picker[data-count="one"] {
+    width: min(520px, 100%);
+  }
+
+  .sv.activity-picker > .sv-bar {
+    padding: 22px 18px 16px var(--set-pad);
+    flex-wrap: wrap;
+    row-gap: 12px;
+  }
+
+  .sv.activity-picker .sv-bar-txt p {
+    white-space: normal;
+    text-wrap: pretty;
+  }
+
+  .sv.activity-picker .sv-bar-end {
+    display: flex;
+    align-items: center;
+    flex: none;
+  }
+
+  .sv.activity-picker .ap-search {
+    width: 220px;
+  }
+
+  .sv.activity-picker > .sv-panes {
+    padding: 4px var(--set-pad) 26px;
+  }
+
+  .ap-problem {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    padding: 10px 13px;
+    border: 1px solid var(--danger-line);
+    border-radius: var(--radius-md);
+    background: var(--danger-soft);
+    color: var(--danger-text);
+    font-size: var(--text-13);
+    line-height: 1.4;
+  }
+
+  .ap-problem svg {
+    flex: none;
+  }
+
+  .ap-empty {
+    background: var(--set-group);
+    min-height: 184px;
+  }
+
+  .ap-empty .ui-button {
+    margin-top: 6px;
+  }
+
+  .ap-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .activity-picker-grid,
+  .activity-picker-skeleton {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 212px), 1fr));
-    gap: var(--sp-4);
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 256px), 1fr));
+    gap: 14px;
     list-style: none;
     padding: 0;
     margin: 0;
   }
 
+  .sv.activity-picker[data-count="one"] .activity-picker-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sv.activity-picker[data-count="pair"] .activity-picker-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  }
+
   .activity-picker-card {
+    position: relative;
     display: flex;
     flex-direction: column;
     width: 100%;
     height: 100%;
-    padding: 0 0 var(--sp-4);
+    padding: 0;
     overflow: hidden;
     border: 1px solid var(--line-subtle);
     border-radius: var(--radius-lg);
@@ -464,53 +558,364 @@
     color: var(--text);
     text-align: start;
     overflow-wrap: anywhere;
+    transition:
+      border-color var(--dur-base) var(--ease-standard),
+      transform var(--dur-base) var(--ease-standard),
+      box-shadow var(--dur-base) var(--ease-standard);
   }
 
   .activity-picker-card:hover:enabled,
   .activity-picker-card:focus-visible {
     border-color: var(--accent-quiet);
-    background: color-mix(in oklab, var(--text) 5%, var(--set-group));
+    transform: translateY(-2px);
+    box-shadow: var(--elev-card);
   }
 
-  .activity-picker-card:disabled { opacity: var(--ui-button-disabled-opacity); }
+  .activity-picker-card:active:enabled {
+    transform: translateY(0);
+  }
 
-  .activity-picker-card .personal-activity-image {
+  .activity-picker-card:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .activity-picker-card:disabled {
+    opacity: 0.56;
+    cursor: not-allowed;
+  }
+
+  .ap-card-stage {
+    position: relative;
+    display: block;
     width: 100%;
-    margin-bottom: calc(20px + var(--sp-3));
   }
 
-  .activity-picker-card .personal-activity-icon {
-    inset: auto auto -20px var(--sp-4);
-    width: 72px;
-    height: 72px;
-    object-fit: contain;
+  .ap-card-banner {
+    position: relative;
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    background: var(--surface-field);
+    border-bottom: 1px solid var(--line-subtle);
+  }
+
+  .ap-card-banner::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(180deg, transparent 48%, oklch(0 0 0 / 0.28) 100%);
+  }
+
+  [data-scheme="light"] .ap-card-banner::after {
+    background: linear-gradient(180deg, transparent 54%, oklch(0 0 0 / 0.12) 100%);
+  }
+
+  .ap-card-cover {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+    transition: transform var(--dur-slow) var(--ease-standard);
+  }
+
+  .ap-card-cover.ambient {
+    transform: scale(1.35);
+    filter: blur(22px) saturate(1.25);
+    opacity: 0.72;
+  }
+
+  [data-scheme="light"] .ap-card-cover.ambient {
+    opacity: 0.42;
+    filter: blur(24px) saturate(1.15);
+  }
+
+  .ap-card-cover.fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-faint);
+    background: color-mix(in oklab, var(--accent) 8%, var(--surface-field));
+  }
+
+  .activity-picker-card:hover:enabled .ap-card-cover:not(.ambient):not(.fallback),
+  .activity-picker-card:focus-visible .ap-card-cover:not(.ambient):not(.fallback) {
+    transform: scale(1.04);
+  }
+
+  .ap-card-seats {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 1;
+    padding: 3px 8px;
+    border-radius: var(--radius-xs);
+    background: color-mix(in oklab, var(--surface-base) 82%, transparent);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid var(--line-subtle);
+    color: var(--text-muted);
+    font-size: var(--text-11);
+    font-weight: 600;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ap-card-icon {
+    position: absolute;
+    left: 16px;
+    bottom: -22px;
+    z-index: 2;
+    width: 58px;
+    height: 58px;
+    border-radius: 14px;
     border: 3px solid var(--set-group);
-    border-radius: var(--radius-md);
-    background: var(--set-group);
+    background: var(--surface-raised);
+    box-shadow: 0 4px 12px oklch(0 0 0 / 0.24);
+    overflow: hidden;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
-  .activity-picker-name,
-  .activity-picker-description,
-  .activity-picker-action { margin-inline: var(--sp-4); }
+  [data-scheme="light"] .ap-card-icon {
+    box-shadow: 0 4px 10px oklch(0 0 0 / 0.08);
+  }
 
-  .activity-picker-name { font-size: var(--text-16); font-weight: 600; }
+  .ap-card-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .ap-card-initials {
+    font-size: var(--text-16);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--accent-text);
+  }
+
+  .ap-card-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    flex: 1;
+    width: 100%;
+    padding: 30px 16px 18px;
+  }
+
+  .activity-picker-name {
+    font-size: var(--text-16);
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+    color: var(--text);
+  }
 
   .activity-picker-description {
-    margin-top: var(--sp-1);
-    margin-bottom: var(--sp-4);
     color: var(--text-muted);
     font-size: var(--text-13);
     line-height: 1.45;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-wrap: pretty;
   }
 
-  .activity-picker-action {
-    display: flex;
+  .ap-card-device {
+    display: inline-flex;
     align-items: center;
-    gap: var(--sp-2);
-    margin-top: auto;
-    color: var(--accent-text);
-    font-size: var(--text-13);
+    gap: 6px;
+    margin-top: 6px;
+    color: var(--text-faint);
+    font-size: var(--text-12);
+    font-weight: 500;
+  }
+
+  .ap-card-veil {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 16px;
+    background: oklch(0.12 0.01 265 / 0.72);
+    backdrop-filter: blur(8px) saturate(1.1);
+    -webkit-backdrop-filter: blur(8px) saturate(1.1);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur-fast) var(--ease-standard);
+  }
+
+  [data-scheme="light"] .ap-card-veil {
+    background: color-mix(in oklab, var(--surface-base) 80%, transparent);
+  }
+
+  .activity-picker-card:hover:enabled .ap-card-veil,
+  .activity-picker-card:focus-visible .ap-card-veil {
+    opacity: 1;
+  }
+
+  .ap-card-start {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-height: 38px;
+    padding: 0 18px;
+    border-radius: var(--radius-md);
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: var(--text-14);
     font-weight: 600;
+    box-shadow: 0 3px 0 var(--accent-edge), 0 8px 20px oklch(0 0 0 / 0.24);
+    transform: translateY(5px);
+    transition:
+      transform var(--dur-base) var(--ease-standard),
+      background var(--dur-fast) var(--ease-standard);
+  }
+
+  [data-scheme="light"] .ap-card-start {
+    box-shadow: 0 3px 0 var(--accent-edge), 0 6px 16px oklch(0 0 0 / 0.1);
+  }
+
+  .activity-picker-card:hover:enabled .ap-card-start,
+  .activity-picker-card:focus-visible .ap-card-start {
+    transform: translateY(0);
+  }
+
+  .activity-picker-card:active:enabled .ap-card-start {
+    transform: translateY(2px);
+    box-shadow: 0 1px 0 var(--accent-edge);
+  }
+
+  .ap-card-veil-sub {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--text-12);
+    font-weight: 550;
+    color: oklch(0.95 0.005 265 / 0.86);
+  }
+
+  [data-scheme="light"] .ap-card-veil-sub {
+    color: var(--text-muted);
+  }
+
+  .ap-skeleton-card {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid var(--line-subtle);
+    border-radius: var(--radius-lg);
+    background: var(--set-group);
+  }
+
+  .ap-skeleton-banner {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: var(--surface-overlay);
+    opacity: 0.65;
+  }
+
+  .ap-skeleton-icon {
+    position: absolute;
+    left: 16px;
+    top: calc((100% - 92px) - 22px);
+    width: 58px;
+    height: 58px;
+    border-radius: 14px;
+    border: 3px solid var(--set-group);
+    background: var(--surface-overlay);
+  }
+
+  .ap-skeleton-lines {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    padding: 34px 16px 22px;
+  }
+
+  .ap-skeleton-lines b,
+  .ap-skeleton-lines em {
+    display: block;
+    height: 10px;
+    border-radius: 999px;
+    background: var(--surface-overlay);
+  }
+
+  .ap-skeleton-lines b {
+    width: 54%;
+  }
+
+  .ap-skeleton-lines em {
+    width: 82%;
+    opacity: 0.65;
+  }
+
+  @media (hover: none) {
+    .ap-card-veil {
+      display: none;
+    }
+
+    .activity-picker-card:active:enabled {
+      border-color: var(--accent-quiet);
+      background: color-mix(in oklab, var(--text) 5%, var(--set-group));
+    }
+  }
+
+  @media (max-width: 767px) {
+    .sv.activity-picker,
+    .sv.activity-picker[data-count="pair"],
+    .sv.activity-picker[data-count="one"] {
+      --set-pad: 16px;
+      width: 100%;
+      height: 100%;
+      max-height: none;
+      border: none;
+      border-radius: 0;
+    }
+
+    .sv.activity-picker > .sv-bar {
+      padding: 14px 10px 12px 16px;
+    }
+
+    .sv.activity-picker .sv-bar-end {
+      order: 3;
+      flex-basis: 100%;
+    }
+
+    .sv.activity-picker .ap-search {
+      width: 100%;
+    }
+
+    .sv.activity-picker > .sv-panes {
+      padding: 8px 16px max(28px, env(safe-area-inset-bottom));
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .activity-picker-card,
+    .ap-card-cover,
+    .ap-card-veil,
+    .ap-card-start {
+      transition: none;
+    }
+
+    .activity-picker-card:hover:enabled,
+    .activity-picker-card:focus-visible,
+    .activity-picker-card:hover:enabled .ap-card-cover:not(.ambient):not(.fallback),
+    .activity-picker-card:focus-visible .ap-card-cover:not(.ambient):not(.fallback),
+    .ap-card-start {
+      transform: none;
+    }
   }
 
   /* Spans the list it filters, so its right edge lands where the row actions

@@ -245,6 +245,21 @@ export function parseSoundboardPlayed(
   }
 }
 
+export function parseVoiceActivityChanged(
+  payload: unknown,
+): RealtimeEventMap["VoiceActivityChanged"] | null {
+  if (!isRecord(payload) || typeof payload.channelId !== "string" || payload.channelId.length === 0) {
+    return null;
+  }
+  const { activity } = payload;
+  if (activity === null) return { channelId: payload.channelId, activity: null };
+  if (!isRecord(activity)) return null;
+  const { install, name, icon = null } = activity;
+  if (typeof install !== "string" || install.length === 0 || typeof name !== "string") return null;
+  if (icon !== null && typeof icon !== "string") return null;
+  return { channelId: payload.channelId, activity: { install, name, icon } };
+}
+
 /**
  * One decoder per hub event. The hub names its events exactly like
  * `RealtimeEventMap`, so the keys are both the wire names and the names
@@ -286,4 +301,5 @@ export const HUB_DECODERS: { [E in RealtimeEventName]: HubDecoder<E> } = {
   [RTC_HUB.events.soundboardPlayed]: parseSoundboardPlayed,
   [RTC_HUB.events.joinSoundPlayed]: parseSoundboardPlayed,
   [RTC_HUB.events.soundboardChanged]: strings("serverId"),
+  [RTC_HUB.events.activityChanged]: parseVoiceActivityChanged,
 };

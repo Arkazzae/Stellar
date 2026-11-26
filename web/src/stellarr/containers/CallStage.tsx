@@ -12,7 +12,7 @@ import {
 } from "@/state/hooks";
 
 import { ActivityDevPreview } from "./ActivityDevPreview";
-import { InstalledActivities } from "./InstalledActivities";
+import { InstalledActivities, type VoiceActivityBarControl } from "./InstalledActivities";
 import { popOutCall } from "./callPopout";
 import { VoiceProblemNotice } from "./VoiceProblemNotice";
 
@@ -25,6 +25,7 @@ interface CallStageProps {
 export function CallStage({ fullscreenTarget }: CallStageProps) {
   const voice = useVoice();
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [barActivity, setBarActivity] = useState<VoiceActivityBarControl | null>(null);
   const ui = useUi();
   const profile = useProfile();
   const { user } = useSession();
@@ -43,6 +44,7 @@ export function CallStage({ fullscreenTarget }: CallStageProps) {
   // is the wrong place: the microphone arrow once raised roles and invites.
   const openDeviceSettings = () => ui.openModal("voice");
   const joinedChannelId = voice.channelId;
+  const activeVoiceBar = joinedChannelId !== null ? barActivity : null;
 
   return (
     <>
@@ -52,6 +54,7 @@ export function CallStage({ fullscreenTarget }: CallStageProps) {
           channel={joinedChannelId}
           pickerOpen={pickerOpen}
           onClosePicker={() => setPickerOpen(false)}
+          onVoiceBarChange={setBarActivity}
           muted={voice.state.muted}
           cameraOn={voice.call?.cameraOn}
         />
@@ -100,7 +103,12 @@ export function CallStage({ fullscreenTarget }: CallStageProps) {
         onToggleCamera={voice.toggleCamera}
         onSelectMicrophone={openDeviceSettings}
         onSelectCamera={openDeviceSettings}
+        liveActivity={activeVoiceBar?.live ?? null}
+        activityJoined={activeVoiceBar?.joined ?? false}
+        activityBusy={activeVoiceBar?.busy ?? false}
         onOpenActivities={joinedChannelId ? () => setPickerOpen(true) : undefined}
+        onJoinActivity={activeVoiceBar?.join}
+        onLeaveActivity={activeVoiceBar?.leave}
         onToggleShare={voice.toggleShare}
         onPlaySound={voice.playSound}
         onInvite={canManageServer ? () => ui.openModal("invite") : undefined}
