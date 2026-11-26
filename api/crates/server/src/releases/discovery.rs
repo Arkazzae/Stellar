@@ -65,6 +65,16 @@ pub async fn manifest(State(state): State<AppState>) -> ApiResult<axum::response
     let manifest = serde_json::json!({
         "id": "/", "name": name, "short_name": name, "start_url": "/", "scope": "/",
         "display": "standalone", "background_color": "#111111", "theme_color": "#111111",
+        "share_target": {
+            "action": "/pwa/share", "method": "POST", "enctype": "multipart/form-data",
+            "params": { "files": [{ "name": "files", "accept": [
+                "image/jpeg", "image/png", "image/gif", "image/webp", "audio/*", "video/*",
+                "application/pdf", "application/zip", "text/plain", "application/json",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            ] }] }
+        },
         "shortcuts": [
             {"name": messages, "url": "/?view=messages"},
             {"name": inbox, "url": "/?view=inbox"}

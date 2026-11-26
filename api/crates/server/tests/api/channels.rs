@@ -23,6 +23,25 @@ const SEND_MESSAGES: i64 = 1 << 9;
 const BASE_PERMISSIONS: i64 = 24064;
 const VIEW_CHANNEL: i64 = 1 << 14;
 
+#[tokio::test]
+async fn share_channels_offers_only_visible_text_destinations_with_file_and_send_permission() {
+    let w = World::new().await;
+    let member = w.member("writer").await;
+    let open = w.add_channel("write-here", 0, None);
+    let hidden = w.add_channel("hidden", 0, None);
+    let read_only = w.add_channel("read-only", 0, None);
+    let no_files = w.add_channel("just-text", 0, None);
+    let voice = w.add_channel("talk", 1, None);
+    w.hide(0, &hidden, &member);
+    w.member_override(0, &read_only, &member, 0, SEND_MESSAGES);
+    w.member_override(0, &no_files, &member, 0, 1 << 10);
+    let response = member.client.get("/api/me/share-channels").await;
+    assert_eq!(response.status, 200);
+    let ids = response.json::<Vec<String>>();
+    assert!(ids.contains(&open));
+    for other in [hidden, read_only, no_files, voice] { assert!(!ids.contains(&other)); }
+}
+
 /// An instance with its owner, who sees and may do everything.
 struct World {
     server: Server,
