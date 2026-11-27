@@ -26,6 +26,9 @@ mod send;
 pub mod store;
 mod worker;
 
+#[cfg(test)]
+mod tests;
+
 use std::time::Duration;
 
 use serde::Serialize;

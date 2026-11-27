@@ -38,6 +38,7 @@ mod refusals;
 mod registration;
 mod releases;
 mod roles;
+mod scheduled;
 mod second_step;
 mod servers;
 mod sign_in;
