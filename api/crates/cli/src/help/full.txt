@@ -59,8 +59,8 @@ Safety:
   schema is installed by a normal API start. Mutations write an operator audit entry
   as local-cli in the same transaction. Secret values, hashes, cookies and tokens are
   never printed, except a newly issued MFA recovery credential, which is shown once.
-  Session revocation also closes matching WebSocket connections within one second;
-  voice and media are torn down by the normal disconnect lifecycle.
+  After revocation commits, the API closes the matching WebSocket connections.
+  Disconnecting releases their voice and media sessions.
 
 Typical use:
   docker compose exec stellarr stellarr doctor

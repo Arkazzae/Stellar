@@ -3,7 +3,7 @@
 //! master key. A value is never printed, never logged and never accepted as
 //! an argument.
 
-use rusqlite::{OptionalExtension, TransactionBehavior};
+use rusqlite::OptionalExtension;
 use stellarr_api::seal::Sealer;
 use stellarr_api::secrets::{self, ResolvedSecrets, SecretDefinition, SecretStatus, Source};
 use stellarr_api::settings::{Config, EnvironmentSecrets};
@@ -261,10 +261,7 @@ fn store(
             exit::FAILURE,
         )
     };
-    let transaction = database
-        .connection
-        .transaction_with_behavior(TransactionBehavior::Immediate)
-        .map_err(|_| failed())?;
+    let transaction = database.begin_write().map_err(|_| failed())?;
     secrets::set(&transaction, sealer, definition, value).map_err(|_| failed())?;
     CliDatabase::audit(&transaction, "secrets.set", definition.name).map_err(|_| failed())?;
     transaction.commit().map_err(|_| failed())?;
@@ -317,9 +314,7 @@ pub fn clear(runtime: &mut Runtime, name: &str) -> CliOutcome {
     }
     runtime.confirm(&preview)?;
     runtime.check_cancelled()?;
-    let transaction = database
-        .connection
-        .transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let transaction = database.begin_write()?;
     secrets::clear(&transaction, definition)?;
     CliDatabase::audit(&transaction, "secrets.clear", definition.name)?;
     transaction.commit()?;

@@ -1,7 +1,6 @@
 //! `config list | get | set | validate`: the settings the panel shares with
 //! this tool, and the startup settings it only reads.
 
-use rusqlite::TransactionBehavior;
 use stellarr_api::instance::operations;
 use stellarr_api::secrets;
 use stellarr_api::values::Timestamp;
@@ -223,9 +222,7 @@ pub fn set(runtime: &mut Runtime, key: &str, raw_value: &str) -> CliOutcome {
         previous.display()
     ))?;
 
-    let transaction = database
-        .connection
-        .transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let transaction = database.begin_write()?;
     // What the confirmation waited on may have changed under it: the row is
     // read again inside the write lock, and the one change is made on it.
     let server = require_instance_server(&transaction)?;

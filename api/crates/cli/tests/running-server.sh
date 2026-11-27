@@ -35,6 +35,18 @@ check() { # description, expected, actual
 instance_name() { curl -s -b "$work/owner" "$base/api/servers" "${headers[@]}" | python3 -c 'import sys,json;print(json.load(sys.stdin)[0]["name"])'; }
 cli() { STELLARR_MAIL_ENABLED=false STELLARR_API_URL=$base "$tool" --data-root "$root" "$@"; }
 
+open_hub() {
+  node "$here/running-server.mjs" --base "$base" --cookie "$cookie" >"$work/hub.log" 2>&1 &
+  hub=$!
+  for _ in $(seq 1 50); do grep -q '^open' "$work/hub.log" && break; sleep 0.1; done
+  check "the hub connection opens" "open" "$(head -1 "$work/hub.log")"
+}
+closed_hub() {
+  wait "$hub"
+  echo "          $(tail -1 "$work/hub.log")"
+  check "$1" "closed 4401" "$(tail -1 "$work/hub.log" | cut -d' ' -f1-2)"
+}
+
 mkdir -p "$root/db"
 env -i PATH="$PATH" STELLARR_ENVIRONMENT=Testing Testing__Workers=realtime-sessions STELLARR_API_LISTEN="${base#http://}" STELLARR_DATA_ROOT="$root" \
   "$server" >"$work/server.log" 2>&1 &
@@ -54,27 +66,41 @@ echo "== a setting the tool changes is the one the server reads, at once"
 check "the instance name the server reports before" "Stellarr" "$(instance_name)"
 cli config set instance.name "Orbit CLI" --yes >/dev/null
 check "the instance name the server reports after" "Orbit CLI" "$(instance_name)"
+open_hub
 cli config set mfa.requirement everyone --yes >/dev/null
+closed_hub "the CLI MFA policy closes an already connected session without MFA"
 status=$(post "$work/maya2" /api/auth/login "{\"username\":\"maya\",\"password\":\"$password\"}" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("status"))')
 check "with the second step required for everyone, a sign-in asks for one to be set up" "mfa_enrollment_required" "$status"
 cli config set mfa.requirement optional --yes >/dev/null
 again=$(post "$work/maya3" /api/auth/login "{\"username\":\"maya\",\"password\":\"$password\"}")
 check "and with it optional again, it signs in" "maya" "$(printf '%s' "$again" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("username"))' 2>/dev/null || echo "$again")"
 
-echo "== a session the tool revokes is closed on the hub within a second or two"
+echo "== revoking a session from the CLI closes its WebSocket"
 # A sign-in of its own, which is the one seen last.
 post "$work/maya4" /api/auth/login "{\"username\":\"maya\",\"password\":\"$password\"}" >/dev/null
 cookie=$(awk '$6 ~ /session/ {printf "%s=%s", $6, $7}' "$work/maya4")
 session=$(cli --json sessions list --user maya | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["sessions"][0]["id"])')
-node "$here/running-server.mjs" --base "$base" --cookie "$cookie" >"$work/hub.log" 2>&1 &
-hub=$!
-for _ in $(seq 1 50); do grep -q '^open' "$work/hub.log" && break; sleep 0.1; done
-check "the hub connection opens" "open" "$(head -1 "$work/hub.log")"
+open_hub
 revoked=$(cli --json sessions revoke "$session" --yes | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["revoked"])')
 check "the session is revoked" "True" "$revoked"
-wait "$hub"
-echo "          $(tail -1 "$work/hub.log")"
-check "the hub closed it" "closed" "$(tail -1 "$work/hub.log" | cut -d' ' -f1)"
+closed_hub "the hub closed the revoked session"
+
+echo "== an explicit sqlite3 maintenance signal reaches a live session"
+post "$work/maya5" /api/auth/login "{\"username\":\"maya\",\"password\":\"$password\"}" >/dev/null
+cookie=$(awk '$6 ~ /session/ {printf "%s=%s", $6, $7}' "$work/maya5")
+session=$(cli --json sessions list --user maya | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["sessions"][0]["id"])')
+open_hub
+(
+  cd "$root/db" || exit 1
+  sqlite3 -bail stellarr.db <<SQL
+BEGIN IMMEDIATE;
+UPDATE UserSessions SET RevokedAt = CURRENT_TIMESTAMP WHERE Id = upper('$session');
+.once stellarr.db.access-wake
+SELECT hex(randomblob(16));
+COMMIT;
+SQL
+) || exit 1
+closed_hub "the manual SQLite transaction closed its session"
 
 echo "== a recovery credential the tool issues is the server's to redeem"
 credential=$(cli --json security recover maya --reason "lost phone" --yes | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["recoveryCredential"])')
