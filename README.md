@@ -85,11 +85,13 @@ Open your instance over trusted HTTPS. After joining, choose **Install Stellarr*
 
 ## Inviting friends
 
-Local testing works right away on your machine. Before inviting friends over the internet:
+Local testing works right away on your machine. A friend must be able to reach both the web address in the invitation and the address advertised for calls:
 
-1. Set `STELLARR_DOMAIN` and `STELLARR_PUBLIC_IP` (or `auto`) in `.env` and restart with `docker compose up -d`.
+1. Set `STELLARR_DOMAIN` in `.env` to your hostname, such as `chat.example.com`. Set `STELLARR_PUBLIC_IP=auto` if its DNS A record points to your Docker host or router. Behind an HTTP CDN, set the host's reachable IPv4 address instead. Restart with `docker compose up -d`.
 2. Forward HTTPS on `443/tcp` and media on `49000/udp` and `49000/tcp`, or the ports configured for your instance. Voice and video use direct UDP when available and can fall back to ICE-TCP. Enable and forward TURN separately if you need a relay. [Requirements](docs/install/requirements.md#behind-nat)
 3. Add a browser-trusted HTTPS certificate or put Stellarr behind Caddy or Nginx so browsers allow mic, camera, and screen capture ([Reverse proxy and TLS](docs/install/reverse-proxy-and-tls.md)).
+
+Before sharing the link, open it on a phone using mobile data and join the same voice channel from both devices. Check that each side can hear the other.
 
 > [!TIP]
 > Running Unraid? There is a ready-to-use container template and walkthrough in the [Unraid guide](docs/install/unraid.md).
