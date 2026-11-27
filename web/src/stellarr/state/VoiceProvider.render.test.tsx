@@ -111,23 +111,23 @@ describe("VoiceProvider share opt-in", () => {
   it("asks for the watched screen and its sound only while it is watched", () => {
     render(<VoiceProvider><Probe /></VoiceProvider>);
     const client = harness.client as FakeVoiceClient;
-    expect(client.setReceivePreferences).toHaveBeenLastCalledWith({ cameras: true, screen: null });
+    expect(client.setReceivePreferences).toHaveBeenLastCalledWith({ cameras: new Set(), screen: null });
 
     act(() => client.set({
       channelId: "voice",
       connection: "connected",
       peers: [peer("ada", "screen-a")],
     }));
-    expect(client.setReceivePreferences).toHaveBeenLastCalledWith({ cameras: true, screen: null });
+    expect(client.setReceivePreferences).toHaveBeenLastCalledWith({ cameras: new Set(), screen: null });
 
     fireEvent.click(screen.getByRole("button", { name: "Watch" }));
     expect(client.setReceivePreferences).toHaveBeenLastCalledWith({
-      cameras: true,
+      cameras: new Set(),
       screen: { userId: "ada", streamId: "screen-a" },
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Stop watching" }));
-    expect(client.setReceivePreferences).toHaveBeenLastCalledWith({ cameras: true, screen: null });
+    expect(client.setReceivePreferences).toHaveBeenLastCalledWith({ cameras: new Set(), screen: null });
   });
 
   it("does not carry watching across a new stream or owner during reconnect", async () => {
@@ -151,7 +151,7 @@ describe("VoiceProvider share opt-in", () => {
     fireEvent.click(screen.getByRole("button", { name: "Watch" }));
     expect(screen.getByLabelText("watching")).toHaveTextContent("true");
     expect((harness.client as FakeVoiceClient).setReceivePreferences).toHaveBeenLastCalledWith({
-      cameras: true,
+      cameras: new Set(),
       screen: { userId: "ada", streamId: "screen-a-1" },
     });
 
@@ -160,7 +160,7 @@ describe("VoiceProvider share opt-in", () => {
     });
     expect(screen.getByLabelText("watching")).toHaveTextContent("false");
     expect((harness.client as FakeVoiceClient).setReceivePreferences).toHaveBeenLastCalledWith({
-      cameras: true,
+      cameras: new Set(),
       screen: null,
     });
 

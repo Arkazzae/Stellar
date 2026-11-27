@@ -2612,6 +2612,10 @@ describe("receiving subscriptions", () => {
     await vi.waitFor(() =>
       expect(selections().at(-1)?.mids).toEqual(["c1", "b1", "c2", "c3", "b2", "c4"]),
     );
+    client.setReceivePreferences({ screen: { userId: "u-c", streamId: "screen-c" }, cameras: new Set(["u-c"]) });
+    await vi.waitFor(() =>
+      expect(selections().at(-1)?.mids).toEqual(["c1", "b1", "c2", "c3", "c4"]),
+    );
   });
 
   it("says which picture the media server holds back for this side, and when it is back", async () => {

@@ -11,6 +11,7 @@ import {
 } from "react";
 
 import type { CallVM, PersonVM, ScreenShareVM } from "@/components/view-models";
+import { CameraTileContext, useCameraTiles } from "@/components/voice/useCameraTiles";
 import { VoiceSeatContext } from "@/components/voice/useVoiceSeat";
 import type { Translator } from "@/i18n";
 import { playSystemFx } from "@/lib/audio/systemFx";
@@ -179,6 +180,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   const { preferences } = useAccountContext();
   const { channelName, occupantsOf } = useDirectoryContext();
 
+  const { cameras, observe } = useCameraTiles();
   const [holder] = useState(() => new VoiceHolder());
   // A join asked for before the client exists is honoured, not lost. It is a
   // ref because nothing renders it: it is read back once, when a client appears.
@@ -348,13 +350,13 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     holder.getClient()?.setReceivePreferences({
-      cameras: true,
+      cameras,
       screen:
         watchedScreenUserId !== null && watchedScreenStreamId !== null
           ? { userId: watchedScreenUserId, streamId: watchedScreenStreamId }
           : null,
     });
-  }, [holder, ports, userId, watchedScreenUserId, watchedScreenStreamId]);
+  }, [holder, ports, userId, cameras, watchedScreenUserId, watchedScreenStreamId]);
 
   useVoiceFx({
     soundboard: ports.soundboard,
@@ -685,7 +687,9 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     <VoiceSeatContext.Provider value={holder.seats}>
       <VoiceLiveContext.Provider value={live}>
         <VoiceCallContext.Provider value={dock}>
-          <VoiceContext.Provider value={value}>{children}</VoiceContext.Provider>
+          <VoiceContext.Provider value={value}>
+            <CameraTileContext.Provider value={observe}>{children}</CameraTileContext.Provider>
+          </VoiceContext.Provider>
         </VoiceCallContext.Provider>
       </VoiceLiveContext.Provider>
     </VoiceSeatContext.Provider>

@@ -213,7 +213,8 @@ export interface VoiceJoinOptions {
 
 export interface VoiceReceivePreferences {
   screen: { userId: UserId; streamId: string } | null;
-  cameras: boolean;
+  /** Select individual publishers, or use a boolean for all or no cameras. */
+  cameras: boolean | ReadonlySet<UserId>;
 }
 
 /**

@@ -54,9 +54,9 @@ Implemented in `api/crates/server/src/voice/media.rs`:
 
 ### Receive subscriptions
 
-- **Opt-in forwarding:** Sessions receive zero RTP packets until sending `subscriptions` (`mids: []` pauses all forwarding; up to `4,096` printable ASCII `mid`s). Pre-subscribing unknown `mid`s before answering an SFU offer is supported.
+- **Opt-in forwarding:** Sessions receive zero RTP packets until sending `subscriptions` (`mids: []` pauses all forwarding; up to `4,096` printable ASCII identifiers in a subscription message). Pre-subscribing unknown `mid`s before answering an SFU offer is supported.
 - **Zero renegotiation:** Changing `subscriptions` toggles RTP forwarding immediately (continuing sequence numbers contiguously and sending a rate-limited PLI keyframe on video resume) without altering SDP transceivers.
-- **Client ordering:** All microphones → watched screen video + screen audio → cameras (`VoiceClient.setReceivePreferences`), queued ahead of SDP answers and throttled to `250 ms`.
+- **Client ordering:** All microphones → watched screen video + screen audio → cameras with visible remote tiles (`VoiceClient.setReceivePreferences`), queued ahead of SDP answers and throttled to `250 ms`.
 
 ### Negotiation and track attribution
 
