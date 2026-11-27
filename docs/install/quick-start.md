@@ -89,22 +89,21 @@ Complete the three-step `/setup` wizard:
 
 1. **Owner account:** Enter the setup code, display name, username (`3–32` characters: letters, digits, `.`, `-`, `_`), email address, and password (`8+` characters).
 2. **First server:** Set the server name (`1–80` characters), optional description, first text channel (default `general`), and voice channel toggle (default `lounge`). Click **Create account and server**.
-3. **Invite link:** A loopback invitation such as `https://localhost/invite/…` opens only on the device running Stellarr. Choose **Set up access for friends** to configure a reachable address. The wizard commits the owner account and primary server in a single SQLite transaction, invalidates the setup code, and displays an invite URL. Copy the link and click **Open server**.
+3. **Invite:** The wizard commits the owner account and primary server in a single SQLite transaction, invalidates the setup code, and displays an invitation. Copy it and click **Open server**. On a loopback address such as `localhost`, `127.0.0.1` or `[::1]`, the wizard shows only the invite code, because a link to that address would open on the other person's own device. Releases up to 0.2.1 show the full link. Either one can be pasted under **I have an invite link** on the instance's sign-in page.
 
 ## 5. Invite a second user
 
 To create additional invite links inside the app:
 
 1. Click **Invite to server** next to the server name in the channel rail header.
-2. Click **New invite link** to generate an invite URL (for example, `https://localhost/invite/22b115a390a20370`).
-3. If you mapped HTTPS to a custom host port on `localhost`, include that port in the URL.
+2. Click **New invite link**. On a loopback address the dialog shows the invite code. To test on this computer, open the instance in a private window or another browser profile and paste the code under **I have an invite link**.
+3. For other devices, set the [public hostname and media address](requirements.md#behind-nat), apply them with `docker compose up -d`, and reopen the invite dialog. Links then use the configured public origin, for existing invites as well as new ones.
 
-> [!WARNING]
-> When both `STELLARR_DOMAIN` and `STELLARR_PUBLIC_URL` are unset, generated invite URLs fall back to the request `Host` header without custom port numbers. Set `STELLARR_DOMAIN` (with `STELLARR_PUBLIC_PORT`) or `STELLARR_PUBLIC_URL` so links always carry the exact public origin.
+Without `STELLARR_DOMAIN` or `STELLARR_PUBLIC_URL`, a link carries the address and port your browser used to open the instance.
 
 ## 6. Join and test voice
 
-1. Open the invite URL in a private window or second browser profile, accept the local certificate prompt, and register a second user.
+1. In a private window or second browser profile, open the invite link, or the sign-in page with the invite code, accept the local certificate prompt, and register a second user.
 2. Join the `lounge` voice channel in both browser windows and grant microphone access.
 3. Verify two-way audio and confirm the call dock status in the bottom-left corner reads **Connected**.
 
