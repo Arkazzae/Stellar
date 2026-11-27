@@ -57,6 +57,21 @@ export function inviteCodeFrom(input: string): string | null {
   return /^[A-Za-z0-9_-]{1,128}$/.test(code) ? code : null;
 }
 
+/** A localhost URL takes the recipient to their own machine. They can paste
+ * the code on the sign-in page of the instance they actually reached. */
+export function localInviteCode(url: string): string | null {
+  if (!url) return null;
+  try {
+    const link = new URL(url);
+    const host = link.hostname.replace(/\.$/, "");
+    const loopback = host === "localhost" || host.endsWith(".localhost") ||
+      /^127(?:\.\d+){3}$/.test(host) || host === "[::1]" || /^\[::ffff:7f[\da-f]{2}:/.test(host);
+    return loopback ? inviteCodeFrom(link.pathname) : null;
+  } catch {
+    return null;
+  }
+}
+
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;

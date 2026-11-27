@@ -5,7 +5,7 @@ import { Icon } from "@stellarr/icons";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import type { InterfaceLocale, Translator } from "@/i18n";
-import { inviteExpiry } from "@/lib/auth/invites";
+import { inviteExpiry, localInviteCode } from "@/lib/auth/invites";
 import type { Invite } from "@/ports";
 import { useLanguage } from "@/state/hooks";
 
@@ -39,9 +39,9 @@ export function InvitesPane({ supported, invites, onCreate, onRevoke }: InvitesP
   const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null);
   const change = useAsyncAction();
 
-  const copyInvite = async (invite: Invite) => {
+  const copyInvite = async (invite: Invite, value: string) => {
     try {
-      await navigator.clipboard.writeText(invite.url);
+      await navigator.clipboard.writeText(value);
       setCopiedInviteId(invite.id);
     } catch {
       setCopiedInviteId(null);
@@ -65,45 +65,48 @@ export function InvitesPane({ supported, invites, onCreate, onRevoke }: InvitesP
         {invites.length === 0 ? (
           <p className="acc-security-item acc-security-empty">{t("srv.invites.empty")}</p>
         ) : (
-          invites.map((invite) => (
-            <div className="sec-row ss-invite" key={invite.id}>
-              <span className="sec-copy">
-                <b className="ss-mono" title={invite.url}>
-                  {shortLink(invite.url)}
-                </b>
-                <small>
-                  {t("srv.invites.meta", {
-                    name: invite.createdByName,
-                    uses:
-                      invite.maxUses === null
-                        ? t("srv.invites.usesUnlimited", { used: invite.uses })
-                        : t("srv.invites.uses", { used: invite.uses, max: invite.maxUses }),
-                    expiry: expiry(invite.expiresAt, now, t, locale),
-                  })}
-                </small>
-              </span>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                aria-label={t("settings.copyInvite", { url: invite.url })}
-                onClick={() => void copyInvite(invite)}
-              >
-                <Icon name={copiedInviteId === invite.id ? "tick" : "copy"} size={14} />
-                {copiedInviteId === invite.id ? t("invite.copied") : t("srv.invites.copy")}
-              </Button>
-              <Button
-                type="button"
-                variant="danger"
-                size="sm"
-                disabled={!supported || change.pending}
-                aria-label={t("settings.revokeInvite", { url: invite.url })}
-                onClick={() => void change.run(() => onRevoke(invite.id))}
-              >
-                {t("settings.revoke")}
-              </Button>
-            </div>
-          ))
+          invites.map((invite) => {
+            const code = localInviteCode(invite.url);
+            return (
+              <div className="sec-row ss-invite" key={invite.id}>
+                <span className="sec-copy">
+                  <b className="ss-mono" title={code ?? invite.url}>
+                    {code ?? shortLink(invite.url)}
+                  </b>
+                  <small>
+                    {t("srv.invites.meta", {
+                      name: invite.createdByName,
+                      uses:
+                        invite.maxUses === null
+                          ? t("srv.invites.usesUnlimited", { used: invite.uses })
+                          : t("srv.invites.uses", { used: invite.uses, max: invite.maxUses }),
+                      expiry: expiry(invite.expiresAt, now, t, locale),
+                    })}
+                  </small>
+                </span>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  aria-label={t("settings.copyInvite", { url: code ?? invite.url })}
+                  onClick={() => void copyInvite(invite, code ?? invite.url)}
+                >
+                  <Icon name={copiedInviteId === invite.id ? "tick" : "copy"} size={14} />
+                  {copiedInviteId === invite.id ? t("invite.copied") : t(code ? "invite.copyCode" : "srv.invites.copy")}
+                </Button>
+                <Button
+                  type="button"
+                  variant="danger"
+                  size="sm"
+                  disabled={!supported || change.pending}
+                  aria-label={t("settings.revokeInvite", { url: code ?? invite.url })}
+                  onClick={() => void change.run(() => onRevoke(invite.id))}
+                >
+                  {t("settings.revoke")}
+                </Button>
+              </div>
+            );
+          })
         )}
         <div className="sec-row ss-foot">
           <span className="ss-foot-note">{t("srv.invites.note")}</span>

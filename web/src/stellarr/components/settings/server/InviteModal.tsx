@@ -2,12 +2,12 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@stellarr/ui";
 import { Icon } from "@stellarr/icons";
-import { InviteReachHint } from "@/components/auth/InviteReachHint";
+import { InviteSharingHint } from "@/components/auth/InviteSharingHint";
 import { Avatar } from "@/components/primitives/Avatar";
 import { Modal } from "@/components/primitives/Modal";
 import { DialogHeader } from "@/components/settings/DialogHeader";
 import type { PersonVM } from "@/components/view-models";
-import { inviteExpiry } from "@/lib/auth/invites";
+import { inviteExpiry, localInviteCode } from "@/lib/auth/invites";
 import { useLanguage } from "@/state/hooks";
 
 export interface InvitePersonVM extends PersonVM {
@@ -225,12 +225,13 @@ function InviteLink({ url, expiresAt, alone, onCreate, onCopy }: InviteLinkProps
   const [now] = useState(() => Date.now());
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const code = localInviteCode(url);
   const copiedTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => () => window.clearTimeout(copiedTimer.current), []);
 
   const copy = () => {
-    onCopy(url);
+    onCopy(code ?? url);
     setCopied(true);
     window.clearTimeout(copiedTimer.current);
     copiedTimer.current = window.setTimeout(() => setCopied(false), COPIED_FLASH_MS);
@@ -263,7 +264,7 @@ function InviteLink({ url, expiresAt, alone, onCreate, onCopy }: InviteLinkProps
 
   return (
     <section className="inv-link">
-      <h3 className="inv-link-lab">{alone ? t("invite.linkField") : t("invite.linkLabel")}</h3>
+      <h3 className="inv-link-lab">{t(code ? "auth.invite.codeLabel" : alone ? "invite.linkField" : "invite.linkLabel")}</h3>
       {url === "" ? (
         <div className="inv-nolink">
           <p>{t("invite.noLink")}</p>
@@ -281,8 +282,8 @@ function InviteLink({ url, expiresAt, alone, onCreate, onCopy }: InviteLinkProps
               className="inv-url"
               type="text"
               readOnly
-              value={url}
-              aria-label={t("invite.linkField")}
+              value={code ?? url}
+              aria-label={t(code ? "auth.invite.codeLabel" : "invite.linkField")}
               spellCheck={false}
               onFocus={(event) => event.currentTarget.select()}
             />
@@ -299,7 +300,7 @@ function InviteLink({ url, expiresAt, alone, onCreate, onCopy }: InviteLinkProps
           </div>
           <p className="inv-note">
             {lifetime === null ? null : `${lifetime} `}
-            <InviteReachHint url={url} t={t}>{t("invite.linkNote")}</InviteReachHint>
+            <InviteSharingHint code={code} t={t}>{t("invite.linkNote")}</InviteSharingHint>
           </p>
         </>
       )}

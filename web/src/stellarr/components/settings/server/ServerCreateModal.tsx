@@ -3,16 +3,17 @@ import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { Button } from "@stellarr/ui";
 import { Icon } from "@stellarr/icons";
 import { ServerTile } from "@/components/auth/Faces";
+import { InviteSharingHint } from "@/components/auth/InviteSharingHint";
 import { DialogClose } from "@/components/primitives/DialogClose";
 import { Sticker } from "@/components/primitives/MascotArt";
 import { Modal } from "@/components/primitives/Modal";
-import { InviteReachHint } from "@/components/auth/InviteReachHint";
 import { Segmented } from "@/components/primitives/Segmented";
 import { StepIndicator } from "@/components/primitives/StepIndicator";
 import { Switch } from "@/components/primitives/Switch";
 import { useRovingRadio } from "@/components/primitives/useRovingRadio";
 import { countedNoun } from "@/components/settings/paneFormat";
 import type { InterfaceLocale, Translator } from "@/i18n";
+import { localInviteCode } from "@/lib/auth/invites";
 import { initials, toChannelSlug } from "@/lib/format/format";
 import { useLanguage } from "@/state/hooks";
 
@@ -239,6 +240,7 @@ export function ServerCreateModal({
 
   const renderStep = () => {
     if (created !== null) {
+      const code = invite.state === "ready" ? localInviteCode(invite.url) : null;
       return (
         <div className={css("done")}>
           <Sticker name="05-invite-friends" size="main" align="center" />
@@ -253,23 +255,23 @@ export function ServerCreateModal({
           ) : (
             <>
               <div className={css("link")}>
-                <output className={css("input", "url")} aria-label={t("auth.invite.linkLabel")}>
-                  {invite.state === "ready" ? invite.url : t("auth.setup.inviteMaking")}
+                <output className={css("input", "url")} aria-label={t(code ? "auth.invite.codeLabel" : "auth.invite.linkLabel")}>
+                  {invite.state === "ready" ? code ?? invite.url : t("auth.setup.inviteMaking")}
                 </output>
                 <Button
                   type="button"
                   variant="secondary"
                   disabled={invite.state !== "ready"}
-                  onClick={() => invite.state === "ready" && void copy(invite.url)}
+                  onClick={() => invite.state === "ready" && void copy(code ?? invite.url)}
                 >
                   <Icon name={copied ? "check" : "copy"} size={16} />
                   {copied ? t("auth.setup.copied") : t("auth.setup.copy")}
                 </Button>
               </div>
               <p className={css("hint", "doneNote")}>
-                <InviteReachHint url={invite.state === "ready" ? invite.url : ""} t={t}>
+                <InviteSharingHint code={code} t={t}>
                   {t("auth.setup.inviteHint")}
-                </InviteReachHint>
+                </InviteSharingHint>
               </p>
             </>
           )}

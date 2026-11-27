@@ -13,12 +13,13 @@ import controls from "@/components/auth/AuthControls.module.css";
 import { AuthField, FormError } from "@/components/auth/AuthField";
 import { AuthFrame } from "@/components/auth/AuthFrame";
 import { Chip, ServerTile } from "@/components/auth/Faces";
-import { InviteReachHint } from "@/components/auth/InviteReachHint";
+import { InviteSharingHint } from "@/components/auth/InviteSharingHint";
 import { ServerUnreachable } from "@/components/auth/Outcomes";
 import { StepIndicator } from "@/components/primitives/StepIndicator";
 import { Switch } from "@/components/primitives/Switch";
 import { registrationIssue, type RegistrationField } from "@/containers/registrationErrors";
 import type { Translator } from "@/i18n";
+import { localInviteCode } from "@/lib/auth/invites";
 import { serverMark } from "@/state/directoryView";
 import { useInstanceSetupContext as useInstanceSetup } from "@/state/InstanceSetupProvider";
 import { useLanguage } from "@/state/LanguageProvider";
@@ -207,6 +208,7 @@ export default function SetupPage() {
 
   if (step === 3) {
     const name = server.name.trim();
+    const code = invite.state === "ready" ? localInviteCode(invite.url) : null;
     return (
       <AuthFrame
         scene="setup-invite"
@@ -219,16 +221,16 @@ export default function SetupPage() {
         ) : (
           <div className={controls.field}>
             <span className={controls.label} id={`${errorId}-link`}>
-              {t("auth.invite.linkLabel")}
+              {t(code ? "auth.invite.codeLabel" : "auth.invite.linkLabel")}
             </span>
             <div className={controls.linkBox}>
               <output className={controls.mono} aria-labelledby={`${errorId}-link`}>
-                {invite.state === "ready" ? invite.url : t("auth.setup.inviteMaking")}
+                {invite.state === "ready" ? code ?? invite.url : t("auth.setup.inviteMaking")}
               </output>
               <button
                 type="button"
                 className={`${controls.button} ${copied ? controls.secondary : controls.primary}`}
-                onClick={() => invite.state === "ready" && void copy(invite.url)}
+                onClick={() => invite.state === "ready" && void copy(code ?? invite.url)}
                 disabled={invite.state !== "ready"}
               >
                 <Icon name={copied ? "check" : "copy"} size={18} />
@@ -236,9 +238,9 @@ export default function SetupPage() {
               </button>
             </div>
             <p className={controls.hint}>
-              <InviteReachHint url={invite.state === "ready" ? invite.url : ""} t={t}>
+              <InviteSharingHint code={code} t={t}>
                 {t("auth.setup.inviteHint")}
-              </InviteReachHint>
+              </InviteSharingHint>
             </p>
           </div>
         )}
