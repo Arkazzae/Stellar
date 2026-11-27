@@ -10,7 +10,7 @@ use stellarr_messages::{MessageKey, Messages};
 
 use super::dto::{self, ChannelReadDto, MessageDto};
 use super::mentions::{self, Mentioning};
-use super::{Stop, content_limit, field_problem, trimmed, units};
+use super::{Reason, Stop, content_limit, field_problem, trimmed, units};
 use crate::auth::Caller;
 use crate::events::{Audience, Event};
 use crate::http::{ApiError, ApiResult, Json, Path, json_response};
@@ -19,11 +19,11 @@ use crate::link_previews::PreviewRequest;
 use crate::permissions::authorization::{Held, held_in_channel};
 use crate::permissions::membership::ActiveServer;
 use crate::permissions::privileges::{ATTACH_FILES, MANAGE_CHANNELS, SEND_MESSAGES};
-use crate::permissions::visibility::{self, ChannelKind};
+use crate::permissions::visibility::{self, ChannelKind, ChannelPlace};
 use crate::state::AppState;
 use crate::values::{Id, Timestamp};
 
-const MAX_ATTACHMENTS: usize = 10;
+pub(crate) const MAX_ATTACHMENTS: usize = 10;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -53,11 +53,13 @@ pub enum Posted {
     Stored(Box<Stored>),
 }
 
-/// A message that was stored, and what its storing adds.
+/// A message that was stored, and what its storing adds. A message sent from
+/// the queue of scheduled ones leaves the author's read marker where it was:
+/// they were not there to read what came before it.
 #[derive(Debug)]
 pub struct Stored {
     pub message: MessageDto,
-    pub read: ChannelReadDto,
+    pub read: Option<ChannelReadDto>,
     pub mentions: Vec<Entry>,
 }
 
@@ -74,17 +76,7 @@ pub fn post(
     let Submission {
         channel, author, ..
     } = *submission;
-    let place = visibility::place(db, channel, Some(server), Some(ChannelKind::Text), None)?
-        .ok_or_else(Stop::not_found)?;
-
-    // What the sender holds in the channel, read once for every decision
-    // below. Without view it is nothing, and the channel is answered as one
-    // that does not exist, before anything else, a retry included: a retry
-    // would answer with the message as it is stored.
-    let held = held_in_channel(db, author, &place)?;
-    if !held.views() {
-        return Err(Stop::not_found());
-    }
+    let (place, held) = locate(db, server, submission)?;
 
     // A retry of a send that went through must not wait behind slow mode or
     // be refused for the attachments it already used, so it is recognised
@@ -93,73 +85,8 @@ pub fn post(
         return replay;
     }
 
-    // The one place posting is admitted, after the replay because that posts
-    // nothing. It is decided in the channel, so its overrides count.
-    deny(
-        messages,
-        held,
-        SEND_MESSAGES,
-        MessageKey::SendMessagesDenied,
-    )?;
-    if !submission.attachments.is_empty() {
-        deny(messages, held, ATTACH_FILES, MessageKey::AttachFilesDenied)?;
-    }
-
-    if let Some(target) = submission.reply_to {
-        let found: bool = db.query_row(
-            "SELECT EXISTS (SELECT 1 FROM \"Messages\" WHERE \"Id\" = ?1 AND \"ChannelId\" = ?2)",
-            params![target, channel],
-            |row| row.get(0),
-        )?;
-        if !found {
-            return Err(field_problem(
-                "replyToMessageId",
-                messages,
-                MessageKey::ReplyTargetInvalid,
-                &[],
-            )
-            .into());
-        }
-    }
-
-    let attachments = own_attachments(db, author, &submission.attachments)?;
-    if attachments.len() != submission.attachments.len() {
-        return Err(field_problem(
-            "attachmentIds",
-            messages,
-            MessageKey::AttachmentsNotFound,
-            &[],
-        )
-        .into());
-    }
-
     let now = Timestamp::now();
-    if place.slow_mode_seconds > 0 && !held.has(MANAGE_CHANNELS) {
-        let last: Option<Timestamp> = db
-            .query_row(
-                "SELECT \"LastPostedAt\" FROM \"ChannelPostTimes\" WHERE \"ChannelId\" = ?1 AND \"UserId\" = ?2",
-                params![channel, author],
-                |row| row.get(0),
-            )
-            .optional()?;
-        if let Some(wait) = last.and_then(|last| slow_mode_wait(last, place.slow_mode_seconds, now))
-        {
-            return Err(Stop::SlowMode(wait));
-        }
-    }
-
-    // A recording is a message of its own: no text and nothing beside it.
-    if attachments.iter().any(|(_, voice)| *voice)
-        && (attachments.len() > 1 || !submission.content.is_empty())
-    {
-        return Err(field_problem(
-            "attachmentIds",
-            messages,
-            MessageKey::VoiceMessageAlone,
-            &[],
-        )
-        .into());
-    }
+    let attachments = admit(db, messages, &place, held, submission, now)?;
 
     let id = submission.client_id.unwrap_or_else(Id::random);
     db.prepare_cached(
@@ -184,7 +111,7 @@ pub fn post(
 
     // Whoever sent a message has read everything before it, and nobody is told
     // about a message that was not stored.
-    let read = advance_read(db, channel, author, now)?;
+    let read = Some(advance_read(db, channel, author, now)?);
     let author_name: String = crate::instance::users::User::display_name(db, author)?;
     let mentioned = mentions::notify(
         db,
@@ -213,13 +140,145 @@ pub fn post(
     })))
 }
 
+/// Whether the submission could be posted now, as [`post`] decides it, with
+/// nothing written: what scheduling a message checks when it is made or
+/// changed. Slow mode is the one refusal left out, since a scheduled message
+/// waits it out when its time comes.
+pub fn admissible(
+    db: &Connection,
+    messages: &Messages,
+    server: Id,
+    submission: &Submission,
+) -> Result<(), Stop> {
+    let (place, held) = locate(db, server, submission)?;
+    match admit(db, messages, &place, held, submission, Timestamp::now()) {
+        Ok(_) | Err(Stop::SlowMode(_)) => Ok(()),
+        Err(stop) => Err(stop),
+    }
+}
+
+/// The text channel the submission is for, and what its author holds there.
+/// Without view it is nothing, and the channel is answered as one that does
+/// not exist, before anything else, a retry included: a retry would answer
+/// with the message as it is stored. The rights are read once for every
+/// decision that follows.
+fn locate(
+    db: &Connection,
+    server: Id,
+    submission: &Submission,
+) -> Result<(ChannelPlace, Held), Stop> {
+    let place = visibility::place(
+        db,
+        submission.channel,
+        Some(server),
+        Some(ChannelKind::Text),
+        None,
+    )?
+    .ok_or_else(|| Stop::refused(Reason::Gone, ApiError::not_found()))?;
+    // What the sender holds in the channel, read once for every decision
+    // that follows, from the place already found rather than by finding the
+    // channel again.
+    let held = held_in_channel(db, submission.author, &place)?;
+    if !held.views() {
+        return Err(Stop::refused(Reason::NoAccess, ApiError::not_found()));
+    }
+    Ok((place, held))
+}
+
+/// Every check of a post after the replay, slow mode last so that its wait
+/// is only given to a post that would otherwise go in: the attachments it
+/// may carry, each with whether it is a voice message.
+fn admit(
+    db: &Connection,
+    messages: &Messages,
+    place: &ChannelPlace,
+    held: Held,
+    submission: &Submission,
+    now: Timestamp,
+) -> Result<Vec<(Id, bool)>, Stop> {
+    let Submission {
+        channel, author, ..
+    } = *submission;
+
+    // The one place posting is admitted, after the replay because that posts
+    // nothing. It is decided in the channel, so its overrides count.
+    deny(
+        messages,
+        held,
+        SEND_MESSAGES,
+        MessageKey::SendMessagesDenied,
+    )?;
+    if !submission.attachments.is_empty() {
+        deny(messages, held, ATTACH_FILES, MessageKey::AttachFilesDenied)?;
+    }
+
+    if let Some(target) = submission.reply_to {
+        let found: bool = db.query_row(
+            "SELECT EXISTS (SELECT 1 FROM \"Messages\" WHERE \"Id\" = ?1 AND \"ChannelId\" = ?2)",
+            params![target, channel],
+            |row| row.get(0),
+        )?;
+        if !found {
+            return Err(Stop::refused(
+                Reason::ReplyGone,
+                field_problem(
+                    "replyToMessageId",
+                    messages,
+                    MessageKey::ReplyTargetInvalid,
+                    &[],
+                ),
+            ));
+        }
+    }
+
+    let attachments = own_attachments(db, author, &submission.attachments)?;
+    if attachments.len() != submission.attachments.len() {
+        return Err(field_problem(
+            "attachmentIds",
+            messages,
+            MessageKey::AttachmentsNotFound,
+            &[],
+        )
+        .into());
+    }
+
+    // A recording is a message of its own: no text and nothing beside it.
+    if attachments.iter().any(|(_, voice)| *voice)
+        && (attachments.len() > 1 || !submission.content.is_empty())
+    {
+        return Err(field_problem(
+            "attachmentIds",
+            messages,
+            MessageKey::VoiceMessageAlone,
+            &[],
+        )
+        .into());
+    }
+
+    if place.slow_mode_seconds > 0 && !held.has(MANAGE_CHANNELS) {
+        let last: Option<Timestamp> = db
+            .query_row(
+                "SELECT \"LastPostedAt\" FROM \"ChannelPostTimes\" WHERE \"ChannelId\" = ?1 AND \"UserId\" = ?2",
+                params![channel, author],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(wait) = last.and_then(|last| slow_mode_wait(last, place.slow_mode_seconds, now))
+        {
+            return Err(Stop::SlowMode(wait));
+        }
+    }
+    Ok(attachments)
+}
+
 /// The refusal of a permission the sender lacks, which names it.
 fn deny(messages: &Messages, held: Held, permission: i64, reason: MessageKey) -> Result<(), Stop> {
     match held.require(permission) {
         Ok(_) => Ok(()),
-        Err(refusal) => Err(refusal
-            .into_error(messages, reason, ApiError::not_found())?
-            .into()),
+        Err(refusal) => Err(Stop::refused(
+            Reason::NoAccess,
+            refusal.into_error(messages, reason, ApiError::not_found())?,
+        )),
     }
 }
 
@@ -322,6 +381,85 @@ pub fn advance_read(
     })
 }
 
+/// The attachments a client named, each once, refused when there are more
+/// than a message may carry. Checked before anything is read.
+pub(crate) fn attachments_of(messages: &Messages, ids: Option<&[Id]>) -> Result<Vec<Id>, ApiError> {
+    if ids.is_some_and(|ids| ids.len() > MAX_ATTACHMENTS) {
+        return Err(field_problem(
+            "attachmentIds",
+            messages,
+            MessageKey::AttachmentLimit,
+            &[("max", &MAX_ATTACHMENTS)],
+        ));
+    }
+    let mut attachments: Vec<Id> = Vec::new();
+    for id in ids.into_iter().flatten() {
+        if !attachments.contains(id) {
+            attachments.push(*id);
+        }
+    }
+    Ok(attachments)
+}
+
+/// The text a client sent, trimmed, refused when it is empty with nothing
+/// attached or longer than a message may be.
+pub(crate) fn content_of(
+    messages: &Messages,
+    content: Option<&str>,
+    attachments: &[Id],
+) -> Result<String, ApiError> {
+    let content = trimmed(content.unwrap_or("")).to_string();
+    let length = units(&content);
+    let max = content_limit(&content, length);
+    if (content.is_empty() && attachments.is_empty()) || length > max {
+        return Err(field_problem(
+            "content",
+            messages,
+            MessageKey::MessageContentInvalid,
+            &[("max", &max)],
+        ));
+    }
+    Ok(content)
+}
+
+/// Tells everyone a stored message concerns about it, once it is committed:
+/// whoever sees the channel, the author's other tabs when their read marker
+/// moved, the people it mentions, and the worker that unfurls its links.
+pub(crate) async fn announce(
+    state: &AppState,
+    server: Id,
+    author: Id,
+    stored: &Stored,
+) -> Result<(), ApiError> {
+    let channel = stored.message.channel_id;
+    let audience = state
+        .database()
+        .read(move |db| -> Result<Audience, ApiError> {
+            Ok(visibility::audience_of(db, server, channel)?)
+        })
+        .await?;
+    let events = state.events();
+    events.publish(Event::new(audience, "MessageCreated", &stored.message));
+    if let Some(read) = &stored.read {
+        events.publish(Event::new(
+            Audience::Users(vec![author]),
+            "ChannelReadChanged",
+            read,
+        ));
+    }
+    for entry in &stored.mentions {
+        inbox::announce(events, entry);
+    }
+
+    // Last: unfurling talks to hosts we do not control, and no send waits for
+    // one of them.
+    state.previews().enqueue(PreviewRequest {
+        channel,
+        message: stored.message.id,
+    });
+    Ok(())
+}
+
 pub async fn create(
     State(state): State<AppState>,
     caller: Caller,
@@ -330,18 +468,7 @@ pub async fn create(
     Json(request): Json<CreateMessageRequest>,
 ) -> ApiResult<Response> {
     let messages = *state.messages();
-    if request
-        .attachment_ids
-        .as_ref()
-        .is_some_and(|ids| ids.len() > MAX_ATTACHMENTS)
-    {
-        return Err(field_problem(
-            "attachmentIds",
-            &messages,
-            MessageKey::AttachmentLimit,
-            &[("max", &MAX_ATTACHMENTS)],
-        ));
-    }
+    let attachments = attachments_of(&messages, request.attachment_ids.as_deref())?;
     if request.client_message_id == Some(Id::from_bytes([0; 16])) {
         return Err(field_problem(
             "clientMessageId",
@@ -350,31 +477,15 @@ pub async fn create(
             &[],
         ));
     }
-
-    let mut attachments: Vec<Id> = Vec::new();
-    for id in request.attachment_ids.iter().flatten() {
-        if !attachments.contains(id) {
-            attachments.push(*id);
-        }
-    }
+    let content = content_of(&messages, request.content.as_deref(), &attachments)?;
     let submission = Submission {
         channel,
         author: caller.user,
-        content: trimmed(request.content.as_deref().unwrap_or("")).to_string(),
+        content,
         attachments,
         reply_to: request.reply_to_message_id,
         client_id: request.client_message_id,
     };
-    let length = units(&submission.content);
-    let max = content_limit(&submission.content, length);
-    if (submission.content.is_empty() && submission.attachments.is_empty()) || length > max {
-        return Err(field_problem(
-            "content",
-            &messages,
-            MessageKey::MessageContentInvalid,
-            &[("max", &max)],
-        ));
-    }
 
     let outcome = state
         .post_queue()
@@ -388,29 +499,7 @@ pub async fn create(
 
     // The message is stored by now, so a client that hangs up must not keep
     // the others from hearing about it (the handler runs to its end).
-    let audience = state
-        .database()
-        .read(move |db| -> Result<Audience, ApiError> {
-            Ok(visibility::audience_of(db, server, channel)?)
-        })
-        .await?;
-    let events = state.events();
-    events.publish(Event::new(audience, "MessageCreated", &stored.message));
-    events.publish(Event::new(
-        Audience::Users(vec![caller.user]),
-        "ChannelReadChanged",
-        &stored.read,
-    ));
-    for entry in &stored.mentions {
-        inbox::announce(events, entry);
-    }
-
-    // Last: unfurling talks to hosts we do not control, and no send waits for
-    // one of them.
-    state.previews().enqueue(PreviewRequest {
-        channel,
-        message: stored.message.id,
-    });
+    announce(&state, server, caller.user, &stored).await?;
 
     let mut response = json_response(StatusCode::CREATED, &stored.message);
     if let Ok(location) = HeaderValue::from_str(&format!(
