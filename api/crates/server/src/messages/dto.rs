@@ -109,6 +109,7 @@ pub struct MessageDto {
     pub pinned_at: Option<Timestamp>,
     pub reply_to: Option<MessageReferenceDto>,
     pub reactions: Vec<MessageReactionDto>,
+    pub poll: Option<crate::polls::PollDto>,
 }
 
 /// Pushed when the embeds of a message have been rebuilt; an empty list means
@@ -185,6 +186,7 @@ struct Row_ {
     pinned_at: Option<Timestamp>,
     reply_to: Option<Id>,
     author: UserDto,
+    has_poll: bool,
 }
 
 fn message_from(row: &Row<'_>) -> rusqlite::Result<Row_> {
@@ -214,12 +216,14 @@ fn message_from(row: &Row<'_>) -> rusqlite::Result<Row_> {
             pronouns: row.get(16)?,
             origin: row.get(17)?,
         },
+        has_poll: row.get(18)?,
     })
 }
 
 const MESSAGE_COLUMNS: &str = "m.\"Id\", m.\"ChannelId\", m.\"AuthorId\", m.\"IsSystem\", m.\"Content\", m.\"CreatedAt\", m.\"EditedAt\",
     m.\"PinnedAt\", m.\"ReplyToMessageId\", u.\"Username\", u.\"DisplayName\", u.\"AvatarColor\", u.\"AvatarUrl\",
-    u.\"BannerUrl\", u.\"CustomStatus\", u.\"Bio\", u.\"Pronouns\", u.\"Origin\"";
+    u.\"BannerUrl\", u.\"CustomStatus\", u.\"Bio\", u.\"Pronouns\", u.\"Origin\",
+    EXISTS (SELECT 1 FROM \"Polls\" p WHERE p.\"MessageId\" = m.\"Id\")";
 
 /// Reads the messages with these ids as they are shown in a transcript, in the
 /// order of `ids`; an id that is no message is left out. Reactions are counted
@@ -227,7 +231,9 @@ const MESSAGE_COLUMNS: &str = "m.\"Id\", m.\"ChannelId\", m.\"AuthorId\", m.\"Is
 ///
 /// It costs five statements however many messages there are: the messages
 /// with their authors, the messages they answer, and their attachments,
-/// embeds and reactions.
+/// embeds and reactions. A page with a poll on it, or quoting one, costs the
+/// three of [`crate::polls::polls_of`] more, however many polls it has; the
+/// messages say whether they carry one, so a page without costs nothing.
 pub fn load(
     db: &Connection,
     messages: &Messages,
@@ -357,6 +363,16 @@ pub fn load(
         }
     }
 
+    let mut with_polls: Vec<Id> = found
+        .values()
+        .chain(replies.values())
+        .filter(|row| row.has_poll)
+        .map(|row| row.id)
+        .collect();
+    with_polls.sort();
+    with_polls.dedup();
+    let polls = crate::polls::polls_of(db, &with_polls, viewer)?;
+
     let mut out = Vec::with_capacity(ids.len());
     for id in ids {
         let Some(row) = found.remove(id) else {
@@ -366,6 +382,7 @@ pub fn load(
             Some(target) => Some(reference(
                 target,
                 attachments.get(&target.id).is_some_and(|a| !a.is_empty()),
+                polls.get(&target.id).map(|poll| poll.question.as_str()),
                 messages,
             )?),
             None => None,
@@ -388,6 +405,7 @@ pub fn load(
             pinned_at: row.pinned_at,
             reply_to,
             reactions: tally(reactions.remove(&row.id).unwrap_or_default(), viewer),
+            poll: polls.get(&row.id).cloned(),
         });
     }
     Ok(out)
@@ -425,10 +443,22 @@ pub fn references(
             with_files.insert(row?);
         }
     }
+    // A poll that is the whole of its message is quoted by its question.
+    let asked: Vec<Id> = found
+        .values()
+        .filter(|row| row.has_poll && row.content.is_empty())
+        .map(|row| row.id)
+        .collect();
+    let questions = crate::polls::questions_of(db, &asked)?;
     let mut out = Vec::with_capacity(ids.len());
     for id in ids {
         if let Some(row) = found.get(id) {
-            out.push(reference(row, with_files.contains(id), messages)?);
+            out.push(reference(
+                row,
+                with_files.contains(id),
+                questions.get(id).map(String::as_str),
+                messages,
+            )?);
         }
     }
     Ok(out)
@@ -437,9 +467,13 @@ pub fn references(
 fn reference(
     target: &Row_,
     has_attachment: bool,
+    question: Option<&str>,
     messages: &Messages,
 ) -> Result<MessageReferenceDto, DbError> {
     let mut preview = one_line(&target.content, PREVIEW_LENGTH);
+    if let Some(question) = question.filter(|_| preview.is_empty()) {
+        preview = one_line(question, PREVIEW_LENGTH);
+    }
     if preview.is_empty() && has_attachment {
         preview = messages
             .get(MessageKey::AttachmentPreview, &[])

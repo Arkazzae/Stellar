@@ -81,6 +81,9 @@ pub struct Request {
     #[serde(rename = "clientMessageId")]
     client_id: Option<Id>,
     encrypted: Option<RequestedEncryption>,
+    /// Read only to be refused: polls are only in server channels, and a
+    /// body that has one must not go out as a plain message.
+    poll: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -289,6 +292,9 @@ pub async fn create(
         .database()
         .write(move |tx| -> Result<Posted, Stop> {
             let peer = reach(tx, conversation, me)?;
+            if request.poll.is_some() {
+                return Err(field_problem("poll", &messages, MessageKey::PollInConversation, &[]).into());
+            }
 
             let encrypted = request.encrypted.is_some();
             let most = if encrypted { MAX_ENCRYPTED_UPLOADS } else { MAX_ATTACHMENTS };

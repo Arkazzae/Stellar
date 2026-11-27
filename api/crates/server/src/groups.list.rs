@@ -20,6 +20,7 @@ groups! {
     identity_providers,
     messages,
     own_profile,
+    polls,
     message_views,
     releases,
     servers,

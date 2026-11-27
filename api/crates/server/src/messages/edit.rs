@@ -11,7 +11,7 @@ use super::dto::{self, MessageDeletedDto};
 use super::{content_limit, field_problem, trimmed, units};
 use crate::auth::Caller;
 use crate::events::{Audience, Event};
-use crate::http::{ApiError, ApiResult, Json, Path, json_response};
+use crate::http::{ApiError, ApiResult, Json, Path, Problem, json_response};
 use crate::link_previews::{self, PreviewRequest};
 use crate::permissions::authorization::{self, Scope};
 use crate::permissions::membership::ActiveServer;
@@ -79,6 +79,17 @@ pub async fn edit(
             };
             if author != user || !visibility::views(tx, user, channel)? {
                 return Err(ApiError::not_found());
+            }
+            // A poll is not edited after it is sent, its words included:
+            // people voted on what it said.
+            if crate::polls::exists(tx, message)? {
+                return Err(match messages.get(MessageKey::PollNotEditable, &[]) {
+                    Ok(title) => Problem::new(StatusCode::CONFLICT)
+                        .title(title)
+                        .with("code", "poll-not-editable")
+                        .into(),
+                    Err(error) => error.into(),
+                });
             }
             // Saving the same text twice is not an edit, and "edited" is a
             // claim readers rely on.

@@ -155,6 +155,7 @@ async fn to_channel(state: &AppState, scheduled: &Scheduled, channel: Id) -> Res
         reply_to: scheduled.reply_to,
         client_id: Some(scheduled.id),
         scheduled: Some(scheduled.claim()),
+        poll: None,
     };
     let posted = state
         .post_queue()

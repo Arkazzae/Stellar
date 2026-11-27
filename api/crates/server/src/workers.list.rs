@@ -5,6 +5,7 @@ workers! {
     link_previews,
     delivery,
     mail::security_alerts,
+    polls,
     realtime::watcher,
     scheduled,
     voice,

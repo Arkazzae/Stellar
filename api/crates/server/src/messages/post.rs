@@ -33,6 +33,7 @@ pub struct CreateMessageRequest {
     attachment_ids: Option<Vec<Id>>,
     reply_to_message_id: Option<Id>,
     client_message_id: Option<Id>,
+    poll: Option<crate::polls::PollRequest>,
 }
 
 /// What a sender asked to post, after trimming and de-duplication.
@@ -46,6 +47,8 @@ pub struct Submission {
     pub client_id: Option<Id>,
     /// The scheduled message this is, which leaves the queue with it.
     pub scheduled: Option<Claim>,
+    /// The poll the message carries, checked against its limits.
+    pub poll: Option<crate::polls::Draft>,
 }
 
 /// How a post ended.
@@ -124,6 +127,9 @@ pub fn post(
             "INSERT INTO \"MessageAttachments\" (\"MessageId\", \"AttachmentId\") VALUES (?1, ?2)",
         )?
         .execute(params![id, attachment])?;
+    }
+    if let Some(poll) = &submission.poll {
+        crate::polls::insert(db, id, poll, now)?;
     }
 
     // Whoever sent a message has read everything before it, unless it was sent
@@ -423,16 +429,17 @@ pub(crate) fn attachments_of(messages: &Messages, ids: Option<&[Id]>) -> Result<
 }
 
 /// The text a client sent, trimmed, refused when it is empty with nothing
-/// attached or longer than a message may be.
+/// attached and no poll, or longer than a message may be.
 pub(crate) fn content_of(
     messages: &Messages,
     content: Option<&str>,
     attachments: &[Id],
+    with_poll: bool,
 ) -> Result<String, ApiError> {
     let content = trimmed(content.unwrap_or("")).to_string();
     let length = units(&content);
     let max = content_limit(&content, length);
-    if (content.is_empty() && attachments.is_empty()) || length > max {
+    if (content.is_empty() && attachments.is_empty() && !with_poll) || length > max {
         return Err(field_problem(
             "content",
             messages,
@@ -460,7 +467,18 @@ pub(crate) async fn announce(
         })
         .await?;
     let events = state.events();
-    events.publish(Event::new(audience, "MessageCreated", &stored.message));
+    match &stored.message.poll {
+        // Everyone is told of the poll alike, so the event cannot say which
+        // answers are the reader's; the author's answer can.
+        Some(_) => {
+            let mut shared = stored.message.clone();
+            if let Some(poll) = shared.poll.as_mut() {
+                poll.mine = None;
+            }
+            events.publish(Event::new(audience, "MessageCreated", &shared));
+        }
+        None => events.publish(Event::new(audience, "MessageCreated", &stored.message)),
+    }
     if let Some(read) = &stored.read {
         events.publish(Event::new(
             Audience::Users(vec![author]),
@@ -470,6 +488,10 @@ pub(crate) async fn announce(
     }
     for entry in &stored.mentions {
         inbox::announce(events, entry);
+    }
+    // The worker that ends polls looks again at when the next one ends.
+    if stored.message.poll.is_some() {
+        state.poll_alarm().ring();
     }
 
     // Last: unfurling talks to hosts we do not control, and no send waits for
@@ -498,7 +520,26 @@ pub async fn create(
             &[],
         ));
     }
-    let content = content_of(&messages, request.content.as_deref(), &attachments)?;
+    let poll = request
+        .poll
+        .as_ref()
+        .map(|poll| poll.draft(&messages))
+        .transpose()?;
+    // A poll is a message of its own kind, which carries no files.
+    if poll.is_some() && !attachments.is_empty() {
+        return Err(field_problem(
+            "attachmentIds",
+            &messages,
+            MessageKey::PollAttachments,
+            &[],
+        ));
+    }
+    let content = content_of(
+        &messages,
+        request.content.as_deref(),
+        &attachments,
+        poll.is_some(),
+    )?;
     let submission = Submission {
         channel,
         author: caller.user,
@@ -507,6 +548,7 @@ pub async fn create(
         reply_to: request.reply_to_message_id,
         client_id: request.client_message_id,
         scheduled: None,
+        poll,
     };
 
     let outcome = state
