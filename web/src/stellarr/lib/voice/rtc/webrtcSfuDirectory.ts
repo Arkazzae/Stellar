@@ -20,8 +20,6 @@ export interface TrackDirectoryEnv {
 /** A track that arrived on one receiving section of the connection. */
 interface Arrival {
   readonly track: MediaStreamTrack;
-  /** A stream of this track alone, made here; see `arrive`. */
-  readonly stream: MediaStream;
 }
 
 /** What a track is filed as: whose, and under which of their stream ids. */
@@ -29,6 +27,8 @@ interface Filing {
   readonly person: Participant;
   readonly key: string;
   readonly kind: "audio" | "video";
+  /** A stream of this filing alone, made here; see `file`. */
+  readonly stream: MediaStream;
 }
 
 /**
@@ -43,6 +43,11 @@ interface Filing {
  * the snapshot names its person, and whatever the directory or the snapshot
  * no longer lists stops playing, since a section the media server stops
  * forwarding only goes quiet and never ends.
+ *
+ * A section keeps its `mid` and its track while the media server hands it
+ * from one publisher's track to the next, so a `mid` is not a track: when the
+ * directory names another person or another stream on it, the track is
+ * unfiled from the one and filed under the other in the same pass.
  *
  * One directory belongs to one connection. A new connection starts with an
  * empty one.
@@ -61,17 +66,18 @@ export class TrackDirectory {
   }
 
   /**
-   * A track arrived on the section `mid`.
-   *
-   * It gets a stream of its own rather than the one the browser grouped it
-   * into. The browser groups by the `msid` of the section, which the media
-   * server copied from whatever the publisher chose; two publishers naming the
-   * same stream would otherwise share one, and one person's sink would play
-   * the other's sound.
+   * A track arrived on the section `mid`. A section the media server hands
+   * on reports the same track again when it starts receiving, which changes
+   * nothing: what it carries is whatever the directory says. A different
+   * track on a section replaces the one that was there.
    */
   arrive(mid: string | null, track: MediaStreamTrack): void {
-    if (mid === null || this.arrivals.has(mid)) return;
-    this.arrivals.set(mid, { track, stream: new MediaStream([track]) });
+    if (mid === null) return;
+    const known = this.arrivals.get(mid);
+    if (known?.track === track) return;
+    const filing = this.filed.get(mid);
+    if (filing) this.unfile(mid, filing);
+    this.arrivals.set(mid, { track });
     this.place();
   }
 
@@ -208,16 +214,32 @@ export class TrackDirectory {
     if (changed) this.env.personMedia.changed();
   }
 
+  /**
+   * File a track under a person. It gets a stream of its own for as long as
+   * it is filed, rather than the one the browser grouped it into. The browser
+   * groups by the `msid` of the section, which the media server copied from
+   * whatever the publisher chose; two publishers naming the same stream would
+   * otherwise share one, and one person's sink would play the other's sound.
+   * A stream for every filing also keeps what a section carries next off any
+   * sink the last owner left behind: `unfile` empties the old stream.
+   */
   private file(mid: string, arrival: Arrival, person: Participant, key: string): void {
-    this.filed.set(mid, { person, key, kind: arrival.track.kind === "video" ? "video" : "audio" });
-    receiveRemoteTrack(this.env.personMedia, person, arrival.track, arrival.stream, key);
+    const stream = new MediaStream([arrival.track]);
+    const kind = arrival.track.kind === "video" ? "video" : "audio";
+    this.filed.set(mid, { person, key, kind, stream });
+    receiveRemoteTrack(this.env.personMedia, person, arrival.track, stream, key);
   }
 
   private unfile(mid: string, filing: Filing): void {
     this.filed.delete(mid);
     const arrival = this.arrivals.get(mid);
-    // Filed again under another key, an old handler would remove the new one.
-    if (arrival) arrival.track.onended = null;
+    if (arrival) {
+      // Filed again under another key, an old handler would remove the new one.
+      arrival.track.onended = null;
+      // Whatever still shows or plays this stream goes dark at once, however
+      // long its owner takes to let go of it.
+      filing.stream.removeTrack(arrival.track);
+    }
 
     const { person, key } = filing;
     if (filing.kind === "audio") {

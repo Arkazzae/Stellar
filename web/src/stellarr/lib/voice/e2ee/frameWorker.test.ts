@@ -128,6 +128,31 @@ describe("frame worker", () => {
     expect(out).toHaveLength(1);
   });
 
+  it("opens the frames of whoever its section is handed to, and none of the one before", async () => {
+    const shared = await epoch(1);
+    const sealedBy = async (self: string, bytes: number[]) => {
+      const sender = side(self);
+      sender.frames.handle({ type: "epochs", epochs: [shared] });
+      sender.frames.handle({ type: "send", sequence: 1 });
+      const [sent] = await sender.pass(SEND_AUDIO, frame(bytes));
+      return new Uint8Array(sent!.data);
+    };
+    const fromMaja = await sealedBy(MAJA, [1, 1, 1]);
+    const fromOla = await sealedBy(OLA, [5, 6, 7]);
+
+    // This side's receiver was made for Maja's section, which the media
+    // server later gives to Ola.
+    const self = side("c3d4e5f6-0718-4293-a4b5-c6d7e8f90a1b");
+    self.frames.handle({ type: "epochs", epochs: [shared] });
+    const receive = self.frames.transformFor({ ...RECEIVE_AUDIO, label: "rx:7", sender: MAJA });
+    self.frames.handle({ type: "bind", label: "rx:7", sender: OLA });
+    const out: EncodedFrame[] = [];
+    await receive(frame(fromOla), { enqueue: (item) => out.push(item) });
+    await receive(frame(fromMaja), { enqueue: (item) => out.push(item) });
+    expect(out).toHaveLength(1);
+    expect([...new Uint8Array(out[0]!.data)]).toEqual([5, 6, 7]);
+  });
+
   it("never plays a frame of somebody else, a plain frame, or the sender's own reflected back", async () => {
     const shared = await epoch(1);
     const maja = side(MAJA);

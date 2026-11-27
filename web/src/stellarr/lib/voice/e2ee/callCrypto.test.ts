@@ -148,14 +148,17 @@ describe("CallCrypto", () => {
     vi.unstubAllGlobals();
   });
 
-  it("binds a receiver the directory did not name yet once it does", () => {
+  it("binds a receiver the directory did not name yet once it does, and follows its section on", () => {
     const { crypto, worker } = make(source().value);
     vi.stubGlobal("RTCRtpScriptTransform", class {});
     crypto.attachReceiver({} as RTCRtpReceiver, "audio", "5", null);
     crypto.bind((mid) => (mid === "5" ? "peer" : null));
+    crypto.bind(() => "peer");
+    // The section is handed to somebody else: the receiver follows.
     crypto.bind(() => "someone-else");
     expect(worker.posted.filter((message) => message.type === "bind")).toEqual([
       { type: "bind", label: "rx:1", sender: "peer" },
+      { type: "bind", label: "rx:1", sender: "someone-else" },
     ]);
     vi.unstubAllGlobals();
   });

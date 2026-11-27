@@ -67,7 +67,8 @@ interface Receiver {
   label: string;
   kind: "audio" | "video";
   mid: string | null;
-  bound: boolean;
+  /** Whose frames it opens, once the directory has said. */
+  publisher: string | null;
   failing: boolean;
 }
 
@@ -135,17 +136,22 @@ export class CallCrypto {
   attachReceiver(receiver: RTCRtpReceiver, kind: "audio" | "video", mid: string | null, publisher: string | null): void {
     if (this.disposed || this.receivers.has(receiver)) return;
     const label = `rx:${++this.next}`;
-    this.receivers.set(receiver, { label, kind, mid, bound: publisher !== null, failing: false });
+    this.receivers.set(receiver, { label, kind, mid, publisher, failing: false });
     this.attach(receiver, { role: "receive", kind, label, ...(publisher === null ? {} : { sender: publisher }) });
   }
 
-  /** Names the publisher of every receiver that was waiting for the directory. */
+  /**
+   * Names the publisher of every receiver that was waiting for the directory,
+   * and of every one whose section the media server handed to another
+   * person's track: the receiver stays on its section and opens the frames
+   * of whoever the directory now says sends on it.
+   */
   bind(publisherOf: (mid: string) => string | null): void {
     for (const receiver of this.receivers.values()) {
-      if (receiver.bound || receiver.mid === null) continue;
+      if (receiver.mid === null) continue;
       const publisher = publisherOf(receiver.mid);
-      if (publisher === null) continue;
-      receiver.bound = true;
+      if (publisher === null || publisher === receiver.publisher) continue;
+      receiver.publisher = publisher;
       this.post({ type: "bind", label: receiver.label, sender: publisher });
     }
   }

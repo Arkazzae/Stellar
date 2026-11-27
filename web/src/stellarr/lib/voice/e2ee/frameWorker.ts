@@ -271,7 +271,8 @@ export function createFrameCrypto(post: (message: FrameWorkerEvent) => void, now
     return async (frame, controller) => {
       const data = new Uint8Array(frame.data);
       count(stats, data.length);
-      const senderId = options.sender ?? binds.get(options.label);
+      // A later binding wins: the media server can hand a section to another sender.
+      const senderId = binds.get(options.label) ?? options.sender;
       if (senderId === undefined) {
         drop("unbound");
         return;
