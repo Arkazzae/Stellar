@@ -1,6 +1,6 @@
 # Media, manifest, and publishing
 
-Activities run inside a sandboxed origin with direct `getUserMedia` and `getDisplayMedia` disabled for privacy. Instead, Stellarr provides a built-in **Game audio** mixer plus two consented media capabilities—microphone voice levels and host-rendered camera tiles—alongside deterministic release packaging for **Cockpit → Activities**.
+Activities run inside a sandboxed origin with direct `getUserMedia` and `getDisplayMedia` disabled for privacy. Instead, Stellarr provides a built-in **Game audio** mixer plus two consented media capabilities—microphone voice levels and host-rendered camera tiles—and GIF search through the instance's GIPHY integration, alongside deterministic release packaging for **Cockpit → Activities**.
 
 The sandbox does allow ordinary browser downloads. To save a file such as a replay GIF, turn it into a `Blob`, give it an object URL, and click an `<a download>` link. No SDK call or manifest permission is involved:
 
@@ -130,7 +130,68 @@ In `npx stellarr dev`, declaring `media.microphoneLevel` or `media.cameraTile` a
 
 ---
 
-## 3. Complete `stellarr.json` manifest guide
+## 3. GIF search (`media.gifs`)
+
+A party game can let each player search GIFs for a prompt and show everyone's picks. Declare the permission in `stellarr.json`:
+
+```json
+{
+  "permissions": ["media.gifs"]
+}
+```
+
+The activity's frame never contacts GIPHY. The Stellarr page around it searches GIPHY and fetches each GIF itself, under the rules chat follows: the instance's GIPHY switch and key in **Cockpit → Integrations**, and each player's own GIPHY setting under **Settings → Privacy**. The frame receives GIF ids, descriptions, sizes and image bytes, never a GIPHY address, the API key or GIPHY's analytics. Nothing passes through or stays on the Stellarr server. Searches use the player's interface language and GIPHY's `pg-13` rating; an empty query lists trending GIFs.
+
+Put GIF **ids** in shared state and let every client load each id itself:
+
+```ts
+import type { GifError } from "@stellarr/sdk";
+
+// The player searches, sees the results through showPick(item.id, …), and chooses one.
+const { items } = await session.media.gifs.search(prompt.value, { limit: 12 });
+async function choose(id: string) {
+  await session.state.set({ ["pick-" + session.context.me.id]: id });
+}
+
+// Every client shows every pick from the shared state.
+async function showPick(id: string, slot: HTMLElement) {
+  try {
+    const gif = await session.media.gifs.load(id); // "preview" by default, or "full"
+    const image = new Image(gif.width, gif.height);
+    image.src = gif.url; // a blob: URL made inside the frame
+    image.alt = gif.alt ?? "GIF";
+    slot.replaceChildren(image);
+    return gif; // call gif.release() when the round ends
+  } catch (error) {
+    slot.textContent = (error as GifError).code === "declined"
+      ? "GIFs are off in your privacy settings."
+      : "This GIF could not be shown.";
+  }
+}
+```
+
+`load()` resolves to `{ url, type, width, height, alt?, release() }`. The `url` works in an `<img>` at once. `release()` revokes it, and closing the session revokes the rest. `"preview"` is GIPHY's small rendition, about 200 pixels wide; `"full"` is up to about 480 pixels and larger. Keep the image you loaded while you show it instead of loading the id again.
+
+Every rejection carries `error.code`, so the game can choose what each player sees:
+
+| `error.code` | Meaning | What to show |
+| --- | --- | --- |
+| `permission` | The manifest lacks `media.gifs`. | Nothing: fix the manifest. |
+| `unavailable` | The instance offers no GIFs, or the activity runs outside Stellarr. | Hide the GIF parts, for example let the player type a caption. |
+| `declined` | This player turned GIPHY off. Other players' picks stay hidden for them too. | Say that GIFs are off in their privacy settings, and show other picks as placeholders. |
+| `rateLimited` | This frame, or the instance's shared GIPHY key, asked too often. | Wait, then try again. |
+| `notFound` | GIPHY has no such GIF any more. | Skip the pick. |
+| `failed` | GIPHY could not be reached, sent an unusable image, or did not answer in time. | Offer to try again. |
+
+Each frame may search `30` times and load `120` GIFs per minute, with `4` loads in flight, because the instance's one GIPHY key also serves chat. Wait for a pause in typing before searching. The [contract](../../sdk/CONTRACT.md#4-packaging-cockpit-lifecycle-and-limits) lists every limit.
+
+Once the activity has searched or shown a GIF, Stellarr puts GIPHY's mark in the activity bar. GIPHY requires this attribution, so the activity does not need to draw its own. The activity picker tells players before launch that the activity searches GIFs on GIPHY.
+
+In `npx stellarr dev`, `media.gifs` answers from an offline set of generated SVG images labelled with the query, without a network or a key (`type` is `image/svg+xml` there; GIPHY sends `image/gif` or `image/webp`). Picks load in every **New player** tab. The **GIFs** menu in the header switches the tab between **On**, **Off for this player** (`declined`) and **Off on the instance** (`unavailable`).
+
+---
+
+## 4. Complete `stellarr.json` manifest guide
 
 Place `stellarr.json` beside `index.html` at the root of your published folder (`public/stellarr.json` in Vite):
 
@@ -166,7 +227,7 @@ By default, Stellarr serves every activity with a strict `Content-Security-Polic
 
 ---
 
-## 4. Packaging and publishing releases
+## 5. Packaging and publishing releases
 
 ### Validate and build deterministic archives
 

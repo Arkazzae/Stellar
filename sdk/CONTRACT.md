@@ -49,7 +49,7 @@ flowchart LR
 | `launchModes` | array *(opt)* | Unique list of `"voice"`, `"personal"`, or both (`["voice"]` default). |
 | `authority` | `"shared"` \| `"host"` *(opt)* | `"shared"` (default) lets seated players patch state; `"host"` routes mutations through one elected host. |
 | `seats` | integer `1..128` *(opt)* | Player seat cap; extra participants join as read-only spectators. |
-| `permissions` | array *(opt)* | Unique capabilities from `["media.microphoneLevel", "media.cameraTile"]`. |
+| `permissions` | array *(opt)* | Unique capabilities from `["media.microphoneLevel", "media.cameraTile", "media.gifs"]`. |
 | `connects` | `{ host, why }[]` *(opt)* | Up to `64` entries: lowercase DNS `host` (`≤ 253` chars) and `why` (`1–1024` UTF-8 bytes). |
 
 ### Minimal activity without a build step
@@ -125,6 +125,7 @@ flowchart LR
 | `progress.load()` / `save(data, rev)` | Per-account private JSON save (`≤ 64 KiB`, `{ revision: 0, data: null }` initially, `409` on conflict) scoped to `(account, release source, activity ID)`, surviving room expiry, updates, and restarts. |
 | `send(kind, data, { to, latest })` | Best-effort JSON or binary (`Uint8Array` / `ArrayBuffer`) messages (`≤ 64 KiB`, `32`-item client/recipient queues). `latest: true` replaces queued messages of the same `(sender, kind, recipient)`. |
 | `media.*` | `volume` (`0..1` per-listener **Game audio**), `embed.mount(url, element, options?)` (HTTPS embeds from approved `connects` hosts, with provider-defined messages), `microphoneLevel` (`0..1` amplitude), and `cameraTile` (host-rendered video overlay unreadable by activity JS). Camera tiles and embeds support `setVisible(boolean)` on each mount. Device inputs require manifest declaration + Cockpit approval + per-session player consent, with a host **Stop** button and automatic release on mute/close. |
+| `media.gifs` | `search(query, { offset, limit })` returns `{ items: [{ id, alt?, width, height }], offset, total }` (an empty query is the trending list); `load(id, "preview" \| "full")` returns `{ url, type, width, height, alt?, release() }`, where `url` is a `blob:` URL the SDK makes in the frame. The frame never contacts GIPHY: the parent page searches and fetches under the instance's GIPHY switch and key and the player's own GIPHY setting, and sends ids, descriptions, sizes and image bytes only, never a URL, the key or GIPHY analytics. Nothing passes through or stays on the Stellarr server. Rejections carry `error.code`: `permission`, `unavailable` (no GIFs on the instance), `declined` (the player turned GIPHY off), `rateLimited`, `notFound` or `failed`. Once an activity has used GIFs, Stellarr shows GIPHY's mark in the activity bar. Put ids in shared state and let each client `load()` them. |
 
 ---
 
@@ -136,7 +137,7 @@ flowchart LR
 - **Session scoping:** Each voice channel/call runs at most one live session per installed activity; `"personal"` activities run independent per-account sessions under **Friends → Activities**.
 - **Cockpit actions:** **Disable** ends live sessions while retaining files/grants; **Enable** reopens launches; **Update** previews SemVer/permission/`connects` diffs and switches new sessions while existing sessions finish on their pinned origin; **Uninstall** terminates sessions and deletes stored releases/grants.
 
-### Enforced limits (`sdk/dev/room.js` & `sdk/dev/files.js`)
+### Enforced limits (`sdk/dev/room.js`, `sdk/dev/files.js` & `sdk/host/media-host.js`)
 
 | Limit | Enforced value | Behavior when exceeded |
 | --- | ---: | --- |
@@ -147,6 +148,10 @@ flowchart LR
 | `graceSeconds` / `emptySeconds` / `maxParticipants` | `10 s` · `120 s` · `128` | Disconnect eviction / room state reset / `429` (`The session is full.`) |
 | Dev preview bundle (`stellarr dev --instance`) | `16 MiB` / `1,024` files | `413` (`Preview exceeds 16 MiB or 1024 files.`) |
 | Published release archive (`stellarr pack` / `validate`) | `256 MiB` / `8,192` files | `413` (`Release exceeds 256 MiB or 8192 files.`) |
+| `media.gifs` searches / loads (per frame, sliding minute; a reloaded frame keeps its budget) | `30 / min` · `120 / min` | `rateLimited` |
+| `media.gifs` loads in flight / waiting (per frame) | `4` · `32` | Extra loads wait; past `32` waiting, `rateLimited` |
+| `media.gifs` image size | `4 MiB` (`preview`) · `8 MiB` (`full`) | `failed` |
+| `media.gifs` page | `limit` `1–24` (default `12`), `offset` `0–4999`, query `≤ 50` characters | Clamped |
 
 ---
 

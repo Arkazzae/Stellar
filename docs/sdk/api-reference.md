@@ -72,6 +72,10 @@ Every `Observable<T>` provides `get(): T` (returns a `structuredClone` snapshot)
 | `media.microphoneLevel.open` | `() => Promise<DeviceHandle & { subscribe(fn: (level: number) => void): () => void }>` | `"media.microphoneLevel"` (`60 s` prompt timeout) |
 | `media.cameraTile.open` | `() => Promise<DeviceHandle>` | `"media.cameraTile"` (`60 s` prompt timeout) |
 | `media.cameraTile.mount` | `(participantId: string, element: Element) => CameraTileMount` | `"media.cameraTile"` |
+| `media.gifs.search` | `(query?: string, options?: { offset?: number; limit?: number }) => Promise<GifPage>` | `"media.gifs"` (`30 s` timeout; `limit` `1–24`, default `12`) |
+| `media.gifs.load` | `(id: string, size?: "preview" \| "full") => Promise<GifImage>` | `"media.gifs"` (`60 s` timeout; `"preview"` default) |
+
+`GifPage` is `{ items: GifItem[]; offset: number; total: number }`, with `GifItem` = `{ id, alt?, width, height }`; an empty query lists trending GIFs. `GifImage` is `{ url, type, width, height, alt?, release() }`: `url` is a `blob:` URL the SDK makes inside the frame from bytes the host sends, `type` is `image/gif` or `image/webp` (`image/svg+xml` in `stellarr dev`), and `release()` revokes the URL (closing the session revokes the rest). The frame never contacts GIPHY. Rejections are `GifError`s whose `code` is `"permission"`, `"unavailable"` (no GIFs on the instance), `"declined"` (the player turned GIPHY off), `"rateLimited"`, `"notFound"` or `"failed"`. The `GifError`, `GifErrorCode`, `GifImage`, `GifItem` and `GifPage` types are exported from `@stellarr/sdk`. The GIF search section of [Media, manifest, and publishing](media-and-publishing.md) has the limits and an example.
 
 `EmbedOptions` accepts `title?: string`, `onLoad?(): void`, and `onMessage?(data: unknown): void`. `EmbedHandle` provides `setVisible(visible: boolean)`, `postMessage(data: unknown)`, and `destroy()`. `onMessage` receives messages from the mounted provider window and origin. `CameraTileMount` is callable to unmount the tile and has a `setVisible(visible: boolean)` method. Both visibility controls apply to the local viewer.
 
