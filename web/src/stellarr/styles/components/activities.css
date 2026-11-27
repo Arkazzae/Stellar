@@ -190,7 +190,7 @@
    */
   .act-panel{
     position:fixed;z-index:10;left:0;top:0;width:0;height:0;
-    display:flex;flex-direction:column;gap:var(--sp-2);min-width:0;
+    display:flex;flex-direction:column;min-width:0;
   }
   .act-panel[data-parked]{visibility:hidden;pointer-events:none}
   .act-panel .activity-viewport{
@@ -208,88 +208,155 @@
     .act-panel .activity-viewport iframe{width:100%;height:100%}
   }
 
-  /* The activity's own bar: what it is, who is in it, and everything you do
-     with it. The call's bar has no activity slot while you are inside. */
-  .act-bar{
-    position:relative;flex:none;display:flex;align-items:center;gap:10px;min-width:0;
-    min-height:48px;padding:6px 6px 6px 10px;
-    border-radius:var(--radius-lg);background:var(--surface-pop);border:1px solid var(--line);
-    transition:opacity var(--dur-base) var(--ease-standard);
-  }
-  .act-bar-title{min-width:0;display:flex;flex-direction:column;line-height:1.3}
-  .act-bar-title b{font-size:var(--text-14);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .act-bar-title span{font-size:var(--text-12);color:var(--text-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .act-faces{flex:none;display:inline-flex;align-items:center}
-  .act-face{display:inline-flex;margin-left:-6px;border-radius:50%;box-shadow:0 0 0 2px var(--surface-pop)}
-  .act-face:first-child{margin-left:0}
-  .act-face .av{--av-size:22px}
-  .act-bar-tools{flex:none;margin-left:auto;display:flex;align-items:center;gap:4px}
-  .act-bar-call{display:flex;gap:2px;margin-right:4px;padding-right:6px;border-right:1px solid var(--line)}
-  .activity-devices{display:contents}
   /* GIPHY's mark, owed once the activity has used GIFs from it. */
   .activity-giphy{display:inline-flex;align-items:center;padding:0 6px}
   .activity-giphy img{display:block;width:80px;height:17px}
+  /* The development preview's own stops, in its plain row. */
   .activity-device-controls{display:inline-flex;align-items:center;gap:4px}
   .activity-device-controls button{
     height:32px;padding:0 10px;border-radius:8px;
     background:var(--surface-active);color:var(--text);font-size:var(--text-12);font-weight:600;
   }
   .activity-device-controls button:hover{background:var(--surface-overlay)}
-  .act-leave{display:inline-flex;align-items:center;gap:1px}
+
+  /*
+   * ---------- The activity's controls ----------
+   * No bar of its own over the frame. In a call they sit in the call's bar:
+   * what it is and its own controls in the free column on the left, the way
+   * out at the right end. On your own they stand under it, in the same pills.
+   */
+  .vc-activity{grid-column:1;grid-row:1;display:flex;align-items:center;gap:8px;min-width:0}
+  .vc-activity-end{display:contents}
+  .act-id{
+    flex:0 1 auto;min-width:0;height:50px;display:flex;align-items:center;gap:10px;
+    padding:0 12px 0 7px;border-radius:16px;background:var(--surface-pop);border:1px solid var(--line);
+  }
+  .act-id .act-icon{flex:none}
+  .act-id-text{min-width:0;display:flex;flex-direction:column;line-height:1.25}
+  .act-id-text b{font-size:var(--text-14);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .act-id-text span{font-size:var(--text-12);color:var(--text-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .act-tools{flex:none}
+  /* A device the activity has open: lit, with a dot, and one press stops it. */
+  .act-rec{position:relative}
+  .act-rec::after{
+    content:"";position:absolute;right:8px;top:7px;width:7px;height:7px;border-radius:50%;
+    background:var(--palette-danger);box-shadow:0 0 0 2px var(--surface-pop);
+  }
+  .act-sep{flex:none;width:1px;height:24px;margin:0 6px;background:var(--line)}
+
+  .act-set{position:relative;display:inline-flex}
+  .act-set > .dock-pop.act-settings{
+    left:0;right:auto;bottom:calc(100% + var(--grp-pad, 4px) + 9px);width:320px;
+    max-height:calc(100dvh - 160px);overflow-y:auto;overscroll-behavior:contain;
+  }
+  .act-settings-body{display:flex;flex-direction:column}
+  .act-rule{border-top:1px solid var(--line-subtle);margin-top:4px;padding-top:4px}
+  .act-field{display:flex;flex-direction:column;gap:6px;padding:8px}
+  .act-field > span{display:flex;align-items:center;justify-content:space-between;font-size:var(--text-12);font-weight:600;color:var(--text-muted)}
+  .act-field output{font-weight:500;color:var(--text-faint);font-variant-numeric:tabular-nums}
+  .act-field input[type="range"]{width:100%;margin:0;accent-color:var(--accent)}
+  .act-check{display:flex;align-items:flex-start;gap:9px;padding:8px;font-size:var(--text-13);color:var(--text-muted);cursor:pointer}
+  .act-check input{margin:2px 0 0;accent-color:var(--accent)}
+  .act-check small{display:block;margin-top:2px;font-size:var(--text-12);line-height:1.4;color:var(--text-faint)}
+  .act-device{display:flex;align-items:center;gap:10px;min-height:36px;padding:2px 8px;font-size:var(--text-13);color:var(--text-muted)}
+  .act-device > span{flex:1;min-width:0}
+  .act-device small{font-size:var(--text-12);color:var(--text-faint)}
+  .act-device button{
+    height:28px;padding:0 10px;border-radius:8px;
+    background:var(--surface-active);color:var(--text);font-size:var(--text-12);font-weight:600;
+  }
+  .act-device button:hover{background:var(--surface-overlay)}
+
+  /* The way out: Wyjdź, and for the host the menu above it. */
+  .act-leave{flex:none;display:inline-flex;align-items:stretch;height:44px;border-radius:14px;background:var(--danger-soft)}
   .act-leave-btn,
   .act-more-btn{
-    height:34px;display:inline-flex;align-items:center;justify-content:center;
-    background:var(--surface-active);color:var(--text);
+    display:inline-flex;align-items:center;justify-content:center;color:var(--danger-text);
     transition:background var(--dur-fast) var(--ease-standard);
   }
-  .act-leave-btn{padding:0 12px;border-radius:10px;font-size:var(--text-13);font-weight:600;white-space:nowrap}
-  .act-leave:has(.act-more) .act-leave-btn{border-radius:10px 0 0 10px}
+  .act-leave-btn{gap:7px;padding:0 14px;border-radius:14px;font-size:var(--text-13);font-weight:600;white-space:nowrap}
+  .act-leave:has(.act-more) .act-leave-btn{border-radius:14px 0 0 14px;padding-right:10px}
   .act-more{position:relative;display:inline-flex}
-  .act-more-btn{width:28px;border-radius:0 10px 10px 0;color:var(--text-muted)}
+  .act-more-btn{width:28px;border-radius:0 14px 14px 0;border-left:1px solid color-mix(in srgb, var(--palette-danger) 30%, transparent)}
   .act-leave-btn:hover,
   .act-more-btn:hover,
-  .act-more-btn[aria-expanded="true"]{background:var(--surface-overlay);color:var(--text)}
+  .act-more-btn[aria-expanded="true"]{background:color-mix(in srgb, var(--palette-danger) 16%, transparent)}
   .act-more-btn svg{transition:transform var(--dur-base) var(--ease-standard)}
   .act-more-btn[aria-expanded="true"] svg{transform:rotate(180deg)}
   .act-leave-btn:focus-visible,
   .act-more-btn:focus-visible{outline:2px solid var(--accent-quiet);outline-offset:2px}
-  .act-more > .dock-pop.act-menu{left:auto;right:0;top:calc(100% + 6px);bottom:auto;width:288px}
+  .act-more > .dock-pop.act-menu{left:auto;right:0;top:auto;bottom:calc(100% + 8px);width:288px}
   .act-menu .qm-note{margin:6px 8px 4px}
   .qm-more.danger,
   .qm-more.danger .qm-more-icon{color:var(--danger-text)}
   .qm-more.danger:hover{background:var(--danger-soft)}
-  .act-hang{
-    height:34px;padding:0 14px;border-radius:10px;display:inline-flex;align-items:center;
-    background:var(--hang);color:var(--on-hang);
-    transition:background var(--dur-fast) var(--ease-standard);
-  }
-  .act-hang:hover{background:var(--hang-hover)}
 
-  /* For yourself, the panel is the room: its bar stands where the header does. */
-  .act-panel[data-slot="personal"]{gap:0}
-  .act-panel[data-slot="personal"] .act-bar{
-    min-height:52px;padding:0 12px 0 20px;
-    border-width:0 0 1px;border-radius:0;background:var(--surface-room);
+  /* For yourself, the panel is the room, and the controls stand under the activity. */
+  .act-panel[data-slot="personal"]{background:var(--surface-room)}
+  .act-panel[data-slot="personal"] .activity-viewport{margin:var(--sp-3) var(--sp-4) 0}
+  .act-foot{
+    order:2;position:relative;flex:none;display:flex;align-items:center;gap:8px;min-width:0;
+    padding:12px 20px 18px;
   }
-  .act-panel[data-slot="personal"] .activity-viewport{border-radius:0}
+  .act-foot-end{margin-left:auto;display:flex;align-items:center;gap:4px;flex:none}
   .activity-room{display:block}
   .activity-room > .act-slot{height:100%;margin:0}
-
-  /* Full screen: the frame on the whole screen, the bar over its top edge,
-     faded after two seconds without the pointer and back at the edge. */
-  .act-panel:fullscreen{visibility:visible;pointer-events:auto;gap:0;background:var(--surface-canvas-solid)}
-  .act-panel:fullscreen .activity-viewport{border-radius:0;background:var(--surface-canvas-solid)}
-  .act-panel:fullscreen .act-bar{position:absolute;z-index:3;top:12px;left:12px;right:12px}
-  .act-panel:fullscreen[data-chrome="idle"] .act-bar:not(:focus-within){opacity:0;pointer-events:none}
-  .act-wake{position:absolute;z-index:2;top:0;left:0;right:0;height:16px}
-  /* A touch screen has no pointer to move over the frame: the bar stays. */
-  @media (hover:none){
-    .act-panel:fullscreen[data-chrome="idle"] .act-bar:not(:focus-within){opacity:1;pointer-events:auto}
+  /* A narrow room: the icon, the controls and the way out, without words. */
+  @media (max-width:640px){
+    .act-foot{padding:8px 10px max(12px, env(safe-area-inset-bottom));gap:6px}
+    .act-foot .act-id-text span,
+    .act-foot .act-leave-btn > span{display:none}
+    .act-foot .act-leave-btn{padding:0 12px}
+    /* The settings hang from the whole footer, inside the screen. */
+    .act-foot .act-set{position:static}
+    .act-foot .act-set > .dock-pop.act-settings{left:10px;right:10px;width:auto;bottom:calc(100% + 2px)}
   }
-  .act-hint{
-    position:absolute;z-index:4;left:50%;bottom:24px;transform:translateX(-50%);
-    padding:8px 14px;border-radius:10px;background:var(--veil-strong);color:var(--on-veil);
-    font-size:var(--text-13);pointer-events:none;
+
+  /*
+   * ---------- Full screen ----------
+   * The activity has the whole screen. A small dock comes up when the pointer
+   * reaches the bottom edge, shows by itself for a moment on the way in, and
+   * drops as soon as the pointer leaves it. An activity may hold that edge
+   * (`shell.dock.hold()`); then only a handle stays, with the keyboard and Esc.
+   */
+  .act-panel:fullscreen{visibility:visible;pointer-events:auto;background:var(--surface-canvas-solid)}
+  .act-panel:fullscreen .activity-viewport{margin:0;border-radius:0;background:var(--surface-canvas-solid)}
+  .act-wake{position:absolute;z-index:2;left:0;right:0;bottom:0;height:6px}
+  .act-dock{
+    position:absolute;z-index:3;left:50%;bottom:14px;
+    display:flex;align-items:center;gap:2px;padding:5px;border-radius:18px;
+    border:1px solid oklch(1 0 0 / 0.1);
+    background:color-mix(in oklab, var(--surface-pop) 88%, transparent);
+    backdrop-filter:blur(14px) saturate(1.2);-webkit-backdrop-filter:blur(14px) saturate(1.2);
+    box-shadow:0 14px 40px oklch(0 0 0 / 0.5);
+    transform:translate(-50%, calc(100% + 24px));opacity:0;pointer-events:none;
+    transition:transform var(--dur-slow) var(--ease-standard), opacity var(--dur-slow) var(--ease-standard);
+  }
+  .act-panel[data-dock="shown"] .act-dock,
+  .act-dock:focus-within{transform:translate(-50%, 0);opacity:1;pointer-events:auto}
+  .act-dock .vc-btn{width:40px;height:40px;border-radius:12px}
+  .act-dock .act-rec::after{right:7px;top:7px;box-shadow:0 0 0 2px var(--surface-pop)}
+  .act-dock-sep{flex:none;width:1px;height:22px;margin:0 4px;background:oklch(1 0 0 / 0.1)}
+  .act-dock-mark{display:inline-flex;align-items:center}
+  .act-dock .act-dock-leave{color:var(--danger-text)}
+  .act-dock .act-dock-leave:hover{background:var(--danger-soft);color:var(--danger-text)}
+  .act-dock .act-set > .dock-pop.act-settings{left:50%;transform:translateX(-50%);bottom:calc(100% + 15px)}
+  .act-grip{
+    position:absolute;z-index:3;left:50%;bottom:6px;width:56px;height:18px;margin-left:-28px;
+    display:inline-flex;align-items:center;justify-content:center;border-radius:9px;
+    background:color-mix(in oklab, var(--surface-pop) 60%, transparent);border:1px solid oklch(1 0 0 / 0.14);
+    color:var(--text-muted);opacity:.7;
+    transition:opacity var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard);
+  }
+  .act-grip:hover,.act-grip:focus-visible{opacity:1;transform:translateY(-2px)}
+  .act-grip:focus-visible{outline:2px solid var(--accent-quiet);outline-offset:2px}
+  /* A touch screen keeps the dock up unless the activity holds it (the panel
+     decides, so the activity hears the same), and a handle a finger can hit. */
+  @media (hover:none){
+    .act-grip{width:64px;height:28px;margin-left:-32px;opacity:1}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .act-dock,.act-grip{transition:none}
   }
 
   /* ---------- On the call's stage ---------- */

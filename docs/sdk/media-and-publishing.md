@@ -15,7 +15,7 @@ link.click();
 
 ## 1. Respecting the Game audio slider (`session.media.volume`)
 
-Every time an activity opens inside a call, Stellarr shows a **Game audio** slider (`0–100%`) right next to the user's call volume so each listener can turn down background music or sound effects locally without muting voice chat or affecting anyone else.
+Every running activity has a **Game audio** control: a mute button beside the activity's name in the call bar, and a slider (`0–100%`) in its settings next to the call volume, so each listener can turn down background music or sound effects locally without muting voice chat or affecting anyone else.
 
 No manifest permission is needed—wire `session.media.volume` (`0..1` number) to your Web Audio master `GainNode` or HTML `<audio>` / `<video>` elements at startup:
 

@@ -38,7 +38,8 @@ function CaretButton({ label, ...trigger }: PopoverTriggerProps & { label: strin
 /**
  * The bar's activity slot. Nothing runs: it opens the picker. Something runs
  * and you are outside: one click joins it, unless it is full, which the slot
- * then says instead. Inside, there is no slot; the activity's own bar has it all.
+ * then says instead. Inside, there is no slot: the activity draws its own
+ * controls into the places `activityStart` and `activityEnd` keep for them.
  */
 export type BarActivity =
   | { kind: "pick"; onOpen: () => void }
@@ -99,6 +100,13 @@ export interface VoiceControlBarProps {
   onSelectCamera: () => void;
   /** Absent where the call has no activities, or while you are inside one. */
   activity?: BarActivity;
+  /**
+   * While you are inside an activity: the ref for the column on the left,
+   * where its name and its own controls go, and for the end of the right-hand
+   * controls, where the way out of it goes.
+   */
+  activityStart?: (element: HTMLElement | null) => void;
+  activityEnd?: (element: HTMLElement | null) => void;
   onToggleShare: () => void;
   /** Absent where the call has no soundboard, which is a private one. */
   onPlaySound?: (soundId: string) => void;
@@ -143,6 +151,8 @@ export function VoiceControlBar({
   onSelectMicrophone,
   onSelectCamera,
   activity,
+  activityStart,
+  activityEnd,
   onToggleShare,
   onPlaySound,
   onInvite,
@@ -199,7 +209,8 @@ export function VoiceControlBar({
       : t("voiceBar.cameraStart");
 
   return (
-    <div className="vc-bar">
+    <div className="vc-bar" data-activity={activityStart === undefined ? undefined : ""}>
+      {activityStart === undefined ? null : <div className="vc-activity" ref={activityStart} />}
       <div className="vc-center">
         <div className="vc-grp">
           <div className="vc-ctl">
@@ -386,6 +397,7 @@ export function VoiceControlBar({
             <Icon name="popout" size={18} />
           </button>
         )}
+        {activityEnd === undefined ? null : <span className="vc-activity-end" ref={activityEnd} />}
       </div>
     </div>
   );

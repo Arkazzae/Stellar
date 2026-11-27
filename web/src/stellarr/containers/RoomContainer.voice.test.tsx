@@ -60,6 +60,7 @@ vi.mock("@/state/hooks", () => ({
   useVoice: () => mocks.voice,
   useActivities: () => mocks.activities,
   useActivitySlot: () => mocks.activities.publishSlot.voice,
+  useActivityBar: () => mocks.activities.publishBar,
   useEmoji: () => ({ emoji: [] }),
   // The call's bar names the talk key; none is set here.
   useKeybinds: () => ({ bindings: { pushToTalk: null } }),
@@ -137,6 +138,7 @@ beforeEach(() => {
     openPicker: vi.fn(),
     join: vi.fn(),
     publishSlot: { voice: vi.fn(), personal: vi.fn() },
+    publishBar: { start: vi.fn(), end: vi.fn() },
   } as unknown as ActivitiesValue;
 });
 
@@ -269,6 +271,9 @@ describe("RoomContainer with an activity on the channel", () => {
     expect(container.querySelector(".voice-stage")).toHaveAttribute("data-layout", "strip");
     expect(screen.queryByRole("button", { name: "Dołącz do SyncTube" })).toBeNull();
     expect(mocks.activities.publishSlot.voice).toHaveBeenCalledWith(container.querySelector(".act-slot"));
+    // The activity's controls go into the call's bar: its own column, and the end of the view's controls.
+    expect(mocks.activities.publishBar.start).toHaveBeenCalledWith(container.querySelector(".vc-bar > .vc-activity"));
+    expect(mocks.activities.publishBar.end).toHaveBeenCalledWith(container.querySelector(".vc-side > .vc-activity-end"));
   });
 
   it("opens the picker from the bar while nothing runs", () => {

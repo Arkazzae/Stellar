@@ -29,6 +29,8 @@ import { useVoiceContext } from "./VoiceProvider";
 
 /** Which of the two seats a session holds: the call's activity, or your own. */
 export type SessionSlot = "voice" | "personal";
+/** The two places in the call's bar the voice activity's controls go: its own column, and by the view's controls. */
+export type BarSlot = "start" | "end";
 
 /** A seat this client holds in a running activity, and the frame it opens. */
 export interface ActivitySession {
@@ -86,6 +88,10 @@ export interface ActivitiesValue {
   slots: Readonly<Record<SessionSlot, HTMLElement | null>>;
   /** The ref a view puts on the element the frame should cover. */
   publishSlot: Readonly<Record<SessionSlot, (element: HTMLElement | null) => void>>;
+  /** Where the call's bar holds the voice activity's controls; null while it holds none. */
+  bars: Readonly<Record<BarSlot, HTMLElement | null>>;
+  /** The refs the call's bar puts on those places. */
+  publishBar: Readonly<Record<BarSlot, (element: HTMLElement | null) => void>>;
 }
 
 /** A seat lapses after a minute without word; this renews it well before. */
@@ -100,6 +106,7 @@ const JOIN_WAIT_MS = 20_000;
 
 const NO_LIVE: ReadonlyMap<string, ActivitySummary> = new Map();
 const NO_SLOTS: Readonly<Record<SessionSlot, HTMLElement | null>> = { voice: null, personal: null };
+const NO_BARS: Readonly<Record<BarSlot, HTMLElement | null>> = { start: null, end: null };
 
 function sameSummary(a: ActivitySummary | undefined, b: ActivitySummary | null): boolean {
   if (a === undefined || b === null) return a === undefined && b === null;
@@ -173,6 +180,7 @@ export function ActivitiesProvider({ children }: { children: ReactNode }) {
   const [ended, setEnded] = useState<{ place: string; name: string } | null>(null);
   const [picker, setPicker] = useState<PickerRequest | null>(null);
   const [slots, setSlots] = useState(NO_SLOTS);
+  const [bars, setBars] = useState(NO_BARS);
   /** Bumped to renew the call's seat now rather than on the next beat. */
   const [beat, setBeat] = useState(0);
 
@@ -467,6 +475,15 @@ export function ActivitiesProvider({ children }: { children: ReactNode }) {
     }),
     [],
   );
+  const publishBar = useMemo(
+    () => ({
+      start: (element: HTMLElement | null) =>
+        setBars((current) => (current.start === element ? current : { ...current, start: element })),
+      end: (element: HTMLElement | null) =>
+        setBars((current) => (current.end === element ? current : { ...current, end: element })),
+    }),
+    [],
+  );
 
   const value = useMemo<ActivitiesValue>(
     () => ({
@@ -486,6 +503,8 @@ export function ActivitiesProvider({ children }: { children: ReactNode }) {
       lose,
       slots,
       publishSlot,
+      bars,
+      publishBar,
     }),
     [
       live,
@@ -504,6 +523,8 @@ export function ActivitiesProvider({ children }: { children: ReactNode }) {
       lose,
       slots,
       publishSlot,
+      bars,
+      publishBar,
     ],
   );
 
@@ -559,6 +580,11 @@ function useLease(
  */
 export function useActivitySlot(slot: SessionSlot): (element: HTMLElement | null) => void {
   return useActivitiesContext().publishSlot[slot];
+}
+
+/** The refs the call's bar puts on the places it keeps for the voice activity's controls. */
+export function useActivityBar(): Readonly<Record<BarSlot, (element: HTMLElement | null) => void>> {
+  return useActivitiesContext().publishBar;
 }
 
 export function useActivitiesContext(): ActivitiesValue {
