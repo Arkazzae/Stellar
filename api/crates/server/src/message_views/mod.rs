@@ -15,7 +15,7 @@ mod ordinal_case;
 mod pins;
 mod reactions;
 mod search;
-mod text;
+pub(crate) mod text;
 mod threads;
 
 use crate::http::Endpoints;

@@ -114,6 +114,8 @@ pub struct DirectMessage {
     pinned_at: Option<String>,
     reply_to: Option<()>,
     reactions: Option<()>,
+    /// Always null: polls are only in server channels.
+    poll: Option<()>,
     encrypted: Option<EncryptedPayload>,
     system: Option<SystemEntry>,
 }
@@ -229,6 +231,7 @@ pub fn message(
         pinned_at: None,
         reply_to: None,
         reactions: None,
+        poll: None,
         encrypted,
         system: kind.map(|kind| SystemEntry {
             kind,

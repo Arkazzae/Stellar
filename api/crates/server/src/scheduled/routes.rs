@@ -92,7 +92,7 @@ pub async fn in_channel(
     let messages = *state.messages();
     let now = Timestamp::now();
     let attachments = post::attachments_of(&messages, request.attachment_ids.as_deref())?;
-    let content = post::content_of(&messages, request.content.as_deref(), &attachments)?;
+    let content = post::content_of(&messages, request.content.as_deref(), &attachments, false)?;
     let send_at = send_time(&messages, request.send_at, now)?;
     let scheduled = Scheduled {
         id: Id::random(),
@@ -122,7 +122,7 @@ pub async fn in_conversation(
     let messages = *state.messages();
     let now = Timestamp::now();
     let attachments = post::attachments_of(&messages, request.attachment_ids.as_deref())?;
-    let content = post::content_of(&messages, request.content.as_deref(), &attachments)?;
+    let content = post::content_of(&messages, request.content.as_deref(), &attachments, false)?;
     let send_at = send_time(&messages, request.send_at, now)?;
     let scheduled = Scheduled {
         id: Id::random(),
@@ -171,7 +171,7 @@ pub async fn edit(
                 return reread(tx, author, id);
             }
             if let Some(content) = request.content.as_deref() {
-                scheduled.content = post::content_of(&messages, Some(content), &scheduled.attachments)?;
+                scheduled.content = post::content_of(&messages, Some(content), &scheduled.attachments, false)?;
             }
             if let Some(at) = send_at {
                 scheduled.send_at = at;
@@ -279,6 +279,7 @@ fn check(tx: &rusqlite::Connection, messages: &Messages, scheduled: &Scheduled) 
                 reply_to: scheduled.reply_to,
                 client_id: None,
                 scheduled: None,
+                poll: None,
             },
         ),
         Target::Conversation(conversation) => {
