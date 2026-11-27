@@ -9,6 +9,7 @@ use str0m::media::{Direction, KeyframeRequestKind, MediaKind, Mid};
 use str0m::rtp::Ssrc;
 use str0m::{IceConnectionState, Rtc};
 
+use super::camera::{Layer, Selection};
 use super::downlink::{Downlink, RateMeter};
 use super::limits::{Limits, TrackLimit};
 use super::{
@@ -106,6 +107,8 @@ pub(crate) struct Published {
     pub keyframe: KeyframeGate,
     /// What forwarding the track costs a receiver.
     pub meter: RateMeter,
+    pub layered: bool,
+    pub thumbnail_meter: RateMeter,
     /// What the publisher may send on the track.
     pub limit: TrackLimit,
 }
@@ -144,6 +147,7 @@ pub(crate) struct OutSection {
     /// publisher for a keyframe.
     pub started: bool,
     pub rewrite: Rewrite,
+    pub camera: Selection,
     pub pt_cache: Option<PtCache>,
     /// The section was taken from the idle ones for this track. If its offer
     /// is rolled back it goes back to them: the browser still has it inactive.
@@ -158,6 +162,7 @@ impl OutSection {
             state: OutState::Want,
             started: false,
             rewrite: Rewrite::default(),
+            camera: Selection::default(),
             pt_cache: None,
             recycled: false,
         }
@@ -271,7 +276,8 @@ impl Rewrite {
                 state.ssrc = ssrc;
                 state.seq_offset = seq as i128 - (state.last_seq as i128 + 1);
                 state.ts_offset = state.last_ts.wrapping_add(1).wrapping_sub(ts);
-                state.resume_floor = resume.then_some(seq);
+                // Older packets of this source would overlap the previous SSRC's numbers.
+                state.resume_floor = Some(seq);
                 state
             }
             None => self.state.insert(RewriteState {
@@ -336,6 +342,7 @@ pub(crate) struct Session {
     /// that is not listed is negotiated and named in the directory, but
     /// nothing is forwarded on it.
     pub subscriptions: HashSet<String>,
+    pub thumbnail_mids: HashSet<String>,
     /// The same mids in the order the receiver listed them, most important
     /// first.
     pub subscription_order: Vec<String>,
@@ -360,7 +367,7 @@ pub(crate) struct Session {
     /// The stream id a reused section names in its `a=msid`, which str0m
     /// keeps as it was when the section was created.
     pub restreams: Restreams,
-    pub ssrc_mids: Vec<(Ssrc, Mid)>,
+    pub ssrc_mids: Vec<(Ssrc, (Mid, Option<Layer>))>,
     /// The codec order of every section in the browser's last offer.
     pub format_orders: FormatOrders,
     /// The Opus parameters the browser gave each section it publishes, in
@@ -410,6 +417,7 @@ impl Session {
             outs: Vec::new(),
             waiting_for_space: false,
             subscriptions: HashSet::new(),
+            thumbnail_mids: HashSet::new(),
             subscription_order: Vec::new(),
             downlink: Downlink::default(),
             allocation_queued: false,
@@ -581,6 +589,7 @@ impl Session {
         self.idle.retain(|(idle, _)| *idle != mid);
         self.outs[idx].recycled = true;
         self.subscriptions.remove(&*mid);
+        self.thumbnail_mids.remove(&*mid);
         self.subscription_order.retain(|m| **m != *mid);
         self.downlink.retain(|held| held != mid);
         self.downlink.dirty = true;
@@ -747,6 +756,7 @@ mod tests {
 
         // The new source starts anywhere; the section does not jump.
         assert_eq!(r.map(Ssrc::from(2), 7_000_000, 5), Some((102, 12001)));
+        assert_eq!(r.map(Ssrc::from(2), 6_999_999, 0), None);
         assert_eq!(r.map(Ssrc::from(2), 7_000_001, 3005), Some((103, 15001)));
     }
 

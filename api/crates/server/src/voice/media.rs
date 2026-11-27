@@ -51,7 +51,13 @@ pub(super) async fn open_media_session(
     }
 
     match plane::open(cx.state(), cx.connection_id(), room, cx.user()).await {
-        Opening::Opened(session) => Ok(json!({ "sessionId": session })),
+        Opening::Opened { session_id, camera_simulcast } => {
+            let mut reply = json!({ "sessionId": session_id });
+            if camera_simulcast {
+                reply["cameraSimulcast"] = json!(true);
+            }
+            Ok(reply)
+        }
         Opening::NotSeated => Err(visible(NOT_SEATED)),
         Opening::Unavailable => Err(visible(MEDIA_UNAVAILABLE)),
     }
@@ -177,10 +183,10 @@ async fn forward(
             None => Err(invalid()),
         },
         "subscriptions" => {
-            let mids = document::read::<Subscriptions>(payload)
+            let selection = document::read::<Subscriptions>(payload)
                 .and_then(Subscriptions::checked)
                 .ok_or_else(invalid)?;
-            Ok(control.send_subscriptions(session, &mids).await?)
+            Ok(control.send_subscriptions(session, &selection.mids, &selection.thumbnail_mids).await?)
         }
         _ => Err(invalid()),
     }
@@ -219,19 +225,22 @@ struct Candidate {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Subscriptions {
     mids: Vec<String>,
+    #[serde(default)]
+    thumbnail_mids: Vec<String>,
 }
 
 impl Subscriptions {
     /// A complete allowlist of printable ASCII ids, including an empty one.
-    fn checked(self) -> Option<Vec<String>> {
-        let entries = self.mids;
+    fn checked(self) -> Option<Self> {
+        let entries = &self.mids;
         if entries.len() > MAX_SUBSCRIPTION_MIDS {
             return None;
         }
         let mut seen = std::collections::HashSet::new();
-        for mid in &entries {
+        for mid in entries {
             // The characters are ASCII, so a length in bytes is a length in
             // the units the limit counts.
             if mid.is_empty()
@@ -242,7 +251,12 @@ impl Subscriptions {
                 return None;
             }
         }
-        Some(entries)
+        if self.thumbnail_mids.len() > entries.len()
+            || !self.thumbnail_mids.iter().all(|mid| seen.remove(mid.as_str()))
+        {
+            return None;
+        }
+        Some(self)
     }
 }
 
@@ -270,7 +284,7 @@ mod tests {
 
     #[test]
     fn a_subscription_list_is_complete_ordered_and_printable() {
-        let list = |text: &str| document::read::<Subscriptions>(text).and_then(Subscriptions::checked);
+        let list = |text: &str| document::read::<Subscriptions>(text).and_then(Subscriptions::checked).map(|s| s.mids);
 
         assert_eq!(list("{\"mids\":[]}"), Some(vec![]));
         assert_eq!(
@@ -278,6 +292,8 @@ mod tests {
             Some(vec!["b".into(), "a".into(), "~".into(), "!".into()])
         );
         for bad in [
+            r#"{"mids":["a"],"thumbnailMids":["b"]}"#,
+            r#"{"mids":["a","b"],"thumbnailMids":["a","a"]}"#,
             "{}",
             "{\"mids\":null}",
             "{\"mids\":\"a\"}",
@@ -302,7 +318,7 @@ mod tests {
             let ids: Vec<String> = (0..count).map(|n| format!("\"m{n}\"")).collect();
             format!("{{\"mids\":[{}]}}", ids.join(","))
         };
-        let list = |text: &str| document::read::<Subscriptions>(text).and_then(Subscriptions::checked);
+        let list = |text: &str| document::read::<Subscriptions>(text).and_then(Subscriptions::checked).map(|s| s.mids);
         assert_eq!(list(&many(4096)).map(|l| l.len()), Some(4096));
         assert_eq!(list(&many(4097)), None);
     }

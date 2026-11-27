@@ -113,7 +113,7 @@ pub(in crate::activities) async fn hub_camera(
         grant,
     ));
     match open_camera(state, cx.connection_id(), room, caller.user, grant).await {
-        Opening::Opened(session) => {
+        Opening::Opened { session_id: session, .. } => {
             Ok(json!({"value": {"channelId": room, "sessionId": session, "grant": grant}}))
         }
         Opening::NotSeated => Err(ApiError::forbidden()),

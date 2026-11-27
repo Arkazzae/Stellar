@@ -65,6 +65,26 @@ fn created_sessions(media: &FakeMedia) -> Vec<crate::support::Recorded> {
 }
 
 #[tokio::test]
+async fn the_session_advertises_camera_simulcast_only_when_its_media_server_supports_it() {
+    let rig = Rig::start().await;
+    let maja = rig.person("maja").await;
+    let mut peer = rig.connect(&maja).await;
+    peer.join(rig.salon).await;
+    let legacy = peer.ok("OpenMediaSession", json!([rig.salon])).await;
+    assert!(legacy["sessionId"].is_string());
+    assert!(legacy.get("cameraSimulcast").is_none());
+
+    let body = json!({"sessionId": "layered", "epoch": "epoch-1", "cameraSimulcast": true});
+    rig.media.answer_everything_with(Some(Canned {
+        status: 201,
+        content_type: Some("application/json".into()),
+        body: body.to_string().into_bytes(),
+    }));
+    let layered = peer.ok("OpenMediaSession", json!([rig.salon])).await;
+    assert_eq!(layered, json!({"sessionId": "layered", "cameraSimulcast": true}));
+}
+
+#[tokio::test]
 async fn a_session_needs_the_callers_seat_in_that_room() {
     let rig = Rig::start().await;
     let (maja, ada) = (rig.person("maja").await, rig.person("ada").await);
@@ -529,6 +549,10 @@ async fn the_order_of_the_list_reaches_the_media_server_as_sent_since_it_is_the_
     assert_eq!(requests.len(), 2);
     assert_eq!(requests[0].json()["mids"], json!(voices_first));
     assert_eq!(requests[1].json()["mids"], json!(cameras_first));
+
+    let tiles = json!({"mids": voices_first, "thumbnailMids": ["cam-2"]});
+    peer.media(rig.salon, &session, "subscriptions", &tiles.to_string()).await;
+    assert_eq!(rig.media.requests().into_iter().filter(|r| r.path == path).next_back().unwrap().json(), tiles);
 }
 
 #[tokio::test]
@@ -551,6 +575,8 @@ async fn malformed_subscription_allowlists_never_reach_the_media_server() {
     .map(|s| s.to_string())
     .collect();
     bad.push(mids_body(&too_many));
+    bad.push(json!({"mids":["cam"],"thumbnailMids":["other"]}).to_string());
+    bad.push(json!({"mids":["cam","mic"],"thumbnailMids":["cam","cam"]}).to_string());
     for payload in bad {
         peer.media_refused(rig.salon, &session, "subscriptions", &payload, REFUSED).await;
     }

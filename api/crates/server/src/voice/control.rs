@@ -67,6 +67,7 @@ pub struct Reset {
 /// The answer to `POST /v1/sessions`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Created {
+    pub camera_simulcast: bool,
     pub session_id: String,
     pub epoch: String,
 }
@@ -133,6 +134,8 @@ struct WireReset {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct WireCreated {
+    #[serde(default)]
+    camera_simulcast: bool,
     session_id: Option<String>,
     epoch: Option<String>,
 }
@@ -212,7 +215,8 @@ impl Control {
             WireCreated {
                 session_id: Some(session_id),
                 epoch: Some(epoch),
-            } if !session_id.is_empty() && !epoch.is_empty() => Ok(Created { session_id, epoch }),
+                camera_simulcast,
+            } if !session_id.is_empty() && !epoch.is_empty() => Ok(Created { session_id, epoch, camera_simulcast }),
             _ => Err(malformed(path)),
         }
     }
@@ -270,10 +274,13 @@ impl Control {
         &self,
         session: &str,
         mids: &[String],
+        thumbnails: &[String],
     ) -> Result<SignalOutcome, Unavailable> {
-        let list: Vec<String> = mids.iter().map(|mid| text(mid)).collect();
-        self.signal(session, "subscriptions", format!("{{\"mids\":[{}]}}", list.join(",")))
-            .await
+        let mut body = serde_json::json!({ "mids": mids });
+        if !thumbnails.is_empty() {
+            body["thumbnailMids"] = serde_json::json!(thumbnails);
+        }
+        self.signal(session, "subscriptions", body.to_string()).await
     }
 
     /// Waits for the events after `after` of the run `epoch`. The media server

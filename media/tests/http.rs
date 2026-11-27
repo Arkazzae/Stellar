@@ -284,6 +284,7 @@ async fn sessions_are_created_and_deleted() {
     .await;
     assert_eq!(reply.status, 201);
     assert_eq!(reply.body["epoch"], server.epoch());
+    assert_eq!(reply.body["cameraSimulcast"], true);
     let id = reply.body["sessionId"].as_str().unwrap().to_string();
 
     for body in [
@@ -554,6 +555,8 @@ async fn subscriptions_replace_a_validated_receiver_mid_allowlist() {
         json!({ "mids": [1] }),
         json!({ "mids": [""] }),
         json!({ "mids": ["same", "same"] }),
+        json!({ "mids": ["cam"], "thumbnailMids": ["other"] }),
+        json!({ "mids": ["cam", "mic"], "thumbnailMids": ["cam", "cam"] }),
         json!({ "mids": ["0123456789abcdefg"] }),
         json!({ "mids": ["has space"] }),
         json!({ "mids": ["has\ttab"] }),
@@ -566,6 +569,13 @@ async fn subscriptions_replace_a_validated_receiver_mid_allowlist() {
         assert_eq!(reply.status, 422, "{body}");
         assert_eq!(reply.body["error"], "invalid-request", "{body}");
     }
+    let tiles = post(
+        &server,
+        &path,
+        json!({ "mids": ["mic", "cam"], "thumbnailMids": ["cam"] }),
+    )
+    .await;
+    assert_eq!(tiles.status, 204);
     let reply = request(&server, "POST", &path, Some(SECRET), Some("{")).await;
     assert_eq!(reply.status, 422);
     assert_eq!(reply.body["error"], "invalid-request");

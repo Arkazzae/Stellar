@@ -381,7 +381,13 @@ async fn subscriptions(
                 "mids must contain only strings.".into(),
             ));
         };
-        core.set_subscriptions(now, id, &mids)
+        let thumbnails: Vec<String> = match body.get("thumbnailMids") {
+            None => Vec::new(),
+            Some(value) => serde_json::from_value(value.clone()).map_err(|_| {
+                ApiError::InvalidRequest("thumbnailMids must be an array of strings.".into())
+            })?,
+        };
+        core.set_camera_subscriptions(now, id, &mids, &thumbnails)
     })
     .await
 }

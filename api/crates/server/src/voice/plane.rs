@@ -30,7 +30,7 @@ pub const MEDIA_RESTARTED: &str = "media-restarted";
 /// How an attempt to open a media session ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Opening {
-    Opened(String),
+    Opened { session_id: String, camera_simulcast: bool },
     /// The seat ended while the media server was creating the session.
     NotSeated,
     /// The media server could not be reached, or the API is putting it back in
@@ -151,7 +151,7 @@ async fn create(
         None => presence.attach_media_session(connection, room, session.clone()),
     };
     if attached {
-        return Opening::Opened(session.session_id);
+        return Opening::Opened { session_id: session.session_id, camera_simulcast: created.camera_simulcast };
     }
     presence.close_session(session);
     Opening::NotSeated
