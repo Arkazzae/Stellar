@@ -1,4 +1,5 @@
 import type { ActivityMedia } from "./media.js";
+export type { GifError, GifErrorCode, GifImage, GifItem, GifPage } from "./media.js";
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 export type ActivityState = Record<string, JsonValue>;

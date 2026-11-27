@@ -13,7 +13,7 @@ import { createTileRelay } from "./tiles.js";
 const parentFiles = new Map([
   ["/", "local.html"], ["/_stellarr/host/local.js", "local.js"],
   ["/_stellarr/host/media-host.js", "media-host.js"], ["/_stellarr/host/devices.js", "devices.js"],
-  ["/_stellarr/media.js", "../media.js"],
+  ["/_stellarr/host/gif-fixtures.js", "gif-fixtures.js"], ["/_stellarr/media.js", "../media.js"],
 ]);
 const maxPersonalRooms = 128;
 

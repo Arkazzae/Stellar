@@ -15,6 +15,8 @@
     { "label": "null launch modes", "fields": { "launchModes": null }, "valid": false },
     { "label": "duplicate permissions", "fields": { "permissions": ["media.cameraTile", "media.cameraTile"] }, "valid": false },
     { "label": "distinct permissions", "fields": { "permissions": ["media.cameraTile", "media.microphoneLevel"] }, "valid": true },
+    { "label": "GIF search permission", "fields": { "permissions": ["media.gifs"] }, "valid": true },
+    { "label": "unknown permission", "fields": { "permissions": ["media.gifsearch"] }, "valid": false },
     { "label": "permission supplied as an object", "fields": { "permissions": [{ "toString": null }] }, "valid": false },
     { "label": "no implicit protocol", "fields": { "protocol": null }, "valid": false },
     { "label": "string seat count", "fields": { "seats": "1" }, "valid": false },

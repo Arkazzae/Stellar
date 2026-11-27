@@ -1,4 +1,5 @@
 import { detectDevice } from "/_stellarr/sdk/v1.js";
+import { createGifFixtures } from "./gif-fixtures.js";
 import { bindMediaHost } from "./media-host.js";
 
 const config = await (await fetch("/_stellarr/config")).json();
@@ -42,7 +43,17 @@ window.addEventListener("message", event => {
     } catch (error) { port.postMessage({ id: data.id, error: error.message, status: error.status }); }
   };
 });
+// The offline GIF set, and what this player's GIPHY settings would say.
+let gifs;
+if (config.permissions.includes("media.gifs")) {
+  const mode = document.createElement("select");
+  mode.append(new Option("On", "on"), new Option("Off for this player", "declined"), new Option("Off on the instance", "unavailable"));
+  const label = document.createElement("label");
+  label.append("GIFs ", mode);
+  slider.closest("label").after(label);
+  gifs = createGifFixtures({ mode: () => mode.value });
+}
 bindMediaHost({ frame, origin: config.frame, title: config.name, permissions: config.permissions, controls: document.querySelector("#devices"),
-  volume: slider, language: () => navigator.language, tile: action => call("tile", action), fixtures: true });
+  volume: slider, language: () => navigator.language, tile: action => call("tile", action), fixtures: true, gifs });
 if (!config.devices || config.devices.includes(detectDevice())) frame.src = config.frame + "/";
 else frame.replaceWith(document.createTextNode("Available on: " + config.devices.join(", ")));

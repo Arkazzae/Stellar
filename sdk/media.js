@@ -38,6 +38,10 @@ export function attachEmbed(container, url, { title = url.hostname, onLoad, onMe
   };
 }
 
+// Every rejection of `media.gifs` carries one of these as `error.code`.
+const gifCodes = ["permission", "unavailable", "declined", "rateLimited", "notFound", "failed"];
+const gifError = (code, message) => Object.assign(new Error(message), { code });
+
 export function createMedia({ context, permissions = [], volume: initialVolume = 1, embedHosts = [], hostedEmbeds = false }) {
   const channel = new MessageChannel();
   const port = channel.port1;
@@ -47,6 +51,7 @@ export function createMedia({ context, permissions = [], volume: initialVolume =
   const listeners = new Set();
   let volume = initialVolume ?? 1;
   const embeds = new Map();
+  const images = new Set();
   let closed = false;
   let sequence = 0;
   const post = data => { if (!closed) port.postMessage(data); };
@@ -65,7 +70,7 @@ export function createMedia({ context, permissions = [], volume: initialVolume =
     } else if (data.op === "ended") {
       devices.get(data.kind)?.end(data.reason);
     } else if (data.op === "reply") {
-      pending.get(data.id)?.(data.error);
+      pending.get(data.id)?.(data.error, data);
     }
   };
   if (window.parent !== window)
@@ -159,17 +164,55 @@ export function createMedia({ context, permissions = [], volume: initialVolume =
     embeds.set(id, { onMessage: options.onMessage, onLoad: options.onLoad, destroy });
     return { setVisible: handle.setVisible, postMessage: handle.postMessage, destroy };
   }
+  // The parent asks GIPHY and sends the bytes; this frame never contacts it.
+  // A host that does not know the request leaves it to the timeout.
+  function askGifs(message, timeout) {
+    if (!permissions.includes("media.gifs")) return Promise.reject(gifError("permission", "This activity cannot use gifs."));
+    if (closed || window.parent === window) return Promise.reject(gifError("unavailable", "GIFs need an open Stellarr session."));
+    const id = ++sequence;
+    return new Promise((resolve, reject) => {
+      const finish = (error, data) => {
+        pending.delete(id);
+        clearTimeout(timer);
+        if (typeof error === "string") reject(gifError(gifCodes.includes(data?.code) ? data.code : "failed", error));
+        else resolve(data.value);
+      };
+      const timer = setTimeout(() => { post({ op: "cancel", id }); finish("GIF request timed out."); }, timeout);
+      pending.set(id, finish);
+      post({ ...message, id });
+    });
+  }
+  const gifs = {
+    async search(query = "", { offset = 0, limit = 12 } = {}) {
+      if (typeof query !== "string") throw new TypeError("Expected a search string.");
+      return askGifs({ op: "gifSearch", query, offset, limit }, 30000);
+    },
+    async load(gif, size = "preview") {
+      if (typeof gif !== "string" || !["preview", "full"].includes(size))
+        throw new TypeError('Expected a GIF id and the size "preview" or "full".');
+      const image = await askGifs({ op: "gifLoad", gif, size }, 60000);
+      if (closed) throw gifError("failed", "Session closed.");
+      const url = URL.createObjectURL(new Blob([image.bytes], { type: image.type }));
+      images.add(url);
+      return { url, type: image.type, width: image.width, height: image.height,
+        ...(image.alt === undefined ? {} : { alt: image.alt }),
+        release() { if (images.delete(url)) URL.revokeObjectURL(url); } };
+    },
+  };
   return {
     volume: { get: () => volume, subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); } },
     embed: { mount: mountEmbed },
     microphoneLevel: { open: () => open("microphoneLevel") },
     cameraTile: { open: () => open("cameraTile"), mount },
+    gifs,
     dispose() {
       if (closed) return;
       for (const embed of embeds.values()) embed.destroy();
       for (const remove of mounts) remove();
       for (const device of devices.values()) device.handle.stop();
       for (const finish of pending.values()) finish("Session closed.");
+      for (const url of images) URL.revokeObjectURL(url);
+      images.clear();
       post({ op: "dispose" });
       closed = true;
       port.close();

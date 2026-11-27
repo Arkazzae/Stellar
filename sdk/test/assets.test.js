@@ -132,6 +132,7 @@ test("the local CLI serves its shell and activity on different hosts and support
   const opened = await (await localRequest(origin, randomUUID(), { op: "open", frame: randomUUID(), initialState: {} })).json();
   assert.deepEqual(opened.embedHosts, ["player.example"]);
   assert.equal((await fetch(origin + "/_stellarr/media.js")).status, 200);
+  assert.equal((await fetch(origin + "/_stellarr/host/gif-fixtures.js")).status, 200);
   const { frame } = await (await fetch(origin + "/_stellarr/config")).json();
   assert.notEqual(frame, origin);
   assert.match(await (await fetch(origin)).text(), /iframe id="activity"/);
@@ -150,6 +151,8 @@ test("the local CLI serves its shell and activity on different hosts and support
   const scripts = documentCsp.split(";").find(directive => directive.trim().startsWith("script-src "));
   assert.match(scripts, /'wasm-unsafe-eval'/);
   assert.doesNotMatch(scripts, /'unsafe-eval'/);
+  // GIFs reach the frame as bytes and show as blob: URLs, as on an instance.
+  assert.match(documentCsp.split(";").find(directive => directive.trim().startsWith("img-src ")), /\bblob:/);
   assert.match((await asset("/_stellarr/sdk/media.js")).headers["permissions-policy"], /camera=\(\)/);
   const seek = await asset("/clip.mp4", { range: "bytes=3-6" });
   assert.equal(seek.status, 206);
