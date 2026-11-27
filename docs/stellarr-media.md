@@ -110,7 +110,7 @@ Authenticated with `Authorization: Bearer <media-control-secret>` on all routes 
 | `POST /v1/activity-sessions` | Opens a camera session in a dedicated activity room. Reopening replaces the same account’s session in that activity. The account’s voice session continues independently. |
 | `POST /v1/sessions/{id}/{offer,answer,candidate,subscriptions}` | `204` (`404 unknown-session`, `409 stale-negotiation`, `422 invalid-*` / `limit-exceeded`, `413 payload-too-large`) |
 | `GET /v1/events?epoch=…&after=…&waitMs=…` | Long-polls up to `256` `signal`/`closed` events (`4,096`-event ring buffer; returns `reset: true` on epoch change or overflow) |
-| `GET /v1/stats` | Per-room/session `ingress`, `egress`, and GoogCC `downlink` (`estimateBps`, `forwardedBps`, `desiredBps`, `paddingBps`, `heldBack`, `holds`, `resumes`) |
+| `GET /v1/stats` | Per-room/session `ingress`, `egress`, `dropped` (`datagrams`, `packets` turned away by the sending limits), and GoogCC `downlink` (`estimateBps`, `forwardedBps`, `desiredBps`, `paddingBps`, `heldBack`, `holds`, `resumes`) |
 
 ---
 
@@ -134,6 +134,9 @@ Each receiver runs independent GoogCC bandwidth estimation (`str0m`) from its TW
 | SDP size / Control API body | `128 KiB` / `256 KiB` | `422 invalid-sdp` (or close `error`) / `413 payload-too-large` |
 | Published tracks / ICE candidates / remote sockets | `8` / `64` / `64` per session | `422 limit-exceeded` / ignored / dropped |
 | Connect / disconnect / unanswered-offer timeouts | `30 s` / `30 s` / `3 × 10 s` | Closed with `transport-timeout` / `error` |
+| Packets / payload of one published sound | `150/s` / `512 kbit/s`, `1 s` burst | Forwarded to nobody, left out of the track's cost; `dropped.packets` |
+| Packets / payload of one published picture | `2,000/s` / `24 Mbit/s`, `1 s` burst | As for a sound |
+| Datagrams / STUN messages per session | `5,000/s` / `200/s`, `1 s` burst | Dropped before the connection sees them; `dropped.datagrams`; `warn` at most every `10 s`, never closed |
 
 A panic while reading a datagram, candidate or description costs only that input (dropped, or refused like a malformed one), or the one session whose connection already took it (closed with `error`), never the process. Panics are logged through `tracing`: one that ends the process always in full, caught ones in full five times a minute and only counted past that.
 
