@@ -158,10 +158,15 @@ fn container_with_turn(turn_enabled: bool) -> Vec<Service> {
         // no file and no privilege, so it does not run as root. Its control
         // API answers /v1/health without the bearer secret, from the task
         // that runs the media plane, so a stuck plane fails the check.
+        // Unlike the others it is restarted when it fails: the API's commands
+        // to it go through that same task and time out too, so a media server
+        // that missed its checks serves nobody, and only a new process brings
+        // calls back, which the API and the browsers notice by themselves.
         Service::new("media", &["/opt/stellarr/media/stellarr-media"])
             .user("nobody")
             .ready(Readiness::http(loopback(5200), "/v1/health"))
             .stop(Signal::Term, Duration::from_secs(5))
+            .restart_failing()
             .critical(),
         // /health/ready answers only once the API reaches its database. The
         // API gives requests in flight 30 seconds to finish after SIGTERM;
@@ -273,6 +278,16 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn only_the_media_server_is_restarted_for_failing_its_check() {
+        let restarted: Vec<String> = container_with_turn(true)
+            .into_iter()
+            .filter(|s| s.restart_failing)
+            .map(|s| s.name)
+            .collect();
+        assert_eq!(restarted, ["media"]);
     }
 
     #[test]

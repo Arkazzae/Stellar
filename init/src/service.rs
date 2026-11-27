@@ -118,7 +118,8 @@ impl Readiness {
 /// How a ready service keeps being checked: every `interval`, each check
 /// given `timeout`. After `misses` failed checks in a row it is reported as
 /// failing, and health fails; one check that passes makes it ready again.
-/// It is never restarted for it, see [`crate::core`].
+/// It is not restarted for it unless its `restart_failing` is set, see
+/// [`crate::core`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Watch {
     pub interval: Duration,
@@ -194,6 +195,9 @@ pub struct Service {
     pub stop_timeout: Duration,
     /// The signal that makes the main process reload, if it has one.
     pub reload: Option<Signal>,
+    /// Whether a service that fails its check is stopped and started again,
+    /// instead of only being reported. See [`crate::core`] for when.
+    pub restart_failing: bool,
     /// The container is healthy only while every critical service is ready.
     pub critical: bool,
     pub backoff: Backoff,
@@ -216,6 +220,7 @@ impl Service {
             stop_signal: Signal::Term,
             stop_timeout: Duration::from_secs(10),
             reload: None,
+            restart_failing: false,
             critical: false,
             backoff: Backoff::DEFAULT,
         }
@@ -264,6 +269,11 @@ impl Service {
 
     pub fn reload(mut self, signal: Signal) -> Service {
         self.reload = Some(signal);
+        self
+    }
+
+    pub fn restart_failing(mut self) -> Service {
+        self.restart_failing = true;
         self
     }
 
