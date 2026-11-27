@@ -47,6 +47,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("realtime_changes.sql"),
     include_str!("../scheduled/schema.sql"),
     include_str!("../polls/schema.sql"),
+    include_str!("../server_events/schema.sql"),
 ];
 
 /// Sets the journal mode, which the database file remembers, and gives an
