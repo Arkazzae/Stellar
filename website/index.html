@@ -128,6 +128,7 @@
                   <li><svg class="icon"><use href="#i-sticker" /></svg>Emoji and stickers</li>
                   <li><svg class="icon"><use href="#i-sound" /></svg>Server soundboard</li>
                   <li><svg class="icon"><use href="#i-at" /></svg>Mentions</li>
+                  <li><svg class="icon"><use href="#i-game" /></svg>Solo and shared activities</li>
                 </ul>
               </div>
             </div>
@@ -358,7 +359,6 @@
             </div>
             <ul>
               <li><svg class="icon"><use href="#i-mobile" /></svg><div><b>Desktop and mobile apps</b><span>Dedicated clients alongside the web app.</span></div></li>
-              <li><svg class="icon"><use href="#i-game" /></svg><div><b>Activities SDK</b><span>Shared mini-apps and games inside your server.</span></div></li>
               <li><svg class="icon"><use href="#i-language" /></svg><div><b>More translation languages</b><span>Offline translation beyond English and Polish.</span></div></li>
               <li><svg class="icon"><use href="#i-apps" /></svg><div><b>Discord server import</b><span>Bring over your server's structure and resources.</span></div></li>
             </ul>
@@ -371,11 +371,11 @@
           <h2>Start your server</h2>
           <p class="install__lead">With Git and Docker Compose 2.24 or newer, start by checking out the server release.</p>
           <div class="command">
-            <code><span class="command__prompt">$ </span>git clone --depth 1 --branch server-v0.2.1 https://github.com/Arkazzae/Stellarr.git</code>
+            <code><span class="command__prompt">$ </span>git clone --depth 1 --branch server-v0.3.0 https://github.com/Arkazzae/Stellarr.git</code>
             <button class="btn btn--graphite" type="button" id="copy"><svg class="icon"><use href="#i-copy" /></svg><span>Copy</span></button>
           </div>
           <ol class="steps">
-            <li><b>Choose your address</b>In the new <code>Stellarr</code> directory, copy <code>.env.example</code> to <code>.env</code> and set <code>STELLARR_VERSION=0.2.1</code>. For other devices, set your domain and media IP there too.</li>
+            <li><b>Choose your address</b>In the new <code>Stellarr</code> directory, copy <code>.env.example</code> to <code>.env</code> and set <code>STELLARR_VERSION=0.3.0</code>. For other devices, set your domain and media IP there too.</li>
             <li><b>Start the server</b>Review <code>docker-compose.yml</code>, then run <code>docker compose up -d --wait</code>. Find the setup code with <code>docker compose logs stellarr | grep 'Setup code'</code>.</li>
             <li><b>Create your account</b>Open <code>/setup</code> on your HTTPS address, or <code>https://localhost/setup</code> for a local trial. For internet calls, forward HTTPS and the media port (default <code>49000</code>, UDP and TCP) and configure trusted TLS.</li>
           </ol>

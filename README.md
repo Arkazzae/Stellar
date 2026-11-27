@@ -14,6 +14,7 @@ Hop into voice, stream your game in 4K 60 fps without paying for Nitro, spam the
 ### Built for game night
 
 - Stream games and screens up to 4K 60 fps with stereo audio and mid-stream quality switching, talk in Opus up to 256 kb/s, and clean up noisy mics right in the browser.
+- Play activities together in a voice channel or open one solo. Build your own with the [Activity SDK](docs/sdk/getting-started.md).
 - Run public and private channels with roles, threads, polls, and voice messages. Bring your own emojis, hit the server soundboard, or set a walk-on clip for when you join voice.
 - [Import from Discord](docs/admin/servers-and-features.md#import-from-discord) to copy selected public channels and message history into a new private Stellarr server. Copy attachments from the import report.
 - Make the app yours with dark and light themes, custom colors, and wallpapers. Share themes with friends as a file, or import a BetterDiscord theme.
@@ -37,7 +38,6 @@ For a live backup, download a full archive from **Cockpit → Backups**. To copy
 ### Coming next
 
 - Dedicated desktop and mobile clients alongside the web app.
-- An Activities SDK for running shared mini-apps and games right inside your server.
 - More languages for offline in-browser translation beyond English and Polish.
 
 ## Try it
@@ -45,10 +45,10 @@ For a live backup, download a full archive from **Cockpit → Backups**. To copy
 With Docker and Compose 2.24 or newer, check out a server release and select its matching image. These commands set up a new instance.
 
 ```bash
-git clone --depth 1 --branch server-v0.2.1 https://github.com/Arkazzae/Stellarr.git &&
+git clone --depth 1 --branch server-v0.3.0 https://github.com/Arkazzae/Stellarr.git &&
   cd Stellarr &&
   cp .env.example .env &&
-  echo 'STELLARR_VERSION=0.2.1' >> .env
+  echo 'STELLARR_VERSION=0.3.0' >> .env
 ```
 
 Review the ports and data volume in `docker-compose.yml`. To host friends, [set the public address](#inviting-friends) in `.env` before starting. For a trial on this computer, the defaults work.
