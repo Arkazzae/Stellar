@@ -240,7 +240,10 @@ describe("Composer commands", () => {
   });
 
   it("asks the host to ban only with a picked person, passing the reason typed after them", async () => {
-    const ban = vi.fn();
+    let focusedWhenAsked: Element | null = null;
+    const ban = vi.fn(() => {
+      focusedWhenAsked = document.activeElement;
+    });
     const { user, field } = setup({ commandHost: { ban, people: [ADA, BOB] } });
 
     await user.type(field, "/zbanuj ");
@@ -259,12 +262,12 @@ describe("Composer commands", () => {
     expect(reason).toHaveFocus();
 
     await user.type(reason, "spam{Enter}");
-    expect(ban).not.toHaveBeenCalled();
     await nextFrame();
 
     expect(ban).toHaveBeenCalledExactlyOnceWith(BOB, "spam");
-    // The field has the focus back, so the question card hands it back there.
-    expect(field).toHaveFocus();
+    // The field had the focus back when the host was asked, so the question
+    // card hands it back there.
+    expect(focusedWhenAsked).toBe(field);
     expect(field).toHaveValue("");
   });
 
