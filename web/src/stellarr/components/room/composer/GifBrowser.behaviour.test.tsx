@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -125,7 +125,86 @@ describe("GifBrowser loading", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Nie udało się pobrać GIF-ów.");
     expect(screen.getByRole("button", { name: "Wyślij GIF: GIF a" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Pokaż więcej" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Spróbuj ponownie" })).toBeEnabled();
+  });
+});
+
+describe("GifBrowser loading as it scrolls", () => {
+  /** The observers alive now, and what each one watches. */
+  let watching: Map<IntersectionObserverCallback, Element>;
+
+  beforeEach(() => {
+    watching = new Map();
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        private readonly callback: IntersectionObserverCallback;
+        constructor(callback: IntersectionObserverCallback) {
+          this.callback = callback;
+        }
+        observe(target: Element) {
+          watching.set(this.callback, target);
+        }
+        disconnect() {
+          watching.delete(this.callback);
+        }
+        unobserve() {}
+        takeRecords() {
+          return [];
+        }
+      },
+    );
+    return () => vi.unstubAllGlobals();
+  });
+
+  /** The end of the results scrolls into view. */
+  function reachEnd() {
+    act(() => {
+      for (const [callback, target] of [...watching]) {
+        callback(
+          [{ isIntersecting: true, target } as IntersectionObserverEntry],
+          {} as IntersectionObserver,
+        );
+      }
+    });
+  }
+
+  it("loads the next page when the end comes near, with no button to press", async () => {
+    giphy.fetchPage
+      .mockResolvedValueOnce(page([gif("a"), gif("b")], 4))
+      .mockResolvedValueOnce(page([gif("c"), gif("d")], 4));
+    renderBrowser();
+    await userEvent.click(screen.getByRole("button", { name: "Przeglądaj GIF-y" }));
+    await screen.findByRole("button", { name: "Wyślij GIF: GIF b" });
+    expect(screen.queryByRole("button", { name: "Pokaż więcej" })).toBeNull();
+
+    reachEnd();
+
+    expect(await screen.findByRole("button", { name: "Wyślij GIF: GIF d" })).toBeInTheDocument();
+    expect(giphy.fetchPage).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 2 }));
+    // Everything is shown: nothing is watched any more.
+    await waitFor(() => expect(watching.size).toBe(0));
+  });
+
+  it("stops after a failed page and loads again only when asked", async () => {
+    giphy.fetchPage
+      .mockResolvedValueOnce(page([gif("a")], 2))
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(page([gif("b")], 2));
+    renderBrowser();
+    await userEvent.click(screen.getByRole("button", { name: "Przeglądaj GIF-y" }));
+    await screen.findByRole("button", { name: "Wyślij GIF: GIF a" });
+
+    reachEnd();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Nie udało się pobrać GIF-ów.");
+    reachEnd();
+    expect(giphy.fetchPage).toHaveBeenCalledTimes(2);
+
+    await userEvent.click(screen.getByRole("button", { name: "Spróbuj ponownie" }));
+
+    expect(await screen.findByRole("button", { name: "Wyślij GIF: GIF b" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });
 
