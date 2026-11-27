@@ -718,18 +718,19 @@ async function galleryWindow(peers, link, count, layered) {
         if (picture.mid !== peer.video[0] && height === 180) thumbnailsAt180p++;
       }
     }
-    const camera = Object.entries(after[i].outbound).find(([, sent]) => sent.kind === "video");
-    check(camera, `no camera sender at ${peer.client.name}`);
-    const [mid, sent] = camera;
-    const bytes = sent.bytesSent - (before[i].outbound[mid]?.bytesSent ?? 0);
-    check(bytes > 0, `camera stopped publishing at ${peer.client.name}`);
     if (layered) {
+      // Both outbound reports share a MID and may appear in a different order on each read.
       for (const rid of ["thumb", "main"]) {
         const delta = (after[i].encodings[rid]?.bytes ?? 0) - (before[i].encodings[rid]?.bytes ?? 0);
         check(delta > 0, `${peer.client.name} stopped sending ${rid}`);
         sentVideoBytes += delta;
       }
     } else {
+      const camera = Object.entries(after[i].outbound).find(([, sent]) => sent.kind === "video");
+      check(camera, `no camera sender at ${peer.client.name}`);
+      const [mid, sent] = camera;
+      const bytes = sent.bytesSent - (before[i].outbound[mid]?.bytesSent ?? 0);
+      check(bytes > 0, `camera stopped publishing at ${peer.client.name}`);
       sentVideoBytes += bytes;
     }
   }
