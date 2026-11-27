@@ -38,7 +38,7 @@ For remote callers, advertise a reachable IPv4 candidate and forward both UDP an
 
 Implemented in `api/crates/server/src/voice/media.rs`:
 
-- **`OpenMediaSession(channelId) → { sessionId }`:** Requires an active voice seat ([Voice seats](./rtc-protocol.md#voice-seats-viewchannel-and-connect)). Replaces the previous voice session on the same `userId` without race clobbering. Throws `"Invalid channelId."`, `"Not seated in this voice room."`, or `"Media server is unavailable."`.
+- **`OpenMediaSession(channelId) → { sessionId, cameraSimulcast? }`:** Requires an active voice seat ([Voice seats](./rtc-protocol.md#voice-seats-viewchannel-and-connect)). Replaces the previous voice session on the same `userId` without race clobbering. Throws `"Invalid channelId."`, `"Not seated in this voice room."`, or `"Media server is unavailable."`.
 - `ActivityCamera(place, { install, access, action })` opens or closes a separate session for the signed-in activity participant. The server selects the media room and revokes access when the launch or hub connection ends.
 - **`SendMediaSignal` / `MediaSignal` (`protocolVersion: 1`, `≤ 128 KiB`):**
 
@@ -49,14 +49,14 @@ Implemented in `api/crates/server/src/voice/media.rs`:
 | `offer` | SFU → Browser | `{ "type": "offer", "sdp": "…", "negotiationId": 7, "tracks": [Track] }` |
 | `answer` | Browser → SFU | `{ "type": "answer", "sdp": "…", "negotiationId": 7 }` (`409 stale-negotiation` ignored cleanly) |
 | `candidate` | Browser → SFU | `RTCIceCandidateInit` or `null` (SFU embeds its own host candidates in SDP and never trickles) |
-| `subscriptions` | Browser → SFU | `{ "mids": ["…"] }` ordered by receiver priority |
+| `subscriptions` | Browser → SFU | `{ "mids": ["mic", "focus", "tile"], "thumbnailMids": ["tile"] }`. `mids` gives receiver priority. Optional `thumbnailMids` is a unique subset. |
 | `tracks` | SFU → Browser | `{ "tracks": [{ "mid", "userId", "kind", "streamId", "heldBack" }] }` (always complete list, never a diff) |
 
 ### Receive subscriptions
 
 - **Opt-in forwarding:** Sessions receive zero RTP packets until sending `subscriptions` (`mids: []` pauses all forwarding; up to `4,096` printable ASCII identifiers in a subscription message). Pre-subscribing unknown `mid`s before answering an SFU offer is supported.
 - **Zero renegotiation:** Changing `subscriptions` toggles RTP forwarding immediately (continuing sequence numbers contiguously and sending a rate-limited PLI keyframe on video resume) without altering SDP transceivers.
-- **Client ordering:** All microphones → watched screen video + screen audio → cameras with visible remote tiles (`VoiceClient.setReceivePreferences`), queued ahead of SDP answers and throttled to `250 ms`.
+- **Client ordering:** All microphones → watched screen video + screen audio → focused cameras → remaining visible camera tiles (`VoiceClient.setReceivePreferences`), queued ahead of SDP answers and throttled to `250 ms`.
 
 ### Negotiation and track attribution
 
@@ -106,7 +106,7 @@ Authenticated with `Authorization: Bearer <media-control-secret>` on all routes 
 | --- | --- |
 | `GET /v1/health` | `200 { status: "ok", version, epoch, rooms, sessions }` |
 | `POST /v1/reset` | `200 { epoch, seq: 0 }` |
-| `POST /v1/sessions` | `201 { sessionId, epoch }` (`422 invalid-request`) |
+| `POST /v1/sessions` | `201 { sessionId, epoch, cameraSimulcast: true }` (`422 invalid-request`) |
 | `DELETE /v1/sessions/{id}` | `204` (idempotent) |
 | `POST /v1/activity-sessions` | Opens a camera session in a dedicated activity room. Reopening replaces the same account’s session in that activity. The account’s voice session continues independently. |
 | `POST /v1/sessions/{id}/{offer,answer,candidate,subscriptions}` | `204` (`404 unknown-session`, `409 stale-negotiation`, `422 invalid-*` / `limit-exceeded`, `413 payload-too-large`) |
@@ -128,6 +128,12 @@ Each receiver runs independent GoogCC bandwidth estimation (`str0m`) from its TW
 | **Resume backoff** | Resumes once required bitrate stays `≤ 85%` of estimate for `4 s` (doubling up to `64 s` on re-holds within `30 s`; `1 s` after padding proof for newly subscribed tracks). |
 | **Padding trials & stagnant reset** | Held tracks within `1.5×` run `6 s` padding probes (`15 s`, `30 s`, `60 s` rests). Stagnant estimates reset after `5 s` (repeating `10 s` → `2 min`). When audio alone exceeds estimate, all video and video padding stop. |
 
+### Camera layers
+
+When the session advertises `cameraSimulcast: true`, the web client can publish two encodings on one camera MID in an unencrypted call. The `main` RID uses the selected camera profile. The `thumb` RID targets a 180-pixel short edge, up to 15 fps and 200 kbit/s. The publisher's track limits cover the two encodings together.
+
+Each receiver can request thumbnails for selected MIDs. For a larger tile the SFU accounts for earlier subscriptions and can select the smaller encoding when the main one exceeds the remaining downlink budget. It switches on a keyframe and keeps the same receiving MID. An older deployment, an encrypted call, or a browser that negotiates one encoding uses single-stream forwarding. The SFU can still pause a picture and continue forwarding subscribed audio.
+
 ### Resource limits and current boundaries
 
 The [15-camera browser test](../media/smoke/README.md#shared-upload-with-15-cameras) compares gallery layouts on a shared 50 Mb/s uplink.
@@ -146,7 +152,7 @@ A panic while reading a datagram, candidate or description costs only that input
 
 A sound's m-line costs about `0.9 KiB` of SDP and a picture's about `3.6 KiB`, so `128 KiB` is reached before `48` m-lines only when more than about 30 of them are pictures; with a microphone and a camera each, 24 other people fill a session.
 
-**Not implemented:** per-receiver simulcast/SVC layer dropping (tracks forward whole or pause via `heldBack`), active-speaker switching, session survival across hub reconnects, and IPv6 media sockets.
+**Not implemented:** temporal or SVC layer selection, active-speaker switching, session survival across hub reconnects, and IPv6 media sockets.
 
 > [!WARNING]
 > Standard server voice channels and unencrypted 1:1 calls use hop-by-hop DTLS-SRTP—media headers and payloads traverse `stellarr-media` memory on your host. Only 1:1 calls in E2EE conversations encrypt media frames end-to-end between browsers.

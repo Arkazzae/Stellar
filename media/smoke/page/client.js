@@ -46,7 +46,7 @@ const state = {
   // Asks for every section of each directory until a scenario says what it
   // wants instead. The last list sent, so an unchanged one is not sent again.
   subscribeToAll: true,
-  subscribed: "[]",
+  subscribed: '{"mids":[]}',
   offersIgnored: [],
   offersAnswered: [],
   answersApplied: 0,
@@ -215,17 +215,18 @@ function setDirectory(source, tracks) {
 }
 
 /** Sends the complete list of sections to forward, in order, unless it is the one sent last. */
-function requestMids(mids) {
-  const list = JSON.stringify([...mids]);
+function requestMids(mids, thumbnailMids = []) {
+  const payload = thumbnailMids.length ? { mids, thumbnailMids } : { mids };
+  const list = JSON.stringify(payload);
   if (list === state.subscribed) return;
   state.subscribed = list;
-  send("subscriptions", { mids: JSON.parse(list) });
+  send("subscriptions", payload);
 }
 
 /** From now on the page asks for exactly `mids`, whatever the directory says. */
-function subscribe(mids) {
+function subscribe(mids, thumbnails = []) {
   state.subscribeToAll = false;
-  requestMids(mids);
+  requestMids(mids, thumbnails);
 }
 
 /**
@@ -348,7 +349,7 @@ async function handle(event) {
       // the answer that makes them live. The media server forgets what it was
       // asked for on a section it hands to another track, so the list goes
       // out again with every offer, the same as the last or not.
-      if (state.subscribed !== "[]") state.subscribed = null;
+      if (state.subscribed !== '{"mids":[]}') state.subscribed = null;
       setDirectory("offer", payload.tracks);
       record("remote", "offer", payload.sdp, { negotiationId: payload.negotiationId });
       await pc.setRemoteDescription({ type: "offer", sdp: payload.sdp });
@@ -589,7 +590,7 @@ function busyCamera({ rgb, width = 640, height = 480, fps = 30, block = 8 }) {
 async function publish(
   name,
   kind,
-  { via = "transceiver", codec, scalabilityMode, maxBitrate, stereo, busy, pattern } = {},
+  { via = "transceiver", codec, scalabilityMode, maxBitrate, stereo, busy, pattern, encodings } = {},
 ) {
   if (state.refused) throw new Error(`refused to publish: ${state.refused}`);
   const stream = await capture(kind, busy, pattern);
@@ -601,7 +602,8 @@ async function publish(
     transceiver = state.pc.getTransceivers().find((t) => t.sender === sender);
   } else {
     const init = { direction: "sendonly", streams: [stream] };
-    if (scalabilityMode || maxBitrate) {
+    if (encodings) init.sendEncodings = encodings;
+    else if (scalabilityMode || maxBitrate) {
       init.sendEncodings = [
         { ...(scalabilityMode && { scalabilityMode }), ...(maxBitrate && { maxBitrate }) },
       ];
@@ -707,6 +709,7 @@ async function stats() {
 
   const inbound = {};
   const outbound = {};
+  const encodings = {};
   let pair = null;
   report.forEach((s) => {
     if (s.type === "inbound-rtp") {
@@ -720,6 +723,7 @@ async function stats() {
         framesDecoded: s.framesDecoded || 0,
         keyFramesDecoded: s.keyFramesDecoded || 0,
         frameWidth: s.frameWidth || 0,
+        frameHeight: s.frameHeight || 0,
         nackCount: s.nackCount || 0,
         pliCount: s.pliCount || 0,
         firCount: s.firCount || 0,
@@ -737,6 +741,7 @@ async function stats() {
       };
     }
     if (s.type === "outbound-rtp") {
+      if (s.rid) encodings[s.rid] = { height: s.frameHeight, bytes: s.bytesSent, frames: s.framesEncoded };
       outbound[s.mid] = {
         kind: s.kind,
         ssrc: s.ssrc,
@@ -776,7 +781,7 @@ async function stats() {
       };
     }
   });
-  return { inbound, outbound, pair };
+  return { inbound, outbound, encodings, pair };
 }
 
 /**
