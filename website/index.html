@@ -369,15 +369,15 @@
       <section class="install" id="install">
         <div class="container">
           <h2>Start your server</h2>
-          <p class="install__lead">You need Docker with Compose 2.24 or newer. This command checks the machine, writes the files and starts the container.</p>
+          <p class="install__lead">With Git and Docker Compose 2.24 or newer, start by checking out the server release.</p>
           <div class="command">
-            <code><span class="command__prompt">$ </span>curl -fsSL https://raw.githubusercontent.com/Arkazzae/Stellarr/main/install.sh | bash</code>
+            <code><span class="command__prompt">$ </span>git clone --depth 1 --branch server-v0.2.1 https://github.com/Arkazzae/Stellarr.git</code>
             <button class="btn btn--graphite" type="button" id="copy"><svg class="icon"><use href="#i-copy" /></svg><span>Copy</span></button>
           </div>
           <ol class="steps">
-            <li><b>Open Stellarr</b>Open the HTTPS address printed by the installer (usually <code>https://localhost</code>) and accept the warning about the container's self-signed certificate.</li>
-            <li><b>Create the owner account</b>Enter the setup code the installer prints. <code>/setup</code> creates your account and first server.</li>
-            <li><b>Invite friends</b>Set <code>STELLARR_DOMAIN</code> and <code>STELLARR_PUBLIC_IP</code>, forward HTTPS on <code>443/TCP</code> and media on <code>49000/UDP</code> and <code>49000/TCP</code>, and add a trusted HTTPS certificate. Use your configured ports if they differ.</li>
+            <li><b>Choose your address</b>In the new <code>Stellarr</code> directory, copy <code>.env.example</code> to <code>.env</code> and set <code>STELLARR_VERSION=0.2.1</code>. For other devices, set your domain and media IP there too.</li>
+            <li><b>Start the server</b>Review <code>docker-compose.yml</code>, then run <code>docker compose up -d --wait</code>. Find the setup code with <code>docker compose logs stellarr | grep 'Setup code'</code>.</li>
+            <li><b>Create your account</b>Open <code>/setup</code> on your HTTPS address, or <code>https://localhost/setup</code> for a local trial. For internet calls, forward HTTPS and the media port (default <code>49000</code>, UDP and TCP) and configure trusted TLS.</li>
           </ol>
           <div class="install__actions">
             <a class="btn" href="https://arkazzae.github.io/Stellarr/install/quick-start">Open the quick start</a>

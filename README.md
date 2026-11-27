@@ -2,7 +2,7 @@
 
 **Talk on your own server.** A self-hosted Discord alternative built for you and your friends.
 
-Private by design. (Over)Engineered for performance  ·  [Try it](#try-it) · [Inviting friends](#inviting-friends) · [Docs](https://arkazzae.github.io/Stellarr/)
+[Try it](#try-it) · [Inviting friends](#inviting-friends) · [Docs](https://arkazzae.github.io/Stellarr/)
 
 ![A tour of Stellarr: friends planning game night in a text channel, translating a message right in the browser, hanging out in voice with screen sharing, switching themes, checking Cockpit, and starting the container.](website/src/images/film/stellarr.webp)
 
@@ -26,11 +26,11 @@ Hop into voice, stream your game in 4K 60 fps without paying for Nitro, spam the
 - Flip on optional 1:1 end-to-end encryption for private DMs, file uploads, and voice or video calls, with a browser-generated recovery code for your key backup and safety codes for verifying contacts.
 - Lock down accounts with passkeys, TOTP, email codes, or your own OIDC provider, and schedule automatic daily backups to disk or Cloudflare R2.
 
-### Easy to host, (over)engineered inside
+### Hosting options
 
-Easy setup is a core focus of Stellarr. Instead of wiring up Postgres, Redis, LiveKit, and five separate containers just to hang out with your friends, everything runs inside a single `amd64` / `arm64` Docker container for small group of users (35 MiB RAM at idle) backed by one folder (`/data/stellarr`), with a guided `/setup` flow and a built-in `/cockpit` panel for accounts, live logs, backups, and settings.
+The **single-container release** runs on `amd64` and `arm64`. Nginx serves the web client and Cockpit. Stellarr Init supervises Nginx, the Rust API, the WebRTC media server and optional TURN. SQLite and uploaded files live under `/data/stellarr`.
 
-Under the hood, the entire backend is written in Rust: a custom WebRTC media server built specifically for Stellarr, the chat API and WebSocket hub, and the container's own init supervisor, paired with SQLite, optional STUN/TURN, and a static web frontend. See [Architecture](docs/architecture.md) for details.
+**Compose services** builds a separate image for each service. Choose it if you want to restart the API independently or collect web and media logs separately. [Deployment guide](deploy/services/README.md)
 
 For a live backup, download a full archive from **Cockpit → Backups**. To copy the data volume by hand, stop the container first and save your `.env` alongside it. [Backup and restore](docs/install/upgrading.md)
 
@@ -42,42 +42,25 @@ For a live backup, download a full archive from **Cockpit → Backups**. To copy
 
 ## Try it
 
-Install [Docker](https://docs.docker.com/get-docker/) (with Compose `2.24+`), then run:
+With Docker and Compose 2.24 or newer, check out a server release and select its matching image. These commands set up a new instance.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Arkazzae/Stellarr/main/install.sh | bash
+git clone --depth 1 --branch server-v0.2.1 https://github.com/Arkazzae/Stellarr.git &&
+  cd Stellarr &&
+  cp .env.example .env &&
+  echo 'STELLARR_VERSION=0.2.1' >> .env
 ```
 
-You can [inspect the bootstrap script](install.sh) before running it. It downloads the platform installer and its SHA-256 manifest from `stellarr.online/server-downloads/`.
-
-Or start it manually with Docker Compose ([`docker-compose.yml`](docker-compose.yml) and [`.env.example`](.env.example)):
+Review the ports and data volume in `docker-compose.yml`. To host friends, [set the public address](#inviting-friends) in `.env` before starting. For a trial on this computer, the defaults work.
 
 ```bash
-mkdir stellarr && cd stellarr
-curl -fsSLO https://raw.githubusercontent.com/Arkazzae/Stellarr/main/docker-compose.yml
-curl -fsSL https://raw.githubusercontent.com/Arkazzae/Stellarr/main/.env.example -o .env
-docker compose up -d
+docker compose up -d --wait
+docker compose logs stellarr | grep 'Setup code'
 ```
 
-To build from source with Docker, run this in a checkout:
+Open `https://localhost/setup` (or your configured address) and enter the code to create your owner account and first server. The operator panel is at `/cockpit`.
 
-```bash
-docker compose -f docker-compose.yml -f infra/compose/build.yml up -d --build
-```
-
-With Cargo installed, you can run the installer from the checkout before a release is available:
-
-```bash
-cargo run --locked --release --manifest-path init/installer/Cargo.toml -- --build --dir "$PWD"
-```
-
-`docker-compose.yml` defines the production stack. `infra/compose/` contains the local build, TURN, and development configurations.
-
-1. Grab the one-time setup code printed by the installer (or run `docker compose logs stellarr | grep "Setup code"`).
-2. Open the HTTPS address printed by the installer (default `https://localhost`), accept the local self-signed certificate, and run through `/setup` to create your owner account and first server.
-3. Visit `/cockpit` on your instance to manage accounts, security, logs, and backups.
-
-For separate web, API, media, and optional TURN containers, use the [split Compose deployment](deploy/split/README.md).
+The [quick start](docs/install/quick-start.md) also covers building from source and the optional guided installer.
 
 ## Install the client
 

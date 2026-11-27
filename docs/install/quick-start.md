@@ -4,54 +4,28 @@ Deploy a local Stellarr instance, create the owner account and initial server, i
 
 ## Prerequisites
 
+- **Git** to check out the release.
 - **Docker Engine** with the Compose plugin `2.24.0` or newer (`docker compose version`). See [Requirements](requirements.md).
 - **Available ports:** `443/tcp` (HTTPS), `49000/udp` and `49000/tcp` (WebRTC media), and `127.0.0.1:8888/tcp` (local HTTP upstream). Occupied ports can be remapped in `.env`; see [Requirements: Ports](requirements.md#ports).
 - **Second browser session:** an incognito window or separate browser profile to test a two-user call.
 
-## Automated installer (`install.sh`)
+## 1. Select a release
 
-The installer checks host prerequisites, writes `docker-compose.yml` and `.env`, starts the container, waits for health checks, and prints your instance URL and one-time setup code:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Arkazzae/Stellarr/main/install.sh | bash
-```
-
-For unattended deployments, pass `--yes` (`-y`) alongside your target domain and public IP policy:
+From a directory for new installations, check out a release and pin its image in `.env`.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Arkazzae/Stellarr/main/install.sh | bash -s -- \
-  --yes --domain chat.example.com --public-ip auto
+git clone --depth 1 --branch server-v0.2.1 https://github.com/Arkazzae/Stellarr.git &&
+  cd Stellarr &&
+  cp .env.example .env &&
+  echo 'STELLARR_VERSION=0.2.1' >> .env
 ```
 
-| Mode / Option | Behavior |
-| --- | --- |
-| **Interactive** (default) | Prompts for `--domain` (`localhost` default), `--public-ip` (IPv4 or `auto` when a domain is set), and `--language` (`en` or `pl`). Offers to install Docker on Linux (`--install-docker`) and picks free fallback ports on conflict. |
-| **Non-interactive** (`--yes`) | Skips prompts and applies flags (`--domain`, `--public-ip`, `--language`, `--https-port`, `--public-port`, `--http-port`, `--media-port`, `--enable-turn`, `--disable-turn`, `--turn-port`, `--turns-port`, `--version`, `--ref`, `--no-start`, `--skip-port-check`, `--force`) or matching `STELLARR_*` env vars (`STELLARR_START_TIMEOUT=300` s default). |
-| **Target directory** (`--dir`) | Defaults in order to: (1) git checkout containing `./install.sh`, (2) working directory of an existing Stellarr Compose container, (3) `$PWD` if `docker-compose.yml` exists there, or (4) `~/stellarr` (`STELLARR_INSTALL_DIR`). |
-| **Updating** | Re-running `install.sh` updates `docker-compose.yml` and `STELLARR_VERSION` while keeping all other `.env` values intact. Put custom Compose overrides in `docker-compose.override.yml`. |
-| **Git checkout build** | Run `./install.sh --build` (or `cargo run --locked --manifest-path init/installer/Cargo.toml -- --dir . --build` before binary releases) to build `stellarr-local:dev` locally. |
-| **Binary pinning** | `install.sh` verifies the platform binary (`linux`/`darwin`, `amd64`/`arm64`) against SHA-256 manifests from `stellarr.online/server-downloads/`. Override with `STELLARR_INSTALLER_VERSION` or `STELLARR_INSTALLER_BIN`. |
-
-If you used `install.sh`, skip directly to [Step 3: Open the web client](#3-open-the-web-client). The steps below cover manual setup with Docker Compose.
-
----
-
-## Manual setup with Docker Compose
-
-## 1. Download Compose and environment files
-
-```bash
-mkdir stellarr && cd stellarr
-curl -fsSLO https://raw.githubusercontent.com/Arkazzae/Stellarr/main/docker-compose.yml
-curl -fsSL https://raw.githubusercontent.com/Arkazzae/Stellarr/main/.env.example -o .env
-```
-
-Every line in `.env.example` is commented out so built-in defaults apply out of the box on `localhost`.
+Review `docker-compose.yml` for the image, ports, and volume. For access from another device, set the [LAN or internet address](requirements.md#behind-nat) in `.env` before starting.
 
 ## 2. Start the container
 
 ```bash
-docker compose up -d
+docker compose up -d --wait
 docker compose ps
 ```
 
@@ -66,7 +40,7 @@ docker compose logs
 
 ## 3. Open the web client
 
-Open the HTTPS URL printed by the installer (default `https://localhost`).
+Open your configured HTTPS address (default `https://localhost`).
 
 > [!NOTE]
 > On first boot, Stellarr generates a 365-day self-signed TLS certificate for `localhost`. Accept the browser's certificate prompt for local testing. Before exposing the server remotely, configure a trusted certificate via [Reverse proxy and TLS](reverse-proxy-and-tls.md).
@@ -135,6 +109,25 @@ git clone https://github.com/Arkazzae/Stellarr.git
 cd Stellarr
 docker compose -f docker-compose.yml -f infra/compose/build.yml up -d --build
 ```
+
+## Optional guided installer
+
+To run the wizard from a source checkout, use Cargo. The wizard checks ports, prepares Compose files and shows the setup code. Choose an installation directory with `--dir`.
+
+```bash
+cargo run --locked --manifest-path init/installer/Cargo.toml -- --dir "$PWD"
+```
+
+For a published installer, use the current [bootstrap script and verification instructions](https://github.com/Arkazzae/Stellarr/tree/main/init/installer). For unattended setup, pass `--yes --domain chat.example.com --public-ip auto`.
+
+| Mode / Option | Behavior |
+| --- | --- |
+| **Interactive** (default) | Prompts for `--domain` (`localhost` default), `--public-ip` (IPv4 or `auto` when a domain is set), and `--language` (`en`, `pl` or `de`). Offers to install Docker on Linux (`--install-docker`) and picks free fallback ports on conflict. |
+| **Non-interactive** (`--yes`) | Skips prompts and applies flags (`--domain`, `--public-ip`, `--language`, `--https-port`, `--public-port`, `--http-port`, `--media-port`, `--enable-turn`, `--disable-turn`, `--turn-port`, `--turns-port`, `--version`, `--ref`, `--no-start`, `--skip-port-check`, `--force`) or matching `STELLARR_*` env vars (`STELLARR_START_TIMEOUT=300` s default). |
+| **Target directory** (`--dir`) | Defaults in order to: (1) git checkout containing `./install.sh`, (2) working directory of an existing Stellarr Compose container, (3) `$PWD` if `docker-compose.yml` exists there, or (4) `~/stellarr` (`STELLARR_INSTALL_DIR`). |
+| **Updating** | Re-running `install.sh` updates `docker-compose.yml` and `STELLARR_VERSION` while keeping all other `.env` values intact. Put custom Compose overrides in `docker-compose.override.yml`. |
+| **Git checkout build** | Run `cargo run --locked --manifest-path init/installer/Cargo.toml -- --dir . --build` to build `stellarr-local:dev` locally. |
+| **Binary pinning** | `install.sh` verifies the platform binary (`linux`/`darwin`, `amd64`/`arm64`) against the SHA-256 manifest from `stellarr.online/server-downloads/` and the GitHub attestation for the release workflow and tag. This path requires an authenticated GitHub CLI with `gh attestation verify --source-ref` support. Override with `STELLARR_INSTALLER_VERSION` or `STELLARR_INSTALLER_BIN`. |
 
 ## Next steps
 
