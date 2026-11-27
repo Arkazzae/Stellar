@@ -128,6 +128,10 @@ listening() {
 }
 
 case $name in
+  gh)
+    [[ "$1 $2" == 'attestation verify' && -s "$3" && ! -e $state/bad-attestation ]]
+    exit $?
+    ;;
   uname)
     case $1 in -s) read_file os Linux ;; -m) read_file arch x86_64 ;; esac
     ;;
@@ -385,7 +389,7 @@ new_case() {
   mkdir -p "$bin" "$state" "$home" "$work" "$http/127.0.0.1/api/auth" "$http/get.docker.com" "$case_assets"
   : >"$case_dir/calls"
   local name
-  for name in docker curl wget sudo uname ss lsof systemctl id df sleep; do
+  for name in docker curl wget gh sudo uname ss lsof systemctl id df sleep; do
     ln -s "$stub" "$bin/$name"
   done
   ln -s "$assets"/* "$case_assets/"
@@ -630,6 +634,24 @@ case_install_sh() {
   expect_shown "does not match its published SHA-256 sum"
   expect_not_called docker
   expect_missing "$home/stellarr"
+
+  new_case install-sh-bad-attestation
+  through_install_sh
+  flag bad-attestation
+  run --yes
+  expect_failure
+  expect_called "--signer-workflow Arkazzae/Stellarr/.github/workflows/release.yml --source-ref refs/tags/server-v1.4.0"
+  expect_shown "Could not verify the installer"
+  expect_not_called docker
+  expect_missing "$home/stellarr"
+
+  new_case install-sh-missing-verifier
+  through_install_sh
+  rm "$bin/gh"
+  run --help
+  expect_failure
+  expect_shown "requires GitHub CLI"
+  expect_not_called curl
 
   new_case install-sh-before-first-release
   through_install_sh

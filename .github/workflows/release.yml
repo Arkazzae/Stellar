@@ -180,6 +180,8 @@ jobs:
           node-version: 26
       - run: npm ci
       - name: Install and exercise the public release on a fresh host
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           export STELLARR_CHROMIUM=$(command -v google-chrome)
           bash scripts/release/test-install.sh "${TAG#server-v}"
@@ -203,7 +205,9 @@ jobs:
     needs: release
     if: needs.release.outputs.promoted-latest == 'true'
     runs-on: ubuntu-latest
-    permissions: {}
+    permissions:
+      contents: read
+      attestations: read
     timeout-minutes: 10
     env:
       TAG: ${{ github.ref_name }}
@@ -211,5 +215,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - name: Install and update from the project website
+      - name: Verify the stable installation and upgrade
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: bash scripts/release/test-stable-install.sh "${TAG#server-v}"

@@ -502,8 +502,8 @@ pub fn usage() -> &'static str {
     "Installs Stellarr with Docker Compose, or updates an installation it made.
 
 Usage:
-  curl -fsSL https://raw.githubusercontent.com/Arkazzae/Stellarr/main/install.sh | bash -s -- [options]
-  ./install.sh [options]                in a checkout
+  stellarr-installer [options]
+  ./install.sh [options]                verify and run the published installer
 
 Where:
   --dir PATH           The installation's directory. Without it: the checkout
