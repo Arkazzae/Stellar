@@ -12,7 +12,7 @@ use rusqlite::{OptionalExtension, params};
 use serde_json::{Value, json};
 use stellarr_webpush::{base64url, generate_keys};
 
-use crate::support::{Client, Person, Request, Server};
+use crate::support::{Client, Person, Request, Server, TempDir};
 
 struct Keys {
     public: String,
@@ -113,11 +113,38 @@ async fn the_capabilities_are_the_accounts_own_and_say_what_is_configured() {
 }
 
 #[tokio::test]
-async fn a_pair_that_is_wrong_or_missing_makes_push_unavailable_and_stops_nothing() {
+async fn default_push_identity_survives_restart_and_is_unique_per_instance() {
+    async fn public_key(server: &Server, person: &Person) -> String {
+        let capabilities = person.client.get("/api/me/notification-delivery").await.json::<Value>();
+        assert_eq!(capabilities["pushAvailable"], true);
+        let key = capabilities["applicationServerKey"].as_str().unwrap().to_owned();
+        assert_eq!(base64url::decode(&key, 100).unwrap().len(), 65);
+        let sealed: String = server.database().query_row(
+            "SELECT ProtectedValue FROM InstanceSecrets WHERE Name='webpush.vapid'", [], |r| r.get(0),
+        ).unwrap();
+        assert!(!sealed.contains(&key));
+        key
+    }
+    let volume = TempDir::new();
+    let first = Server::start_in(volume.path(), &[]).await;
+    let owner = first.found("owner").await;
+    let key = public_key(&first, &owner).await;
+    first.stop().await;
+    let restarted = Server::start_in(volume.path(), &[]).await;
+    let client = restarted.sign_in(&owner).await;
+    let owner = Person { client, ..owner };
+    assert_eq!(public_key(&restarted, &owner).await, key);
+    let other = Server::start_with(&[]).await;
+    assert_ne!(public_key(&other, &other.found("owner").await).await, key);
+}
+
+#[tokio::test]
+async fn an_explicit_opt_out_or_incomplete_or_invalid_keys_leave_push_unavailable() {
     let good = vapid();
     let other = vapid();
     for settings in [
-        vec![],
+        vec![("STELLARR_PUSH_PUBLIC_KEY", good.public.clone())],
+        vec![("STELLARR_PUSH_PRIVATE_KEY", good.private.clone())],
         vec![("STELLARR_PUSH_ENABLED", "true".to_string()), ("STELLARR_PUSH_SUBJECT", "mailto:a@b.test".into()),
              ("STELLARR_PUSH_PUBLIC_KEY", "not-a-key".into()), ("STELLARR_PUSH_PRIVATE_KEY", "not-a-key".into())],
         vec![("STELLARR_PUSH_ENABLED", "true".to_string()), ("STELLARR_PUSH_SUBJECT", "mailto:a@b.test".into()),

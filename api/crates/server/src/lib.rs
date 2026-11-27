@@ -153,7 +153,7 @@ pub struct Services {
 
 /// [`serve`] with the services of the process given.
 pub async fn serve_with(
-    settings: Settings,
+    mut settings: Settings,
     groups: Vec<Endpoints>,
     services: Services,
     listening: impl FnOnce(&[SocketAddr]),
@@ -205,6 +205,14 @@ pub async fn serve_with(
     };
     let addresses = settings.listen.0.clone();
     let sealer = Sealer::load_or_create(&keys).map_err(|e| StartError(e.to_string()))?;
+    delivery::provision(&mut settings.push, &database, sealer.clone()).await;
+    if settings.push.enabled {
+        if delivery::vapid_keys(&settings.push).is_some() {
+            tracing::info!("Web Push is ready");
+        } else {
+            tracing::warn!("Web Push is unavailable. Check the instance keys and push settings.");
+        }
+    }
     let key_backup_sealer = database
         .prepare_key_backups(settings.data_root.clone())
         .await

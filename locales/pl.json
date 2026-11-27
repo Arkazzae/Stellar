@@ -3497,7 +3497,7 @@
     "integrations.active": "Aktywna",
     "integrations.inactive": "Wyłączona",
     "integrations.push.ready": "Ta instancja ma skonfigurowane klucze VAPID dla powiadomień.",
-    "integrations.push.configure": "W konfiguracji instancji włącz STELLARR_PUSH_ENABLED, ustaw kontakt i stałą parę kluczy VAPID, a następnie odtwórz kontener.",
+    "integrations.push.configure": "Web Push uruchamia się automatycznie. Jeśli jest niedostępny, sprawdź logi instancji i ustawienia STELLARR_PUSH.",
     "integrations.resend.description": "Wysyła pocztę przez API HTTPS Resend zamiast serwera SMTP z ustawień.",
     "integrations.resend.key": "Klucz API",
     "integrations.resend.toggle": "Wysyłaj pocztę przez Resend",

@@ -8,12 +8,12 @@
 //! cannot be opened (another master key, or an altered row) is a damaged
 //! value like any other, and an error.
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use crate::seal::Sealer;
 use crate::settings::BackupSettings;
-use crate::values::Timestamp;
+use crate::secrets::stored::{read, write};
 
 pub const BACKUP_POLICY_ROW: &str = "backups.policy";
 pub const R2_POLICY_ROW: &str = "cloudflare.r2.policy";
@@ -143,47 +143,6 @@ pub fn save_destination(
 
 pub fn reset_destination(connection: &Connection) -> rusqlite::Result<()> {
     remove(connection, R2_POLICY_ROW)
-}
-
-fn read<T: for<'de> Deserialize<'de>>(
-    connection: &Connection,
-    sealer: &Sealer,
-    row: &str,
-    purpose: &str,
-) -> rusqlite::Result<Option<T>> {
-    let Some(sealed) = connection
-        .query_row(
-            "SELECT \"ProtectedValue\" FROM \"InstanceSecrets\" WHERE \"Name\" = ?1",
-            [row],
-            |found| found.get::<_, String>(0),
-        )
-        .optional()?
-    else {
-        return Ok(None);
-    };
-    let bytes = sealer.open(purpose, row.as_bytes(), &sealed, Timestamp::now())?;
-    serde_json::from_slice::<T>(&bytes).map(Some).map_err(|error| {
-        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(error))
-    })
-}
-
-fn write<T: Serialize>(
-    connection: &Connection,
-    sealer: &Sealer,
-    row: &str,
-    purpose: &str,
-    value: &T,
-) -> rusqlite::Result<()> {
-    let payload = serde_json::to_vec(value).map_err(|error| {
-        rusqlite::Error::ToSqlConversionFailure(Box::new(error))
-    })?;
-    let sealed = sealer.seal(purpose, row.as_bytes(), None, &payload);
-    connection.execute(
-        "INSERT INTO \"InstanceSecrets\" (\"Name\", \"ProtectedValue\", \"UpdatedAt\") VALUES (?1, ?2, ?3)
-         ON CONFLICT (\"Name\") DO UPDATE SET \"ProtectedValue\" = excluded.\"ProtectedValue\", \"UpdatedAt\" = excluded.\"UpdatedAt\"",
-        params![row, sealed, Timestamp::now()],
-    )?;
-    Ok(())
 }
 
 fn remove(connection: &Connection, row: &str) -> rusqlite::Result<()> {

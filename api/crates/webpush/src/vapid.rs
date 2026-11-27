@@ -69,6 +69,7 @@ impl std::fmt::Debug for VapidKeys {
 }
 
 /// A freshly made pair, in the form it is configured in.
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct GeneratedKeys {
     pub public_key: String,
     pub private_key: String,

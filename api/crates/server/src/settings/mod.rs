@@ -374,12 +374,8 @@ impl MailSettings {
     }
 }
 
-/// Web Push as the operator configured it: whether it is on and the contact
-/// and key pair the instance signs its requests with. The values are kept as
-/// written; whether they make a usable identity is decided where they are
-/// used, and a pair that is not usable makes push unavailable instead of
-/// preventing startup. The private key is never
-/// printed.
+/// Web Push settings. The server fills an empty pair from its managed identity
+/// during startup. An explicit pair takes precedence.
 #[derive(Clone, PartialEq, Eq)]
 pub struct PushSettings {
     pub enabled: bool,
@@ -392,8 +388,22 @@ impl PushSettings {
     fn load(config: &Config) -> PushSettings {
         PushSettings {
             // A value that is not true or false leaves push off.
-            enabled: matches!(config.flag("Push:Enabled"), Ok(Some(true))),
-            subject: config.raw("Push:Subject").unwrap_or("").to_string(),
+            enabled: matches!(config.flag("Push:Enabled"), Ok(None | Some(true))),
+            subject: config
+                .text("Push:Subject")
+                .map(str::to_owned)
+                .unwrap_or_else(|| {
+                    config
+                        .text("Operations:PublicUrl")
+                        .and_then(origin::canonical)
+                        .filter(|url| url.starts_with("https://"))
+                        .unwrap_or_else(|| {
+                            format!(
+                                "mailto:postmaster@{}",
+                                config.text("Rtc:PublicHost").unwrap_or("localhost")
+                            )
+                        })
+                }),
             public_key: config.raw("Push:PublicKey").unwrap_or("").to_string(),
             private_key: config.raw("Push:PrivateKey").unwrap_or("").to_string(),
         }

@@ -626,8 +626,8 @@ fn a_provider_id_longer_than_thirty_two_characters_refuses_the_start() {
 }
 
 #[test]
-fn web_push_is_off_until_it_is_asked_for_and_never_stops_the_start() {
-    let off = production(&[]).unwrap();
+fn web_push_defaults_on_and_respects_operator_overrides() {
+    let automatic = production(&[("STELLARR_DOMAIN", "chat.test")]).unwrap();
     let on = production(&[
         ("STELLARR_PUSH_ENABLED", "TRUE"),
         ("STELLARR_PUSH_SUBJECT", "mailto:a@chat.test"),
@@ -637,7 +637,8 @@ fn web_push_is_off_until_it_is_asked_for_and_never_stops_the_start() {
     .unwrap();
     let odd = production(&[("STELLARR_PUSH_ENABLED", "maybe")]).unwrap();
 
-    assert!(!off.push.enabled);
+    assert!(automatic.push.enabled);
+    assert!(automatic.push.subject.contains("chat.test"));
     assert!(on.push.enabled);
     assert_eq!(on.push.subject, "mailto:a@chat.test");
     assert_eq!(on.push.public_key, "pub");

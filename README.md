@@ -45,10 +45,10 @@ For a live backup, download a full archive from **Cockpit → Backups**. To copy
 With Docker and Compose 2.24 or newer, check out a server release and select its matching image. These commands set up a new instance.
 
 ```bash
-git clone --depth 1 --branch server-v0.3.0 https://github.com/Arkazzae/Stellarr.git &&
+git clone --depth 1 --branch server-v0.3.1 https://github.com/Arkazzae/Stellarr.git &&
   cd Stellarr &&
   cp .env.example .env &&
-  echo 'STELLARR_VERSION=0.3.0' >> .env
+  echo 'STELLARR_VERSION=0.3.1' >> .env
 ```
 
 Review the ports and data volume in `docker-compose.yml`. To host friends, [set the public address](#inviting-friends) in `.env` before starting. For a trial on this computer, the defaults work.

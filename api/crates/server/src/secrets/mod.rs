@@ -23,6 +23,8 @@ use crate::seal::Sealer;
 use crate::settings::{EnvironmentSecrets, VARIABLES};
 use crate::values::Timestamp;
 
+pub(crate) mod stored;
+
 #[cfg(test)]
 mod tests;
 

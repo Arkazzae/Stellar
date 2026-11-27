@@ -93,14 +93,14 @@ Outgoing mail (password resets, email 2FA codes, email-change confirmations, sec
 
 ## Web Push
 
-Browser push alerts remain off until a persistent P-256 VAPID key pair is configured. Generate keys once per instance—rotating keys invalidates existing browser subscriptions; see [Activity notifications](../admin/notifications.md#web-push).
+Stellarr generates a persistent P-256 key pair when Web Push starts with both key settings empty. The following settings are optional. [Activity notifications](../admin/notifications.md#web-push)
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `STELLARR_PUSH_ENABLED` | `true` \| `false` | `false` | Enables Web Push when valid VAPID keys and subject are present. |
-| `STELLARR_PUSH_SUBJECT` | `mailto:` or `https://` | empty | Operator contact URI sent to push services. |
-| `STELLARR_PUSH_PUBLIC_KEY` | base64url | empty | Uncompressed P-256 public key (`65` bytes decoded). |
-| `STELLARR_PUSH_PRIVATE_KEY` | base64url | empty | P-256 private key (`32` bytes decoded). Keep secret. |
+| `STELLARR_PUSH_ENABLED` | Boolean | `true` | Set to `false` to disable browser push for the instance. |
+| `STELLARR_PUSH_SUBJECT` | `mailto:` or `https://` | Public HTTPS origin, or the postmaster address at the configured host | Contact URI sent to push services. |
+| `STELLARR_PUSH_PUBLIC_KEY` | base64url | Generated | Optional existing uncompressed P-256 public key (65 bytes). Set both keys together. |
+| `STELLARR_PUSH_PRIVATE_KEY` | base64url | Generated | Matching P-256 private key (32 bytes). Keep this value secret. |
 
 ## Single sign-on (OIDC)
 

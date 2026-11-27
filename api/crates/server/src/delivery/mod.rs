@@ -43,6 +43,7 @@ use crate::values::Timestamp;
 
 pub use sender::Sender;
 pub use vapid::keys as vapid_keys;
+pub(crate) use vapid::provision;
 
 const TARGET: &str = "Stellarr.Api.Notifications";
 

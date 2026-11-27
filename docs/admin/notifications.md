@@ -27,40 +27,11 @@ Web Push wakes `web/public/stellarr-worker.js` to display system notifications e
 
 Check VAPID readiness in **Cockpit → Integrations → Web Push**. On iPhone and iPad, install the site via **Share → Add to Home Screen** first, open it from the Home Screen icon, and enroll the device under **Settings → Notifications**.
 
-### 1. Generate a persistent VAPID key pair
+Stellarr enables Web Push by default. On startup it creates one VAPID key pair per instance and stores it encrypted in the instance database. Restarts and upgrades reuse the same identity. A full Stellarr backup containing the database and keys preserves browser subscriptions when you move the instance.
 
-Generate **one** P-256 key pair per installation (`npx web-push generate-vapid-keys`, or with OpenSSL below):
+Each person can enable push for their account, register the current device and accept the browser's permission prompt under **Settings → Notifications**.
 
-```bash
-openssl ecparam -name prime256v1 -genkey -noout -out vapid-private.pem
-openssl ec -in vapid-private.pem -pubout -outform DER -out vapid-public.der
-
-# Public key (base64url, 65 bytes decoded):
-tail -c 65 vapid-public.der | base64 -w0 | tr '+/' '-_' | tr -d '='
-
-# Private key (base64url, 32 bytes decoded):
-priv_hex="$(openssl ec -in vapid-private.pem -text -noout 2>/dev/null \
-  | awk '/priv:/{flag=1;next}/pub:/{flag=0}flag' | tr -d ' :\n')"
-printf '%s' "$priv_hex" | xxd -r -p | base64 -w0 | tr '+/' '-_' | tr -d '='
-```
-
-*(On macOS BSD `base64`, omit `-w0`.)*
-
-> [!WARNING]
-> Never rotate VAPID keys across restarts unless intentionally invalidating subscriptions—browsers bind push endpoints to the server's public key and stop receiving pushes until users re-subscribe.
-
-### 2. Enable in `.env`
-
-Add the keys to `.env` ([Configuration: Web Push](../install/configuration.md#web-push)) and run `docker compose up -d`:
-
-```dotenv
-STELLARR_PUSH_ENABLED=true
-STELLARR_PUSH_SUBJECT=mailto:admin@example.com
-STELLARR_PUSH_PUBLIC_KEY=YOUR_PUBLIC_KEY
-STELLARR_PUSH_PRIVATE_KEY=YOUR_PRIVATE_KEY
-```
-
-Missing or mismatched VAPID keys never block container startup; Web Push simply reports as unavailable in **Settings → Notifications**.
+If you already supply a VAPID pair, keep both environment values when upgrading. You can set your own contact with `STELLARR_PUSH_SUBJECT`, or turn push off with `STELLARR_PUSH_ENABLED=false`. [Web Push configuration](../install/configuration.md#web-push)
 
 ### Subscription security and status codes
 

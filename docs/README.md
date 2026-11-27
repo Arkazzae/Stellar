@@ -31,7 +31,7 @@ Day-to-day server management, security policies, backups, and external integrati
 | [Account security](admin/account-security.md) | Passkeys, TOTP, email codes, OIDC linking and passwordless sign-ups, instance MFA policies, and recovery flows |
 | [Automatic backups](admin/backups.md) | Scheduled full `.zip` archives, archive structure, staged startup restores, and post-restore token cleanup |
 | [Cloudflare R2 offsite backups](admin/cloudflare-r2.md) | Direct S3 multipart streaming, the Backup Relay Worker, SHA-256 verification, and retention rules |
-| [Activity notifications](admin/notifications.md) | Zero-metadata email and Web Push alerts for `@mentions` and DMs, VAPID key generation, and retry policies |
+| [Activity notifications](admin/notifications.md) | Zero-metadata email and Web Push alerts for `@mentions` and DMs, automatic VAPID provisioning, and retry policies |
 
 ## Activity SDK
 
