@@ -37,6 +37,7 @@ struct Inner {
     mutation_gate: MutationGate,
     post_queue: crate::messages::post::batch::PostQueue,
     scheduled_alarm: crate::background::Alarm,
+    poll_alarm: crate::background::Alarm,
     pin_attempts: AttemptLimiter,
     sealer: Sealer,
     key_backup_sealer: Sealer,
@@ -92,6 +93,7 @@ impl AppState {
                 mutation_gate: MutationGate::default(),
                 post_queue: Default::default(),
                 scheduled_alarm: Default::default(),
+                poll_alarm: Default::default(),
             }),
         }
     }
@@ -122,6 +124,12 @@ impl AppState {
     /// that sends them looks again at when the next one is due.
     pub fn scheduled_alarm(&self) -> &crate::background::Alarm {
         &self.inner.scheduled_alarm
+    }
+
+    /// Rung when a poll is posted, so that the worker that ends polls looks
+    /// again at when the next one ends.
+    pub fn poll_alarm(&self) -> &crate::background::Alarm {
+        &self.inner.poll_alarm
     }
 
     pub fn metrics(&self) -> &Metrics {
