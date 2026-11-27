@@ -77,4 +77,42 @@ describe("the events row in the rail", () => {
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).toBeNull();
   });
+
+  it("opens the list beside the rail, level with the row, and inside the window", async () => {
+    const user = userEvent.setup();
+    const box = (left: number, top: number, width: number, height: number) =>
+      ({ left, top, right: left + width, bottom: top + height, width, height, x: left, y: top }) as DOMRect;
+    const rendered = () =>
+      render(
+        <nav className="rail">
+          <EventsRail events={coming} now={BEFORE} zone="Europe/Warsaw" channels={BOARD_CHANNELS} onOpen={vi.fn()} />
+        </nav>,
+      );
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(1400);
+
+    const high = rendered();
+    vi.spyOn(high.container.querySelector(".rail")!, "getBoundingClientRect").mockReturnValue(box(72, 0, 240, 800));
+    const row = screen.getByRole("button", { name: /Wydarzenia/ });
+    vi.spyOn(row, "getBoundingClientRect").mockReturnValue(box(80, 120, 224, 34));
+    await user.click(row);
+
+    const list = screen.getByRole("dialog", { name: "Wydarzenia" });
+    expect(list.style.left).toBe("320px");
+    expect(list.style.top).toBe("120px");
+    expect(list.style.getPropertyValue("--list-max-height")).toBe("520px");
+    high.unmount();
+
+    // Too low for the list to fit under its top: it moves up.
+    const low = rendered();
+    vi.spyOn(low.container.querySelector(".rail")!, "getBoundingClientRect").mockReturnValue(box(72, 0, 240, 800));
+    const lowRow = screen.getByRole("button", { name: /Wydarzenia/ });
+    vi.spyOn(lowRow, "getBoundingClientRect").mockReturnValue(box(80, 700, 224, 34));
+    await user.click(lowRow);
+
+    const raised = screen.getByRole("dialog", { name: "Wydarzenia" });
+    expect(raised.style.top).toBe("508px");
+    expect(raised.style.getPropertyValue("--list-max-height")).toBe("280px");
+    vi.restoreAllMocks();
+  });
 });
