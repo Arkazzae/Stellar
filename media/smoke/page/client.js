@@ -554,12 +554,11 @@ async function capture(kind, busy, pattern) {
  * noise averages out, so the colour a receiver measures is still the
  * person's.
  */
-function busyCamera({ rgb, width = 640, height = 480, fps = 30 }) {
+function busyCamera({ rgb, width = 640, height = 480, fps = 30, block = 8 }) {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d");
-  const block = 8;
   const spread = 60;
   const draw = () => {
     for (let y = 0; y < height; y += block) {

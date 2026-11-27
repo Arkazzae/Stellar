@@ -130,6 +130,8 @@ Each receiver runs independent GoogCC bandwidth estimation (`str0m`) from its TW
 
 ### Resource limits and current boundaries
 
+The [15-camera browser test](../media/smoke/README.md#shared-upload-with-15-cameras) compares gallery layouts on a shared 50 Mb/s uplink.
+
 | Limit | Value | On exceed |
 | --- | ---: | --- |
 | SDP size / Control API body | `128 KiB` / `256 KiB` | `422 invalid-sdp` (or close `error`) / `413 payload-too-large` |

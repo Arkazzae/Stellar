@@ -64,6 +64,12 @@ Run `node smoke.mjs udp tcp` against a freshly built SFU to verify direct media 
 | `s` | A withdrawn camera's m-line carries another participant's camera: the receiver decodes the new publisher's color on it under a new SSRC, the directory names the new publisher and stream, Chromium reports the same track again in the new `msid` stream, and no m-line is added |
 | `t` | The same with audio: a withdrawn microphone's m-line carries a newcomer's tone |
 
+### Shared upload with 15 cameras
+
+Run `node smoke.mjs gallery` separately to measure 15 browser contexts sending continuous audio and animated 720p/30 cameras capped at 1.5 Mb/s. One UDP queue caps the combined server upload at 50 Mb/s. Two fresh rooms start with audio only. Each participant then requests 14 remote cameras in the first run or four in the second, so congestion estimates and video hold timers start fresh for each comparison. Each measurement window lasts ten seconds after settling.
+
+The `gallery` entry in `results.json` records offered and delivered wire rates (including UDP/IPv4 headers), source video bitrate, queue drops, the number of cameras decoding frames, Opus queueing time, per-track audio loss and mean jitter-buffer delay, and the time each receiver takes to decode its first requested picture (sampled every 200 ms). Receivers still waiting after ten seconds are counted separately. Jitter-buffer delay measures the playout buffer only. When running the browsers, relay and SFU together, the host’s encoding and decoding capacity also affects the result.
+
 ### Encrypted call scenarios
 
 Encrypted call scenarios run when explicitly named on the command line (`node smoke.mjs xa xb`). Each participant loads the web client's production E2EE media worker (`web/src/stellarr/lib/voice/e2ee/`) on every sender and receiver transceiver, keyed with shared epoch keys, and restricts video codecs to VP8 and VP9 unless the scenario tests codec rejection.

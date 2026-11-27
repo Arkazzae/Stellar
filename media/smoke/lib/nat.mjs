@@ -54,7 +54,7 @@ export class ShapedLink {
     this.lastArrival = 0;
     this.inFlight = [];
     this.timer = null;
-    this.stats = { offered: 0, delivered: 0, deliveredBytes: 0, queueDrops: 0, burstDrops: 0 };
+    this.stats = { offered: 0, offeredBytes: 0, delivered: 0, deliveredBytes: 0, queueDrops: 0, burstDrops: 0 };
     this.maxQueueingMs = 0;
     /** How long each Opus packet waited at the bottleneck, in ms, in order. */
     this.voiceQueueingMs = [];
@@ -76,6 +76,7 @@ export class ShapedLink {
     const now = performance.now();
     this.stats.offered += 1;
     const size = data.length + DATAGRAM_OVERHEAD;
+    this.stats.offeredBytes += size;
     const start = Math.max(now, this.freeAt);
     const backlog = (start - now) * this.bytesPerMs;
     if (backlog + size > this.queueBytes) {
@@ -96,8 +97,6 @@ export class ShapedLink {
       this.freeAt + this.delayMs + this.random() * this.jitterMs,
     );
     this.lastArrival = arrival;
-    this.stats.delivered += 1;
-    this.stats.deliveredBytes += size;
     this.inFlight.push({ arrival, data, to });
     this.schedule();
   }
@@ -111,6 +110,8 @@ export class ShapedLink {
       while (this.inFlight.length > 0 && this.inFlight[0].arrival <= now + 0.5) {
         const { data, to } = this.inFlight.shift();
         this.deliver(data, to);
+        this.stats.delivered += 1;
+        this.stats.deliveredBytes += data.length + DATAGRAM_OVERHEAD;
       }
       this.schedule();
     }, wait);
@@ -142,6 +143,7 @@ export class LossyNat {
     this.lost = { up: 0, down: 0 };
     /** Shaped downlinks, by browser address. */
     this.links = new Map();
+    this.sharedLink = null;
     /** Called with (direction, browser address, datagram, time) for every datagram. */
     this.taps = [];
     socket.on("message", (data, from) => this.fromBrowser(data, from));
@@ -173,6 +175,13 @@ export class LossyNat {
     return link;
   }
 
+  /** A single server uplink, shared even by addresses that appear after an ICE switch. */
+  shapeAll(shape) {
+    if (this.sharedLink) this.sharedLink.reshape(shape);
+    else this.sharedLink = new ShapedLink(shape, (data, to) => this.socket.send(data, to.port, to.address));
+    return this.sharedLink;
+  }
+
   /** Lets what goes to `addresses` through untouched again. */
   unshape(addresses) {
     for (const address of addresses) {
@@ -201,7 +210,7 @@ export class LossyNat {
       upstream.on("message", (reply) => {
         for (const tap of this.taps) tap("down", key, reply, performance.now());
         if (this.dropped("down", reply)) return;
-        const link = this.links.get(key);
+        const link = this.sharedLink ?? this.links.get(key);
         if (link) link.push(reply, from);
         else this.socket.send(reply, from.port, from.address);
       });
@@ -212,6 +221,7 @@ export class LossyNat {
   }
 
   close() {
+    this.sharedLink?.close();
     for (const link of new Set(this.links.values())) link.close();
     for (const upstream of this.upstreams.values()) upstream.close();
     this.socket.close();
