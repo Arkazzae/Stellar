@@ -223,7 +223,7 @@ async fn an_invitation_shows_on_every_server_while_its_invite_can_be_used() {
     assert_eq!(titles, ["unlimited", "usable"]);
     assert_eq!(page["unreadCount"], 2);
     let usable = page["items"].as_array().unwrap().iter().find(|e| e["title"] == "usable").unwrap();
-    assert_eq!(usable["target"], json!({ "type": "server-invite", "channelId": null, "inviteCode": "usable", "serverId": elsewhere.to_string(), "serverName": "Package", "invitedByName": "Module" }));
+    assert_eq!(usable["target"], json!({ "type": "server-invite", "channelId": null, "inviteCode": "usable", "serverId": elsewhere.to_string(), "serverName": "Package", "invitedByName": "Module", "eventId": null }));
 
     // One that can no longer be used stays dismissable, and readable.
     let expired = rows.iter().find(|r| r.0 == "expired").unwrap().1;

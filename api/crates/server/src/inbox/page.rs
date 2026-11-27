@@ -14,7 +14,8 @@ use crate::http::{MAX_PAGE_SIZE, valid_page_size};
 use crate::http::{ApiError, ApiResult, Path, Problem, QueryValues, json_response};
 use crate::permissions::membership::ActiveServer;
 use crate::state::AppState;
-use crate::values::{Id, Timestamp};
+use std::collections::HashMap;
+use crate::values::{Id, Timestamp, json_ids};
 
 const DEFAULT_PAGE_SIZE: i32 = 30;
 
@@ -71,6 +72,8 @@ struct Target {
     server_id: Option<String>,
     server_name: Option<String>,
     invited_by_name: Option<String>,
+    /// The server event the entry is about: a reminder, a seat, a cancel.
+    event_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -87,27 +90,53 @@ struct Notification {
     read_at: Option<String>,
 }
 
+/// The events these entries are about, by entry, for those that are.
+fn events_of(db: &Connection, entries: &[Entry]) -> rusqlite::Result<HashMap<Id, Id>> {
+    if entries.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let ids: Vec<Id> = entries.iter().map(|entry| entry.id).collect();
+    let mut statement = db.prepare_cached(
+        "SELECT \"NotificationId\", \"EventId\" FROM \"ServerEventNotices\"
+         WHERE \"NotificationId\" IN (SELECT value FROM json_each(?1))",
+    )?;
+    statement
+        .query_map([json_ids(&ids)], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect()
+}
+
 /// An invitation keeps the server's name and the inviter's in the source
 /// columns it was delivered with.
-fn dto(entry: &Entry) -> Notification {
-    let target = match (&entry.target_invite_code, entry.target_channel) {
-        (Some(code), _) => Some(Target {
+fn dto(entry: &Entry, event: Option<Id>) -> Notification {
+    let target = match (&entry.target_invite_code, entry.target_channel, event) {
+        (_, _, Some(event)) => Some(Target {
+            kind: "event",
+            channel_id: None,
+            invite_code: None,
+            server_id: Some(entry.server.to_string()),
+            server_name: None,
+            invited_by_name: None,
+            event_id: Some(event.to_string()),
+        }),
+        (Some(code), _, None) => Some(Target {
             kind: "server-invite",
             channel_id: None,
             invite_code: Some(code.clone()),
             server_id: Some(entry.server.to_string()),
             server_name: Some(entry.source_package_name.clone()),
             invited_by_name: Some(entry.source_module_name.clone()),
+            event_id: None,
         }),
-        (None, Some(channel)) => Some(Target {
+        (None, Some(channel), None) => Some(Target {
             kind: "channel",
             channel_id: Some(channel.to_string()),
             invite_code: None,
             server_id: None,
             server_name: None,
             invited_by_name: None,
+            event_id: None,
         }),
-        (None, None) => None,
+        (None, None, None) => None,
     };
     Notification {
         id: entry.id.to_string(),
@@ -162,9 +191,10 @@ fn list_page(
         params![user, server, now],
         |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
+    let events = events_of(db, &rows)?;
     Ok(Page {
         next_before_sequence: if more { rows.last().map(|e| e.sequence) } else { None },
-        items: rows.iter().map(dto).collect(),
+        items: rows.iter().map(|entry| dto(entry, events.get(&entry.id).copied())).collect(),
         unread_count,
         last_sequence: last_sequence.unwrap_or(0),
     })
@@ -229,28 +259,29 @@ pub async fn mark_read(
     let now = Timestamp::now();
     let found = state
         .database()
-        .write(move |tx| -> Result<Option<(Entry, bool)>, DbError> {
+        .write(move |tx| -> Result<Option<(Entry, bool, Option<Id>)>, DbError> {
             let Some(mut entry) = find_owned(tx, id, user, server)? else {
                 return Ok(None);
             };
+            let event = events_of(tx, std::slice::from_ref(&entry))?.remove(&entry.id);
             if entry.read_at.is_some() {
-                return Ok(Some((entry, false)));
+                return Ok(Some((entry, false, event)));
             }
             tx.execute(
                 "UPDATE \"UserNotifications\" SET \"ReadAt\" = ?1 WHERE \"Sequence\" = ?2",
                 params![now, entry.sequence],
             )?;
             entry.read_at = Some(now);
-            Ok(Some((entry, true)))
+            Ok(Some((entry, true, event)))
         })
         .await?;
-    let Some((entry, changed)) = found else {
+    let Some((entry, changed, event)) = found else {
         return Ok(no_such_entry());
     };
     if changed {
         announce(state.events(), &entry);
     }
-    Ok(private(json_response(StatusCode::OK, &dto(&entry))))
+    Ok(private(json_response(StatusCode::OK, &dto(&entry, event))))
 }
 
 #[derive(Serialize)]

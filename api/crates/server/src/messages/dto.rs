@@ -110,6 +110,8 @@ pub struct MessageDto {
     pub reply_to: Option<MessageReferenceDto>,
     pub reactions: Vec<MessageReactionDto>,
     pub poll: Option<crate::polls::PollDto>,
+    /// The card of the server event the message announces.
+    pub event: Option<crate::server_events::EventDto>,
 }
 
 /// Pushed when the embeds of a message have been rebuilt; an empty list means
@@ -187,6 +189,7 @@ struct Row_ {
     reply_to: Option<Id>,
     author: UserDto,
     has_poll: bool,
+    has_event: bool,
 }
 
 fn message_from(row: &Row<'_>) -> rusqlite::Result<Row_> {
@@ -217,13 +220,15 @@ fn message_from(row: &Row<'_>) -> rusqlite::Result<Row_> {
             origin: row.get(17)?,
         },
         has_poll: row.get(18)?,
+        has_event: row.get(19)?,
     })
 }
 
 const MESSAGE_COLUMNS: &str = "m.\"Id\", m.\"ChannelId\", m.\"AuthorId\", m.\"IsSystem\", m.\"Content\", m.\"CreatedAt\", m.\"EditedAt\",
     m.\"PinnedAt\", m.\"ReplyToMessageId\", u.\"Username\", u.\"DisplayName\", u.\"AvatarColor\", u.\"AvatarUrl\",
     u.\"BannerUrl\", u.\"CustomStatus\", u.\"Bio\", u.\"Pronouns\", u.\"Origin\",
-    EXISTS (SELECT 1 FROM \"Polls\" p WHERE p.\"MessageId\" = m.\"Id\")";
+    EXISTS (SELECT 1 FROM \"Polls\" p WHERE p.\"MessageId\" = m.\"Id\"),
+    EXISTS (SELECT 1 FROM \"ServerEventAnnouncements\" a WHERE a.\"MessageId\" = m.\"Id\")";
 
 /// Reads the messages with these ids as they are shown in a transcript, in the
 /// order of `ids`; an id that is no message is left out. Reactions are counted
@@ -372,6 +377,8 @@ pub fn load(
     with_polls.sort();
     with_polls.dedup();
     let polls = crate::polls::polls_of(db, &with_polls, viewer)?;
+    let with_cards: Vec<Id> = found.values().filter(|row| row.has_event).map(|row| row.id).collect();
+    let cards = crate::server_events::cards_of(db, &with_cards, viewer)?;
 
     let mut out = Vec::with_capacity(ids.len());
     for id in ids {
@@ -406,6 +413,7 @@ pub fn load(
             reply_to,
             reactions: tally(reactions.remove(&row.id).unwrap_or_default(), viewer),
             poll: polls.get(&row.id).cloned(),
+            event: cards.get(&row.id).cloned(),
         });
     }
     Ok(out)

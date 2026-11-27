@@ -20,6 +20,7 @@ async fn post_three(world: &World) -> ([bool; 3], Vec<String>) {
                     client_id: Some(Id::random()),
                     scheduled: None,
                     poll: None,
+                    event: None,
                 },
                 reply,
             })

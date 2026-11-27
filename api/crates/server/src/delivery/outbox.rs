@@ -24,6 +24,14 @@ use crate::values::{Id, Timestamp};
 pub enum Kind {
     Mention,
     DirectMessage,
+    /// A server event someone holds a seat at starts soon.
+    EventReminder,
+    /// Someone on an event's waitlist was given a seat.
+    EventSeat,
+    /// An event someone signed up for was cancelled.
+    EventCancelled,
+    /// An event someone signed up for moved in time or place.
+    EventChanged,
 }
 
 impl Kind {
@@ -32,13 +40,29 @@ impl Kind {
         match self {
             Kind::Mention => "mention",
             Kind::DirectMessage => "direct-message",
+            Kind::EventReminder => "event-reminder",
+            Kind::EventSeat => "event-seat",
+            Kind::EventCancelled => "event-cancelled",
+            Kind::EventChanged => "event-changed",
         }
+    }
+
+    /// Whether the source is a server event rather than a message.
+    pub const fn is_event(self) -> bool {
+        matches!(
+            self,
+            Kind::EventReminder | Kind::EventSeat | Kind::EventCancelled | Kind::EventChanged
+        )
     }
 
     pub fn parse(text: &str) -> Option<Kind> {
         match text {
             "mention" => Some(Kind::Mention),
             "direct-message" => Some(Kind::DirectMessage),
+            "event-reminder" => Some(Kind::EventReminder),
+            "event-seat" => Some(Kind::EventSeat),
+            "event-cancelled" => Some(Kind::EventCancelled),
+            "event-changed" => Some(Kind::EventChanged),
             _ => None,
         }
     }
@@ -78,12 +102,38 @@ pub fn enqueue_direct_message(
     enqueue(db, Kind::DirectMessage, message, recipient, created_at)
 }
 
+/// Queues a push notice about a server event, `event` being its source. A
+/// notice of an event goes by push and never by mail, and is of no use after
+/// `expires_at`, which is when the occurrence it is about starts.
+pub fn enqueue_event(
+    db: &Connection,
+    kind: Kind,
+    event: Id,
+    recipient: Id,
+    created_at: Timestamp,
+    expires_at: Timestamp,
+) -> rusqlite::Result<()> {
+    deliver(db, kind, event, recipient, created_at, expires_at.min(created_at.plus(LIFETIME)), false)
+}
+
 fn enqueue(
     db: &Connection,
     kind: Kind,
     message: Id,
     recipient: Id,
     created_at: Timestamp,
+) -> rusqlite::Result<()> {
+    deliver(db, kind, message, recipient, created_at, created_at.plus(LIFETIME), true)
+}
+
+fn deliver(
+    db: &Connection,
+    kind: Kind,
+    message: Id,
+    recipient: Id,
+    created_at: Timestamp,
+    expires_at: Timestamp,
+    by_mail: bool,
 ) -> rusqlite::Result<()> {
     let Some((disabled, session_version)) = db
         .query_row(
@@ -114,8 +164,9 @@ fn enqueue(
         message,
         recipient,
         created_at,
+        expires_at,
     };
-    if email && let Some(address) = events::verified_email(db, recipient)? {
+    if by_mail && email && let Some(address) = events::verified_email(db, recipient)? {
         queue.add("email", &destination_key(&address), None)?;
     }
     if !push {
@@ -160,6 +211,7 @@ struct Queue<'a> {
     message: Id,
     recipient: Id,
     created_at: Timestamp,
+    expires_at: Timestamp,
 }
 
 impl Queue<'_> {
@@ -184,7 +236,7 @@ impl Queue<'_> {
                 key,
                 subscription,
                 self.created_at,
-                self.created_at.plus(LIFETIME),
+                self.expires_at,
             ])?;
         Ok(())
     }

@@ -24,6 +24,7 @@ groups! {
     message_views,
     releases,
     servers,
+    server_events,
     soundboard,
     uploads,
     moderation,
