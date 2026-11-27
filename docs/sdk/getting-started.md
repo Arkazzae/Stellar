@@ -112,6 +112,7 @@ Open `http://127.0.0.1:4174/` in your browser. The simulator wraps your activity
 | **Test personal vs. voice mode** | Pass `--mode voice` (shared room across tabs, default when supported) or `--mode personal` (isolated solo room per tab). |
 | **Test Game audio** | Drag the **Game audio** slider (`0–100%`) in the top bar to verify your `session.media.volume` listener per tab. |
 | **Simulate mic & camera** | When `permissions` declares `media.microphoneLevel` or `media.cameraTile`, the top bar displays file pickers so you can loop local audio/video files, test consent prompts, mute, or revoke access without hardware. |
+| **Simulate GIF search** | When `permissions` declares `media.gifs`, searches answer from an offline set of generated images labelled with the query, with no network or key. The **GIFs** menu in the top bar turns GIFs off for this player or for the instance. |
 | **Pick a free port** | Pass `--port 0` to bind an available OS port. Restart `stellarr dev` only when you edit `stellarr.json`; HTML/JS/CSS edits reload on browser refresh. |
 
 ---

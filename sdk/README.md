@@ -237,8 +237,15 @@ async function recordHighScore(score: number) {
 
 - **Camera tile (`"permissions": ["media.cameraTile"]`):** Prompts the performer for consent while any participant calls `session.media.cameraTile.mount(performerId, placeholderEl)`. Stellarr renders the video overlay outside the iframe's readable DOM and tracks `placeholderEl` automatically. Call `setVisible(false)` on the returned unmount function to hide the tile locally.
 - **External embeds (`session.media.embed`)**. Declare the service hostname in `connects`, then call `session.media.embed.mount(embedUrl, placeholderEl, { title, onMessage })`. The handle supports `setVisible(boolean)`, `postMessage(data)`, and `destroy()`. Use the service’s own embed URL and player protocol.
+- **GIF search (`"permissions": ["media.gifs"]`):** `session.media.gifs.search(query)` returns GIF ids, descriptions and sizes, and `session.media.gifs.load(id)` returns a `blob:` URL ready for an `<img>`. The frame never contacts GIPHY: Stellarr's page asks it under the instance's GIPHY switch and each player's own GIPHY setting. Put ids in shared state and let every client load them. Rejections carry `error.code`, such as `declined` when the player turned GIPHY off. Stellarr shows GIPHY's mark in the activity bar.
 
-In `stellarr dev`, pick any local audio or video file in the simulator header bar to test consented mic levels, camera tiles, mutes, and denials without physical hardware.
+  ```ts
+  const { items } = await session.media.gifs.search("high five");
+  const gif = await session.media.gifs.load(items[0].id);
+  image.src = gif.url; // gif.release() when it is no longer shown
+  ```
+
+In `stellarr dev`, pick any local audio or video file in the simulator header bar to test consented mic levels, camera tiles, mutes, and denials without physical hardware. `media.gifs` answers there from an offline set of generated images, and the header's **GIFs** menu turns GIFs off for the player or the instance.
 
 ---
 
