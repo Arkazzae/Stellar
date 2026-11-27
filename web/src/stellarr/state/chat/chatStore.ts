@@ -6,6 +6,8 @@ import type {
   ThreadSummary,
 } from "@/ports";
 
+import { applyPollChange, keepLoadedPoll, type PollChange } from "@/lib/polls/pollState";
+
 import { applyPinChanges, applyPinEcho, sortPins } from "./pins";
 import {
   addThreadReply,
@@ -95,6 +97,8 @@ export type ChatAction =
       messageId: string;
       embeds: MessageEmbed[];
     }
+  /** A poll's counts, the reader's vote, or what a vote or an end answered. */
+  | { type: "poll"; channelId: string; messageId: string; change: PollChange }
   | {
       type: "first-page";
       channelId: string;
@@ -191,8 +195,9 @@ export function chatReducer(state: ChatData, action: ChatAction): ChatData {
       });
     }
     case "received": {
-      const { message } = action;
-      const { channelId } = message;
+      const { channelId } = action.message;
+      const loaded = state.messages[channelId]?.find((item) => item.id === action.message.id);
+      const message = keepLoadedPoll(action.message, loaded);
       return patch(state, {
         messages: put(
           state.messages,
@@ -213,7 +218,7 @@ export function chatReducer(state: ChatData, action: ChatAction): ChatData {
       const { channelId } = message;
       return patch(state, {
         messages: edit(state.messages, channelId, (bucket) =>
-          updateLoaded(bucket, message.id, () => message)),
+          updateLoaded(bucket, message.id, (loaded) => keepLoadedPoll(message, loaded))),
         pins: edit(state.pins, channelId, (pins) => applyPinEcho(pins, message)),
         threads: edit(state.threads, channelId, (threads) =>
           retitleRoot(threads, message, locale)),
@@ -225,6 +230,17 @@ export function chatReducer(state: ChatData, action: ChatAction): ChatData {
         messages: edit(state.messages, channelId, (bucket) =>
           removeMessage(bucket, messageId)),
         pins: edit(state.pins, channelId, (pins) => removeMessage(pins, messageId)),
+      });
+    }
+    case "poll": {
+      const { channelId, messageId, change } = action;
+      return patch(state, {
+        messages: edit(state.messages, channelId, (bucket) =>
+          updateLoaded(bucket, messageId, (message) => {
+            if (message.poll === undefined) return message;
+            const poll = applyPollChange(message.poll, change);
+            return poll === message.poll ? message : { ...message, poll };
+          })),
       });
     }
     case "embeds": {

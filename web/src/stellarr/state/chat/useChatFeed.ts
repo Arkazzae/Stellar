@@ -102,5 +102,28 @@ export function useChatFeed({
     [ports],
   );
 
+  // A poll's counts and the reader's own vote arrive apart, each in its own
+  // order, and are merged into the message the poll is on.
+  useEffect(() => {
+    const stopCounts = ports.polls.onPollUpdated((update) =>
+      dispatch({
+        type: "poll",
+        channelId: update.channelId,
+        messageId: update.messageId,
+        change: { kind: "updated", update },
+      }));
+    const stopVote = ports.polls.onPollVoteChanged((change) =>
+      dispatch({
+        type: "poll",
+        channelId: change.channelId,
+        messageId: change.messageId,
+        change: { kind: "vote", change },
+      }));
+    return () => {
+      stopCounts();
+      stopVote();
+    };
+  }, [ports, dispatch]);
+
   return { reactionEpoch };
 }

@@ -13,6 +13,8 @@ import type {
   ThreadSummary,
 } from "@/lib/api/types";
 
+import type { PollDraft } from "./polls";
+
 /**
  * The wire types are the domain model; there is no second set of DTOs to keep
  * in step. They are re-exported so a component imports everything from
@@ -139,6 +141,8 @@ export interface SendMessage {
   clientMessageId: MessageId;
   /** The message being answered, when this is a reply. */
   replyToMessageId?: MessageId;
+  /** A poll, sent as a message of its own with no files. */
+  poll?: PollDraft;
 }
 
 /** Message mutations, kept apart from transcript loading and delivery. */

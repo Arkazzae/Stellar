@@ -10,6 +10,9 @@ import type {
   Attachment,
   ConnectionStatus,
   Message,
+  Poll,
+  PollUpdate,
+  PollVoteChange,
   Ports,
   Reaction,
   SendMessage,
@@ -92,6 +95,8 @@ export function createChatHarness() {
     read: new Topic<[string, string]>(),
     typing: new Topic<[string, string[]]>(),
     reactions: new Topic<[string, Reaction[]]>(),
+    pollUpdated: new Topic<[PollUpdate]>(),
+    pollVote: new Topic<[PollVoteChange]>(),
   };
 
   let status: ConnectionStatus = "idle";
@@ -153,6 +158,18 @@ export function createChatHarness() {
     },
   };
 
+  const polls = {
+    vote: vi.fn(async (): Promise<Poll> => {
+      throw new Error("No poll answer set for this test.");
+    }),
+    end: vi.fn(async (): Promise<Poll> => {
+      throw new Error("No poll answer set for this test.");
+    }),
+    voters: vi.fn(async () => ({ voters: [], nextCursor: null })),
+    onPollUpdated: topics.pollUpdated.subscribe,
+    onPollVoteChanged: topics.pollVote.subscribe,
+  };
+
   const typingNow = new Map<string, string[]>();
   const typing = {
     notifyTyping: vi.fn(),
@@ -194,9 +211,10 @@ export function createChatHarness() {
   const language = { locale: "en" as const, t: (key: string) => key };
 
   return {
-    ports: { chat, messageActions, typing, connection } as unknown as Ports,
+    ports: { chat, messageActions, typing, connection, polls } as unknown as Ports,
     chat,
     messageActions,
+    polls,
     typing,
     session,
     ui,
@@ -220,6 +238,8 @@ export function createChatHarness() {
         reactions.set(messageId, next);
         topics.reactions.emit(messageId, next);
       },
+      pollUpdated: (update: PollUpdate) => topics.pollUpdated.emit(update),
+      pollVote: (change: PollVoteChange) => topics.pollVote.emit(change),
     },
     setConnection(next: ConnectionStatus) {
       status = next;

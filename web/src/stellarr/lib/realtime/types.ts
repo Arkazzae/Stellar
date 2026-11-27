@@ -27,6 +27,7 @@ import type {
   RtcSignalKind,
 } from "@/lib/rtc/protocol";
 import type { NotificationInboxChangedEvent } from "@/ports/notifications";
+import type { PollUpdate, PollVoteChange } from "@/ports/polls";
 import type { ScheduledMessage } from "@/ports/scheduled";
 
 export type RealtimeStatus =
@@ -244,6 +245,10 @@ export interface RealtimeEventMap {
   ScheduledMessageChanged: ScheduledMessage;
   /** One of your scheduled messages was deleted, or went out with the same id. */
   ScheduledMessageRemoved: { id: string; sent: boolean };
+  /** A poll's counts after a vote or its end, to everyone who sees the channel. */
+  PollUpdated: PollUpdate;
+  /** The reader's own vote, to their own connections only. */
+  PollVoteChanged: PollVoteChange;
 }
 
 export type RealtimeEventName = keyof RealtimeEventMap;

@@ -329,3 +329,56 @@ describe("a window painted from the device", () => {
     );
   });
 });
+
+describe("polls", () => {
+  const poll = (extra: Partial<NonNullable<Message["poll"]>> = {}): NonNullable<Message["poll"]> => ({
+    question: "Kiedy?",
+    answers: [
+      { id: 1, text: "Piątek", votes: 1 },
+      { id: 2, text: "Sobota", votes: 2 },
+    ],
+    multiple: false,
+    endsAt: "2026-11-28T12:00:00Z",
+    voters: 3,
+    mine: [2],
+    ...extra,
+  });
+  const loaded = (extra: Partial<NonNullable<Message["poll"]>> = {}): ChatAction => ({
+    type: "first-page",
+    channelId: "ch-general",
+    page: { messages: [message("p", 1, { content: "", poll: poll(extra) })], nextCursor: null },
+    pendingIds: none,
+    keepOlder: true,
+    window: null,
+  });
+  const pollIn = (state: ChatData) => state.messages["ch-general"]?.[0]?.poll;
+
+  it("merges live counts into the poll's message, and drops ones that arrive late", () => {
+    const update = (sequence: number, sobota: number) => ({
+      type: "poll" as const,
+      channelId: "ch-general",
+      messageId: "p",
+      change: {
+        kind: "updated" as const,
+        update: { channelId: "ch-general", messageId: "p", sequence, answers: [{ id: 2, votes: sobota }], voters: 1 + sobota },
+      },
+    });
+
+    const state = run([loaded(), update(5, 4), update(4, 3)]);
+
+    expect(pollIn(state)?.answers.map((answer) => answer.votes)).toEqual([1, 4]);
+    expect(pollIn(state)?.mine).toEqual([2]);
+  });
+
+  it("keeps the reader's vote when the message comes again in a copy shared with everyone", () => {
+    const { mine: _mine, ...shared } = poll();
+    const pinnedCopy = message("p", 1, { content: "", pinnedAt: at(3), poll: shared });
+
+    const updated = run([loaded(), { type: "updated", message: pinnedCopy, locale: "pl" }]);
+    expect(pollIn(updated)?.mine).toEqual([2]);
+    expect(updated.messages["ch-general"]?.[0]?.pinnedAt).toBe(at(3));
+
+    const received = run([loaded(), { type: "received", message: pinnedCopy }]);
+    expect(pollIn(received)?.mine).toEqual([2]);
+  });
+});

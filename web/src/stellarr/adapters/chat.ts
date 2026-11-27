@@ -1,4 +1,5 @@
 import type { ApiClient } from "@/lib/api/client";
+import { pollBody, pollDraftRefusal } from "@/lib/api/calls/polls";
 import type { Attachment, ChannelId, Message, UserId } from "@/lib/api/types";
 import { measureUpload } from "@/lib/media/measureUpload";
 import type { RealtimeClient } from "@/lib/realtime/types";
@@ -83,15 +84,22 @@ export function createChatAdapter(
       attachmentIds,
       clientMessageId,
       replyToMessageId,
+      poll,
     }: SendMessage) {
-      const message = await api.sendMessage(channelId, {
-        content,
-        attachmentIds,
-        clientMessageId,
-        // An older server ignores the field and still delivers the message,
-        // which is the right way for a reply to fail.
-        ...(replyToMessageId === undefined ? {} : { replyToMessageId }),
-      });
+      const message = await api
+        .sendMessage(channelId, {
+          content,
+          attachmentIds,
+          clientMessageId,
+          // An older server ignores the field and still delivers the message,
+          // which is the right way for a reply to fail.
+          ...(replyToMessageId === undefined ? {} : { replyToMessageId }),
+          ...(poll === undefined ? {} : { poll: pollBody(poll) }),
+        })
+        .catch((error: unknown) => {
+          // A refused poll names the fields to fix in the sheet it came from.
+          throw (poll === undefined ? null : pollDraftRefusal(error)) ?? error;
+        });
       remember([message]);
       return message;
     },
