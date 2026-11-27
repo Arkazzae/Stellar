@@ -134,7 +134,7 @@ Each receiver runs independent GoogCC bandwidth estimation (`str0m`) from its TW
 | --- | ---: | --- |
 | SDP size / Control API body | `128 KiB` / `256 KiB` | `422 invalid-sdp` (or close `error`) / `413 payload-too-large` |
 | Published tracks / ICE candidates / remote sockets | `8` / `64` / `64` per session | `422 limit-exceeded` / ignored / dropped |
-| Receiving m-lines per session (carrying or offered a track, ending, or idle of either kind) | `48` | Joining: `422 limit-exceeded`; publishing a track some receiver has no room for: `422 limit-exceeded` and closed `error` |
+| Receiving m-lines per session (carrying or offered a track, ending, or idle of either kind) | `48` | Joining: `422 limit-exceeded`; an existing receiver waits for a section of the right kind to become available. Other receivers continue independently |
 | Connect / disconnect / unanswered-offer timeouts | `30 s` / `30 s` / `3 × 10 s` | Closed with `transport-timeout` / `error` |
 | Packets / payload of one published sound | `150/s` / `512 kbit/s`, `1 s` burst | Forwarded to nobody, left out of the track's cost; `dropped.packets` |
 | Packets / payload of one published picture | `2,000/s` / `24 Mbit/s`, `1 s` burst | As for a sound |

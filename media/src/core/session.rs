@@ -331,6 +331,7 @@ pub(crate) struct Session {
     pub negotiation: Negotiation,
     pub published: Vec<Published>,
     pub outs: Vec<OutSection>,
+    pub waiting_for_space: bool,
     /// The mids of this receiver's sections it asked to be sent. A section
     /// that is not listed is negotiated and named in the directory, but
     /// nothing is forwarded on it.
@@ -407,6 +408,7 @@ impl Session {
             negotiation: Negotiation::default(),
             published: Vec::new(),
             outs: Vec::new(),
+            waiting_for_space: false,
             subscriptions: HashSet::new(),
             subscription_order: Vec::new(),
             downlink: Downlink::default(),

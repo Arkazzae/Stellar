@@ -640,27 +640,28 @@ fn a_receiver_takes_48_tracks_at_once_and_one_that_left_does_not_count() {
         assert_eq!(publish_sounds(&mut net, p, count), Ok(()), "publisher {n}");
     }
 
-    // The receiver has room for one more sound. A newcomer sends it, and a
-    // second one, which the receiver could not take, costs the newcomer its
-    // session.
+    // The receiver can take the first sound. Other receivers have room for both.
     let first = net.join(7);
     assert_eq!(publish_sounds(&mut net, first, 1), Ok(()));
-    let refused = publish_sounds(&mut net, first, 1);
-    assert!(
-        matches!(refused, Err(ApiError::LimitExceeded(_))),
-        "{refused:?}"
-    );
-    net.run_for(Duration::from_millis(20));
-    assert_eq!(net.client(first).closed.as_deref(), Some("error"));
-
-    // The receiver's section of the sound that went is free, and the next
-    // newcomer's takes it.
-    let second = net.join(8);
-    assert_eq!(publish_sounds(&mut net, second, 1), Ok(()));
-    net.run_for(Duration::from_millis(20));
-    assert_eq!(net.client(second).closed, None);
+    assert_eq!(publish_sounds(&mut net, first, 1), Ok(()));
     assert_eq!(net.client(receiver).directory.len(), 48);
-    assert_eq!(most_sections(&net, receiver), 49);
+    assert_eq!(
+        net.client(receiver)
+            .directory
+            .iter()
+            .filter(|t| t["userId"] == uuid(7))
+            .count(),
+        1
+    );
+    assert_eq!(
+        net.client(1)
+            .directory
+            .iter()
+            .filter(|t| t["userId"] == uuid(7))
+            .count(),
+        2
+    );
+    assert_eq!(net.client(first).closed, None);
 
     // The room now publishes 49 tracks, more than anybody new could take.
     let joined = net.core.create_session(net.now, ROOM, &uuid(9));
@@ -670,7 +671,18 @@ fn a_receiver_takes_48_tracks_at_once_and_one_that_left_does_not_count() {
     );
     net.run_for(Duration::from_millis(20));
     assert_eq!(net.client(receiver).closed, None);
-    assert_eq!(net.client(second).closed, None);
+    net.core
+        .delete_session(net.now, &net.clients[1].session_id.clone());
+    net.pump();
+    assert_eq!(
+        net.client(receiver)
+            .directory
+            .iter()
+            .filter(|t| t["userId"] == uuid(7))
+            .count(),
+        2
+    );
+    assert_eq!(most_sections(&net, receiver), 49);
 }
 
 #[test]
