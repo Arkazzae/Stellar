@@ -1,6 +1,8 @@
-//! Records of signing in that are well past use. The durable history of an
-//! account's security stays; only what had a lifetime of minutes or days is
-//! removed, and only once it is long gone.
+//! Records that are well past use: those of signing in, and scheduled
+//! messages that could not be sent. The durable history of an account's
+//! security stays; only what had a lifetime of minutes or days is removed,
+//! and only once it is long gone. A failed scheduled message is kept for its
+//! author to see why; once it goes, its files are orphans like any other.
 
 use std::time::Duration;
 
@@ -19,7 +21,7 @@ struct Kind {
     grace_days: u64,
 }
 
-const KINDS: [Kind; 7] = [
+const KINDS: [Kind; 8] = [
     Kind {
         table: "AuthChallenges",
         expired: "\"ExpiresAt\" < ?1",
@@ -54,6 +56,11 @@ const KINDS: [Kind; 7] = [
         table: "SecurityNotifications",
         expired: "\"SentAt\" IS NOT NULL AND \"SentAt\" < ?1",
         grace_days: 30,
+    },
+    Kind {
+        table: "ScheduledMessages",
+        expired: "\"FailedAt\" IS NOT NULL AND \"FailedAt\" < ?1",
+        grace_days: crate::scheduled::FAILED_KEPT_DAYS,
     },
 ];
 

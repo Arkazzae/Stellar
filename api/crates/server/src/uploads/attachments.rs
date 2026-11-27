@@ -202,6 +202,7 @@ pub async fn retire_if_unreferenced(
 fn is_referenced(db: &Connection, id: Id, url: &str) -> rusqlite::Result<bool> {
     db.query_row(
         "SELECT EXISTS (SELECT 1 FROM \"MessageAttachments\" WHERE \"AttachmentId\" = ?1)
+             OR EXISTS (SELECT 1 FROM \"ScheduledMessageAttachments\" WHERE \"AttachmentId\" = ?1)
              OR EXISTS (SELECT 1 FROM \"MessageEmbeds\" WHERE \"ThumbnailAttachmentId\" = ?1)
              OR EXISTS (SELECT 1 FROM \"SoundboardSounds\" WHERE \"AttachmentId\" = ?1)
              OR EXISTS (SELECT 1 FROM \"Users\" WHERE \"AvatarUrl\" = ?2 OR \"BannerUrl\" = ?2 OR \"WallpaperUrl\" = ?2)
