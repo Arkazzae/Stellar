@@ -83,13 +83,13 @@ This protects against a server that alters the device directory or supplies its 
 - **Unified auth ceremonies (`auth/flow.rs`, `auth/ceremony.rs`):** Password login, discoverable passkeys, invite sign-ups, OIDC SSO, and desktop handoffs funnel through a single flow issuing either a revocable session (`UserSessions`) or a short-lived browser-bound 2FA/enrollment challenge.
 - **Passwordless guard (`auth/ways_in.rs`):** Invited users can create passwordless accounts through opted-in OIDC providers; `ways_in` blocks removing an account's last remaining login method (`409 last-way-in`).
 - **Master key derivation (`seal.rs`):** One `0600` 32-byte key at `/data/stellarr/keys/master.key` derives domain-separated subkeys via `HKDF-SHA256` (`"stellarr sealed values v1"`) to seal session cookies, OIDC state, TOTP seeds, mailed OTPs, and Cockpit `InstanceSecrets` using `AES-256-GCM` with authenticated AAD and embedded expiry. Recovery codes and trusted-device tokens store `SHA-256` digests only.
-- **5-minute fresh step & 1-second revocation:** High-risk account, primary-server, and Cockpit writes require a real second factor within `5 minutes` (trusted devices excluded). `realtime-sessions` (`realtime/watcher.rs`) polls SQLite every second to sever revoked WebSockets and SFU sessions. See [Account security](./admin/account-security.md).
+- **Fresh MFA and live revocation.** High-risk account, primary-server, and Cockpit writes require a real second factor within five minutes. SQLite triggers journal session, account, role, permission, membership and channel changes in `RealtimeChanges`. The `realtime-sessions` worker (`realtime/watcher.rs`) sleeps until an API transaction commits such a change (signalled in memory), the CLI writes a fresh token to `db/stellarr.db.access-wake` (read every 250 ms while sockets are open), or a connected session reaches its end. It then checks only the affected sessions and closes revoked ones with code `4401`. Changes from outside the API process also update channel groups and voice seats. Message writes and last-seen touches leave the worker asleep. See [Account security](./admin/account-security.md) and [SQLite maintenance](./admin/cli.md#manual-sqlite-maintenance).
 
 ---
 
 ## Server authorization
 
-Every HTTP route and hub method evaluates permissions directly against SQLite (`permissions::authorization`) without caching. Missing resources, disabled accounts, and non-members always deny access.
+HTTP routes and hub methods that need a server permission evaluate it in their SQLite transaction (`permissions::authorization`). A message post and a typing notice reuse the channel already located in that transaction. Missing resources, disabled accounts, and non-members always deny access.
 
 ### Roles and the 15 permission bits
 
@@ -217,7 +217,7 @@ Nginx listens on `:443` (TLS) and `:80` (redirecting to HTTPS unless a listed `S
 ## Architectural invariants and trade-offs
 
 1. **Single container, single writer on `/data/stellarr`:** SQLite WAL (`db/stellarr.db`), backup locks (`BackupJobs`), and local object storage assume exclusive ownership. Horizontal multi-container scaling is traded away for ~35 MiB idle RAM, zero external services, and single-directory backups.
-2. **Uncached SQLite authorization:** Evaluating permissions and sessions directly against SQLite eliminates stale-permission windows after kicks, bans, role edits, or session revocations.
+2. **Channel authorization:** Each protected operation uses its SQLite transaction to read current membership, role assignments and applicable overrides. Opening a public text channel checks membership and visibility in one statement. Role and override changes apply on the next check.
 3. **Trigger-driven relational cascades:** Deleting a server or channel cascades synchronously via SQLite triggers (`database/schema.sql`) across channels, messages, attachment links, reactions, embeds, pins, FTS5 rows, and `MessageChanges`, leaving unreferenced blobs for the hourly orphan sweep.
 4. **Strict app isolation & `259,000`-byte gzip entry budget:** Bundled chunks live under `static/` (leaving `/assets/` for API downloads), `/release.json` hashes all emitted files outside JS chunks, and heavy signed-in subsystems stay behind dynamic `import()`.
 5. **Full DOM transcript with CSS containment (`contain: layout style`):** Avoids scroll-jump jitter from virtualization or `content-visibility: auto` while keeping native `Ctrl+F` search, full accessibility tree access, and overhanging hover toolbars fast up to 10,000+ messages ([benchmarks](../web/bench/README.md)).

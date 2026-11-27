@@ -162,7 +162,9 @@ Routes never mutate `UserSessions` or challenge tables directly; all 2FA transit
 
 ### Realtime hub (`realtime/`)
 
-Clients connect to `/hubs/app` with subprotocol `stellarr.v1`. Revoked sessions close with WebSocket code `4401` (via immediate `events().session_ended(...)` or the 1-second `realtime-sessions` polling worker). Publish events **after** `database().write(...)` commits:
+Clients connect to `/hubs/app` with subprotocol `stellarr.v1`. Revoked sessions close with WebSocket code `4401`: a sign-out at once through `events().session_ended(...)`, anything else through the `realtime-sessions` worker (`realtime/watcher.rs`). SQLite triggers journal changes of sessions, accounts, roles, overrides, membership and channels in `RealtimeChanges`. A write transaction of the API or the CLI (`AccessTransaction`) that commits a journal row wakes the worker: the API's own in memory, the CLI by writing a fresh token to `<database>.access-wake` while it holds the write lock. While sockets are open the worker reads that file every 250 ms and reads the journal under the write lock, so it sees the writer's final commit or rollback. Message writes and last-seen touches leave it asleep, and a session's end has its own timer. An operator's `sqlite3` transaction can write the token too; see [SQLite maintenance](../docs/admin/cli.md#manual-sqlite-maintenance). The journal keeps its newest 1024 rows and everything younger than ten minutes; a worker that falls further behind closes the connections, and clients reconnect.
+
+Publish events **after** `database().write(...)` commits:
 
 | `Audience` | Recipients |
 | --- | --- |
