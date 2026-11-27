@@ -5,6 +5,7 @@ import type {
   Attachment,
   ChatPort,
   MessageReference,
+  PollDraft,
   ScheduledPort,
   User,
 } from "@/ports";
@@ -173,8 +174,31 @@ export function useChatComposer({
     [channelId, user, pending, replyTarget, threadRootId, scheduled, discardChips, settleReply],
   );
 
+  /**
+   * A poll, sent from its sheet. Nothing is shown before the server answers,
+   * so a refusal stays with the sheet that can fix it; `clientMessageId` is
+   * the sheet's own, so asking again after a lost answer posts it once.
+   */
+  const sendPoll = useCallback(
+    async (draft: PollDraft, clientMessageId: string) => {
+      if (channelId === null || user === null) return;
+      const message = await chat.send({
+        channelId,
+        content: "",
+        attachmentIds: [],
+        clientMessageId,
+        ...(replyTarget === null ? {} : { replyToMessageId: replyTarget.id }),
+        poll: draft,
+      });
+      dispatch({ type: "settled", channelId, placeholderId: message.id, message });
+      setOwnSendToken((value) => value + 1);
+      settleReply();
+    },
+    [chat, channelId, user, replyTarget, dispatch, settleReply],
+  );
+
   return useMemo(
-    () => ({ ownSendToken, send, sendVoice, sendGif, schedule }),
-    [ownSendToken, send, sendVoice, sendGif, schedule],
+    () => ({ ownSendToken, send, sendVoice, sendGif, schedule, sendPoll }),
+    [ownSendToken, send, sendVoice, sendGif, schedule, sendPoll],
   );
 }

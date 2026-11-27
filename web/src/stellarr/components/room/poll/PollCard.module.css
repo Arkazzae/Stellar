@@ -1,0 +1,299 @@
+/*
+ * A poll in the conversation, look A ("Lista"): the shape of the attachment
+ * cards, answers without frames, and the result as a thin bar under each.
+ */
+
+.card {
+  position: relative;
+  width: 420px;
+  max-width: 100%;
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 14px 8px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line-subtle);
+  border-radius: 10px;
+}
+
+.kind {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.question {
+  margin: 5px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 10px;
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------ before the vote -- */
+
+.pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  margin: 0 -8px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  text-align: left;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.pick:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.mark {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 50%;
+}
+
+.square {
+  border-radius: 5px;
+}
+
+.chosen .mark {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.chosen .mark::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--on-accent);
+}
+
+.chosen .square::after {
+  width: 8px;
+  height: 4px;
+  border-radius: 0;
+  background: none;
+  border-left: 2px solid var(--on-accent);
+  border-bottom: 2px solid var(--on-accent);
+  transform: translateY(-1px) rotate(-45deg);
+}
+
+/* ------------------------------------------------------------- results -- */
+
+.resultRow {
+  position: relative;
+}
+
+.result {
+  width: calc(100% + 16px);
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  column-gap: 10px;
+  row-gap: 6px;
+  align-items: center;
+  margin: 0 -8px;
+  padding: 6px 8px 7px;
+  border-radius: 8px;
+  text-align: left;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.result:hover,
+.result:focus-visible {
+  background: var(--surface-hover);
+}
+
+.check {
+  grid-row: 1 / span 2;
+  align-self: start;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  color: var(--accent-text);
+}
+
+.share {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.track {
+  grid-column: 2 / span 2;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-overlay);
+  overflow: hidden;
+}
+
+.track i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--line-strong);
+  transition: width var(--dur-base) var(--ease-standard);
+}
+
+.mine .track i,
+.win .track i {
+  background: var(--accent);
+}
+
+.mine .share,
+.win .share {
+  color: var(--text);
+}
+
+.win .text {
+  font-weight: 600;
+}
+
+/* Who chose the answer, under it while it is pointed at. */
+.tip {
+  position: absolute;
+  left: 28px;
+  top: calc(100% + 2px);
+  z-index: 3;
+  max-width: calc(100% - 28px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px 7px 8px;
+  border-radius: 9px;
+  background: var(--surface-pop);
+  border: 1px solid var(--line-subtle);
+  box-shadow: var(--elev-pop);
+  font-size: 12.5px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.tip b {
+  color: var(--text);
+  font-weight: 550;
+}
+
+.faces {
+  display: inline-flex;
+  flex: none;
+  padding-left: 6px;
+}
+
+.faces > * {
+  margin-left: -6px;
+  box-shadow: 0 0 0 2px var(--surface-pop);
+  border-radius: 50%;
+}
+
+/* ---------------------------------------------------------------- foot -- */
+
+.foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The buttons keep together, at the right, on a line of their own when narrow. */
+.buttons {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  opacity: 0.7;
+}
+
+.action {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.action:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.action:disabled {
+  opacity: 0.5;
+}
+
+.primary {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  color: var(--on-accent);
+}
+
+.problem {
+  margin: 4px 0 2px;
+  font-size: 12.5px;
+  color: var(--danger-text);
+}
+
+@media (pointer: coarse) {
+  .pick,
+  .result {
+    min-height: 44px;
+  }
+
+  .action {
+    height: 36px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .track i {
+    transition: none;
+  }
+}

@@ -8,6 +8,7 @@ import type { CustomEmoji } from "@/ports";
 
 import { MessageGroup, type MessageGroupVM, type TranscriptNotice } from "./MessageGroup";
 import type { MessageAction } from "./MessageToolbar";
+import type { PollCallbacks } from "../poll/PollCard";
 import type { MessageTranslationOptions } from "../attachments/TranslatedTextAttachment";
 import type { AttachmentCallbacks } from "@/lib/messages/parts";
 import {
@@ -48,6 +49,8 @@ export interface TranscriptProps {
   attachments?: AttachmentCallbacks;
   /** The server's own emoji, for the reaction picker on every block. */
   customEmoji?: readonly CustomEmoji[];
+  /** Votes and ends of the polls in it; one object for the transcript's life. */
+  polls?: PollCallbacks;
   /** You may moderate this channel: the bin appears on everyone's messages. */
   canModerate?: boolean;
   /** Adds "Kopiuj identyfikator" to every message's right-click menu. */
@@ -129,6 +132,7 @@ interface MessageRowProps {
   translation?: MessageTranslationOptions;
   attachments?: AttachmentCallbacks;
   customEmoji?: readonly CustomEmoji[];
+  polls?: PollCallbacks;
   canModerate?: boolean;
   developerMode?: boolean;
   onEditSave?(messageId: string, text: string): Promise<void> | void;
@@ -149,6 +153,7 @@ const MessageRow = memo(function MessageRow({
   translation,
   attachments,
   customEmoji,
+  polls,
   canModerate,
   developerMode,
   onEditSave,
@@ -172,6 +177,7 @@ const MessageRow = memo(function MessageRow({
       translation={translation}
       attachments={attachments}
       customEmoji={customEmoji}
+      polls={polls}
       canModerate={canModerate}
       developerMode={developerMode}
       editing={editing}
@@ -230,6 +236,7 @@ function ReadyTranscript({
   onAction,
   attachments,
   customEmoji,
+  polls,
   canModerate,
   developerMode,
   editing,
@@ -362,6 +369,7 @@ function ReadyTranscript({
                   translation={translation}
                   attachments={attachments}
                   customEmoji={customEmoji}
+                  polls={polls}
                   canModerate={canModerate}
                   developerMode={developerMode}
                   onEditSave={canSaveEdit ? forwardSave : undefined}
@@ -378,7 +386,7 @@ function ReadyTranscript({
     },
     [
       contentRef, rows, unreadLabel, renderNotice, hideReplyReferences, editing, freshId,
-      flashId, jumpTo, translation, attachments, customEmoji, canModerate,
+      flashId, jumpTo, translation, attachments, customEmoji, polls, canModerate,
       developerMode, canSaveEdit, canCancelEdit, canReact, canAct, forwardSave,
       forwardCancel, forwardReact, forwardAction, onOpenAuthor,
     ],

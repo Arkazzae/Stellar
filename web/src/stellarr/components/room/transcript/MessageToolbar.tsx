@@ -22,6 +22,8 @@ interface Viewer {
   own: boolean;
   /** You may moderate this channel. */
   canModerate: boolean;
+  /** Nobody may rewrite it, as a poll's message. */
+  fixed: boolean;
 }
 
 interface ActionSpec {
@@ -49,7 +51,7 @@ const ACTIONS: readonly ActionSpec[] = [
     label: "message.action.edit",
     // Only your own. Rewriting somebody else's message leaves their name over
     // words they never wrote, which no amount of moderator is a reason for.
-    allowedFor: ({ own }) => own,
+    allowedFor: ({ own, fixed }) => own && !fixed,
   },
   {
     action: "pin",
@@ -83,6 +85,8 @@ export interface MessageToolbarProps {
   customEmoji?: readonly CustomEmoji[];
   /** This message is yours: yours to edit, and yours to delete. */
   own?: boolean;
+  /** Not to be rewritten even by its author: a poll goes out as it is. */
+  fixed?: boolean;
   /** You may moderate this channel, which is a licence to delete, not to edit. */
   canModerate?: boolean;
   /** Already pinned: the same control unpins it, and says so. */
@@ -189,6 +193,7 @@ export function MessageToolbar({
   describe,
   customEmoji = [],
   own = false,
+  fixed = false,
   canModerate = false,
   pinned = false,
   t = translateForDocument,
@@ -205,7 +210,7 @@ export function MessageToolbar({
   // Pressed rather than tabbed to, which has no direction.
   const pressing = useRef(false);
 
-  const viewer: Viewer = { own, canModerate };
+  const viewer: Viewer = { own, canModerate, fixed };
   const actions = ACTIONS.filter((spec) => spec.allowedFor?.(viewer) ?? true);
 
   // One button in both directions: the label follows the message rather than a

@@ -23,6 +23,8 @@ export interface MessageMenuInput {
   /** Where the pointer was, so the menu can offer the picture under it. */
   pointed: PointedAt;
   own: boolean;
+  /** Not to be rewritten even by its author: a poll goes out as it is. */
+  fixed?: boolean;
   canModerate: boolean;
   /** Adds "copy identifier", as the preference in the advanced settings promises. */
   developerMode: boolean;
@@ -102,7 +104,7 @@ function imageEntries(
  * something is a menu that hides it.
  */
 export function messageMenuEntries(input: MessageMenuInput): MenuEntry[] {
-  const { messageId, parts, pinned, own, canModerate, onAction, confirm, t } = input;
+  const { messageId, parts, pinned, own, fixed = false, canModerate, onAction, confirm, t } = input;
   const entries: MenuEntry[] = [];
 
   if (onAction !== undefined) {
@@ -114,7 +116,7 @@ export function messageMenuEntries(input: MessageMenuInput): MenuEntry[] {
     });
     entries.push(action("reply", "message.action.reply", "reply"));
     entries.push(action("thread", "message.action.thread", "thread"));
-    if (own) entries.push(action("edit", "message.action.edit", "edit"));
+    if (own && !fixed) entries.push(action("edit", "message.action.edit", "edit"));
     // The label is read off the message so the menu and the toolbar cannot disagree.
     if (canModerate) {
       entries.push(
