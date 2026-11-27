@@ -891,7 +891,7 @@ async fn installed_packages_share_the_instance_address_with_isolated_revocable_a
     assert_eq!(asset.status, 200, "{}", asset.text());
     assert_eq!(asset.text(), "<p>Custom activity</p>");
     let policy = asset.header("content-security-policy").unwrap();
-    assert!(policy.contains("sandbox allow-scripts allow-forms allow-presentation;"));
+    assert!(policy.contains("sandbox allow-scripts allow-forms allow-presentation allow-downloads;"));
     assert!(policy.contains("frame-ancestors https://chat.test;"));
     assert_eq!(asset.header("access-control-allow-origin"), Some("*"));
     assert_eq!(asset.header("referrer-policy"), Some("strict-origin"));

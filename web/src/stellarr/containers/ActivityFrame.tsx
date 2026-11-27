@@ -199,7 +199,7 @@ export function ActivityFrame({ src, title, permissions, embedHosts, muted = fal
     </>}
     <div className="activity-viewport" ref={viewport}>
       <iframe ref={frame} src={target.src} title={title} referrerPolicy="no-referrer"
-        sandbox={target.nonce ? "allow-scripts allow-forms allow-presentation" : "allow-scripts allow-same-origin allow-forms allow-presentation"} allow="autoplay; encrypted-media; fullscreen; picture-in-picture" />
+        sandbox={target.nonce ? "allow-scripts allow-forms allow-presentation allow-downloads" : "allow-scripts allow-same-origin allow-forms allow-presentation allow-downloads"} allow="autoplay; encrypted-media; fullscreen; picture-in-picture" />
     </div>
   </>;
 }

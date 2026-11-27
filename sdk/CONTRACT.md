@@ -27,7 +27,7 @@ flowchart LR
 
 - **Static-only packaging (*Decided*):** Activities ship HTML, JS, CSS, WASM, and media assets only—zero custom backend code executes on the Stellarr server.
 - **Origin isolation (*Implemented*):** Fresh instances serve installed packages on the existing Stellarr HTTPS address inside an opaque-origin sandboxed frame connected via a private `MessageChannel` (native browser storage is unavailable in opaque-origin mode; durable state uses `session.progress`). Operators can optionally set `STELLARR_ACTIVITY_DOMAIN` to give each installed release a dedicated origin with isolated browser storage (`game-<hash>.localhost` in `stellarr dev`). `/_stellarr/` is reserved for the host bridge and `/_stellarr/sdk/v1.js`.
-- **Iframe capabilities & blocks (*Implemented / Proposed*):** Permits scripts, isolated storage, autoplay media, and fullscreen (pointer lock, clipboard, and gamepad planned for v1); blocks popups, top-frame navigation, and direct `Permissions-Policy: microphone=(), camera=(), display-capture=()`.
+- **Iframe capabilities & blocks (*Implemented / Proposed*):** Permits scripts, isolated storage, autoplay media, fullscreen, and file downloads (pointer lock, clipboard, and gamepad planned for v1); blocks popups, top-frame navigation, and direct `Permissions-Policy: microphone=(), camera=(), display-capture=()`.
 - **Default-deny CSP (*Implemented*):** `Content-Security-Policy` locks `default-src`, `script-src`, and `style-src` to `'self'` plus `https://<host>` entries declared in `connects` (`{ host, why }`) and approved by the owner in Cockpit. *(Because frames can still navigate themselves or open WebRTC channels, installing an activity remains an explicit owner trust decision.)*
 
 ---
