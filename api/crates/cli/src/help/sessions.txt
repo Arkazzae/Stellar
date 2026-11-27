@@ -5,5 +5,5 @@ Usage:
 
 Revocation updates the durable session records. Revoking all sessions also
 invalidates approved desktop browser handoffs not yet redeemed. The API
-closes matching WebSocket connections within one second, and the normal
-disconnect lifecycle closes their voice and media sessions.
+closes matching WebSocket connections after the change commits. Disconnecting
+releases their voice and media sessions.

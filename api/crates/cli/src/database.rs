@@ -9,6 +9,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use rusqlite::{Connection, ErrorCode, OpenFlags, params};
+use stellarr_api::database::{AccessSignal, AccessTransaction};
 use stellarr_api::values::{Id, Timestamp};
 
 use crate::errors::{CliError, CliOutcome, exit};
@@ -21,6 +22,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub struct CliDatabase {
     pub connection: Connection,
+    signal: Option<AccessSignal>,
 }
 
 /// The tables and columns the commands read and write.
@@ -175,9 +177,25 @@ impl CliDatabase {
         connection.busy_timeout(BUSY_TIMEOUT)?;
         // The server runs with foreign keys on, and so does a change made here.
         connection.pragma_update(None, "foreign_keys", true)?;
-        let database = CliDatabase { connection };
+        // A change of sessions or access wakes a running API (see
+        // `AccessSignal`). A database the API has not prepared has no journal.
+        let signal = if mutation && connection.table_exists(None, "RealtimeChanges")? {
+            let signal = AccessSignal::external(std::path::Path::new(&runtime.database_path()));
+            signal.register(&connection)?;
+            Some(signal)
+        } else {
+            None
+        };
+        let database = CliDatabase { connection, signal };
         database.verify_schema(&runtime.database_path(), mutation)?;
         Ok(database)
+    }
+
+    pub fn begin_write(&mut self) -> rusqlite::Result<AccessTransaction<'_>> {
+        let tx = self
+            .connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        Ok(AccessTransaction::new(tx, self.signal.as_ref()))
     }
 
     fn tables(&self) -> rusqlite::Result<HashSet<String>> {
@@ -258,6 +276,17 @@ impl CliDatabase {
             params![Id::random(), operation, target, Timestamp::now()],
         )?;
         Ok(())
+    }
+}
+
+impl From<stellarr_api::database::DbError> for CliError {
+    fn from(error: stellarr_api::database::DbError) -> Self {
+        match error {
+            stellarr_api::database::DbError::Sqlite(error) => error.into(),
+            stellarr_api::database::DbError::Task(message) => {
+                CliError::new("database_error", message, exit::FAILURE)
+            }
+        }
     }
 }
 

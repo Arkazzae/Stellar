@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 
-use rusqlite::{OptionalExtension, TransactionBehavior, params};
+use rusqlite::{OptionalExtension, params};
 use stellarr_api::auth::policy::SecurityPolicy;
 use stellarr_api::auth::ways_in::{self, Providers};
 use stellarr_api::auth::{events, recovery};
@@ -435,9 +435,7 @@ pub fn unlink(runtime: &mut Runtime, id_or_username: &str, identity_id: &str) ->
         }
     ))?;
     runtime.check_cancelled()?;
-    let transaction = database
-        .connection
-        .transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let transaction = database.begin_write()?;
     // Counted again where nothing can change under it, with the link still there.
     let last_way_in = !ways_in::remain(&transaction, &providers, user.id, Some(id), None)?;
     // Someone else may have removed the link while the question waited: then
@@ -547,9 +545,7 @@ pub fn recover(runtime: &mut Runtime, id_or_username: &str, reason: &str) -> Cli
     // Everything from the policy to the credential is read again inside the
     // write lock: the account may have been disabled, or recovered by someone
     // else, while the question waited.
-    let transaction = database
-        .connection
-        .transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let transaction = database.begin_write()?;
     let policy = load_policy(runtime, &transaction)?;
     let user_id = user.id;
     let recovered = recovery::recover(

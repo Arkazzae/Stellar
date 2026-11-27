@@ -11,13 +11,16 @@ import { parseArgs } from "node:util";
 const { values } = parseArgs({
   options: { base: { type: "string" }, cookie: { type: "string" }, wait: { type: "string", default: "20" } },
 });
-const RS = "\u001e";
-const socket = new WebSocket(`${values.base.replace("http", "ws")}/hubs/app`, { headers: { Cookie: values.cookie } });
+const socket = new WebSocket(`${values.base.replace("http", "ws")}/hubs/app`, {
+  protocols: ["stellarr.v1"],
+  headers: { Cookie: values.cookie, Origin: values.base },
+});
 let opened = 0;
-socket.onopen = () => {
-  socket.send(`{"protocol":"json","version":1}${RS}`);
-  console.log("open");
-  opened = Date.now();
+socket.onmessage = ({ data }) => {
+  if (JSON.parse(data).type === "ready") {
+    opened = Date.now();
+    console.log("open");
+  }
 };
 socket.onerror = () => {
   console.log("could not connect");

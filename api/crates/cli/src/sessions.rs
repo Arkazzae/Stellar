@@ -1,8 +1,7 @@
 //! `sessions list`, `sessions revoke <id>` and `sessions revoke --user <who>
-//! --all`: the durable session rows, which the server's watcher of sessions
-//! turns into closed connections within a second.
+//! --all`: changes the API observes when the session transaction commits.
 
-use rusqlite::{OptionalExtension, TransactionBehavior, params};
+use rusqlite::{OptionalExtension, params};
 use stellarr_api::values::{Id, Timestamp};
 
 use crate::database::CliDatabase;
@@ -145,7 +144,7 @@ pub fn revoke(runtime: &mut Runtime, id: &str) -> CliOutcome {
         data,
         vec![
             format!("Revoked session {session_id} of {display_name} ({username})."),
-            "The API closes a matching WebSocket connection within one second.".to_string(),
+            "The API closes connections for this session after the revocation commits.".to_string(),
             format!("Audit: local-cli sessions.revoke {session_id}"),
         ],
     )
@@ -156,9 +155,7 @@ pub fn revoke(runtime: &mut Runtime, id: &str) -> CliOutcome {
 /// nothing is written, no audit row either, and the session counts as not found,
 /// as it did when the command began.
 fn revoke_row(database: &mut CliDatabase, session: Id, typed: &str) -> CliOutcome<()> {
-    let transaction = database
-        .connection
-        .transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let transaction = database.begin_write()?;
     let changed = stellarr_api::auth::session::revoke(&transaction, session, Timestamp::now())
         .map_err(|_| CliError::unexpected("DbError"))?;
     if !changed {
@@ -206,9 +203,7 @@ pub fn revoke_all(runtime: &mut Runtime, id_or_username: &str) -> CliOutcome {
         "Will revoke {active} active session(s) of {} ({}) and invalidate {handoffs} approved desktop browser handoff(s).",
         user.display_name, user.username
     ))?;
-    let transaction = database
-        .connection
-        .transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let transaction = database.begin_write()?;
     let revoked = transaction.execute(
         "UPDATE \"UserSessions\" SET \"RevokedAt\" = ?2 WHERE \"UserId\" = ?1 AND \"RevokedAt\" IS NULL AND \"ExpiresAt\" > ?2",
         params![user.id, now],
@@ -230,7 +225,8 @@ pub fn revoke_all(runtime: &mut Runtime, id_or_username: &str) -> CliOutcome {
             format!(
                 "Invalidated {invalidated} approved desktop browser handoff(s) not yet redeemed."
             ),
-            "The API closes matching WebSocket connections within one second.".to_string(),
+            "The API closes connections for the revoked sessions after the transaction commits."
+                .to_string(),
             format!("Audit: local-cli sessions.revoke-all {}", user.id),
         ],
     )
