@@ -94,7 +94,7 @@ sequenceDiagram
 ### Proving media quickly
 
 - **Rapid startup sampling:** Samples `getStats()` at `250 ms`, `500 ms`, `1 s`, and `2 s` upon connecting or peer join until RTP advances, then settles to `3 s` intervals (`500 ms` min per-transceiver re-evaluation so `400 ms` DTX silence packets never look stalled).
-- **Grace & auto-replacement:** Remote mics have a `3 s` arrival grace window before `transport.media` enters `degraded`. On disconnect (`> 10 s`), SDP/signal error, or `MediaSessionClosed`, the client replaces the SFU session automatically up to `3` times (`2 s`, `4 s`, `8 s` backoff) while keeping local capture tracks alive.
+- **Grace & auto-replacement:** Remote mics have a `3 s` arrival grace window before `transport.media` enters `degraded`. On disconnect (`> 10 s`), SDP/signal error, or `MediaSessionClosed`, the client replaces the SFU session automatically up to `3` times (`2 s`, `4 s`, `8 s` backoff, each stretched by up to half at random so a room does not return in one instant) while keeping local capture tracks alive.
 
 ---
 
