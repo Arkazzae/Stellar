@@ -18,6 +18,11 @@ export interface ConfirmField {
   placeholder?: string;
   maxLength?: number;
   /**
+   * What the field starts with, such as a reason already typed where the
+   * question was asked from. The person can still change it.
+   */
+  initial?: string;
+  /**
    * Empty is a valid answer, and the label says so. Without this the deed's
    * button stays disabled until something is typed.
    */

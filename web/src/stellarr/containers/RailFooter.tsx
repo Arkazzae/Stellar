@@ -102,6 +102,9 @@ export const RailAccount = memo(function RailAccount() {
   return (
     <AccountRow
       user={self}
+      // Held by the shell, so the composer's /status can open it too.
+      open={ui.accountPanelOpen}
+      onOpenChange={ui.setAccountPanelOpen}
       onOpenSettings={() => ui.openModal("account")}
       panel={{
         presence,

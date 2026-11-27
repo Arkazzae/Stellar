@@ -92,6 +92,15 @@ interface PanelsValue {
   callChatOpen: boolean;
   setCallChatOpen: (open: boolean) => void;
   toggleCallChat: () => void;
+
+  /** The account panel over the account row: presence, status and signing out. */
+  accountPanelOpen: boolean;
+  setAccountPanelOpen: (open: boolean) => void;
+  /**
+   * Opens the account panel from somewhere else, such as the composer's
+   * /status, bringing the rail out first where it is a drawer.
+   */
+  revealAccountPanel: () => void;
 }
 
 /** What the profile's column holds during a call in the open conversation. */
@@ -202,6 +211,7 @@ function usePanels(callRoom: string | null, joinedRoom: string | null): PanelsVa
   const rosterIsDrawer = useMediaQuery("(max-width: 1023px)", false);
   const channelPanelIsDrawer = useMediaQuery("(max-width: 1279px)", false);
   const rosterFits = useMediaQuery("(min-width: 1440px)", true);
+  const railIsDrawer = useMediaQuery("(max-width: 767px)", false);
 
   const [railOpen, setRailState] = useState(false);
   const [rosterPreference, setRosterPreference] = useWidePanelPreference("stellarr.layout.roster");
@@ -210,6 +220,7 @@ function usePanels(callRoom: string | null, joinedRoom: string | null): PanelsVa
   const [channelPanelTab, setChannelPanelTab] = useState<ChannelPanelTab>("pinned");
   const [profilePreference, setProfilePreference] = useWidePanelPreference("stellarr.layout.dm-profile");
   const [profileDrawerOpen, setProfileDrawerOpen] = useState(false);
+  const [accountPanelOpen, setAccountPanelOpen] = useState(false);
   /*
    * A call starts with the column empty: the call gets the whole room. The
    * choice made during it names the call and the layout it was made in, and
@@ -337,6 +348,10 @@ function usePanels(callRoom: string | null, joinedRoom: string | null): PanelsVa
     () => setCallChatOpen(!callChatOpen),
     [setCallChatOpen, callChatOpen],
   );
+  const revealAccountPanel = useCallback(() => {
+    if (railIsDrawer) setRailOpen(true);
+    setAccountPanelOpen(true);
+  }, [railIsDrawer, setRailOpen]);
 
   return useMemo(
     () => ({
@@ -358,6 +373,9 @@ function usePanels(callRoom: string | null, joinedRoom: string | null): PanelsVa
       callChatOpen,
       setCallChatOpen,
       toggleCallChat,
+      accountPanelOpen,
+      setAccountPanelOpen,
+      revealAccountPanel,
     }),
     [
       railOpen,
@@ -378,6 +396,8 @@ function usePanels(callRoom: string | null, joinedRoom: string | null): PanelsVa
       callChatOpen,
       setCallChatOpen,
       toggleCallChat,
+      accountPanelOpen,
+      revealAccountPanel,
     ],
   );
 }

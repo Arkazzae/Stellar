@@ -161,12 +161,18 @@ export function kickFromChannelPerson(t: Translator, subject: ConfirmSubject): C
   };
 }
 
+/** As long as a ban's reason may be. */
+export const BAN_REASON_MAX_LENGTH = 200;
+
 /**
  * The one that also asks for words. The bans list shows a fallback text when
  * no reason was given, so the field is offered but never required; a required
- * box would only teach people to type a full stop into it.
+ * box would only teach people to type a full stop into it. A reason given
+ * where the question was asked from, as with the composer's /ban, is already
+ * in the field.
  */
-export function banPerson(t: Translator, subject: ConfirmSubject): PromptRequest {
+export function banPerson(t: Translator, subject: ConfirmSubject, reason = ""): PromptRequest {
+  const given = reason.trim().slice(0, BAN_REASON_MAX_LENGTH);
   return {
     title: t("confirm.banTitle"),
     description: t("confirm.banDescription"),
@@ -178,9 +184,10 @@ export function banPerson(t: Translator, subject: ConfirmSubject): PromptRequest
     field: {
       label: t("confirm.reasonLabel"),
       placeholder: t("confirm.reasonPlaceholder"),
-      maxLength: 200,
+      maxLength: BAN_REASON_MAX_LENGTH,
       optional: true,
       hint: t("confirm.banHint"),
+      ...(given === "" ? {} : { initial: given }),
     },
   };
 }
