@@ -10,6 +10,7 @@
 mod downlink;
 #[cfg(test)]
 mod fault;
+mod limits;
 mod session;
 
 use std::cmp::Reverse;
@@ -37,6 +38,7 @@ use crate::sdp_text;
 use crate::stun;
 
 use downlink::{INITIAL_ESTIMATE_BPS, Wanted};
+use limits::TrackLimit;
 use session::{Counter, OutState, PendingOffer, PtCache, Published, RoomKey, Session, TrackKey};
 
 /// The largest SDP of one signal, in either direction.
@@ -65,6 +67,47 @@ pub const MAX_REMOTE_CANDIDATES: usize = 64;
 pub const MAX_SOURCE_ADDRS: usize = 64;
 /// The most mids one list of what a receiver wants sent may hold.
 pub const MAX_SUBSCRIPTIONS: usize = 4096;
+
+// What a session may send. str0m hands a track's packet to the forwarding
+// once per sequence number: a repair that only pads or repeats what arrived
+// goes no further, and browsers send padding and probes on the repair stream
+// or on SSRC 0. So the limits of a track see what its encoder made and the
+// repairs of what was lost on the way, and RTCP, DTLS, padding and probes
+// count only against the session's datagrams. Every bucket holds one second
+// of its rate.
+
+/// What one published sound may send, as packets a second. The web client
+/// sends Opus in 20 ms packets, 50 a second, and the `minptime=10` it offers
+/// would allow 100; this is half as much again.
+pub const SOUND_PACKETS_PER_SECOND: u64 = 150;
+/// What one published sound may send, as payload bytes a second (512
+/// kbit/s): twice the 256 kbit/s of the web client's richest microphone
+/// profile, which leaves room for Opus's variable rate and for the SFrame
+/// header and tag of an encrypted call.
+pub const SOUND_BYTES_PER_SECOND: u64 = 64_000;
+/// What one published picture may send, as packets a second. The web
+/// client's largest screen share, 12 Mbit/s at 60 fps, comes to about 1,400
+/// packets of the some 1,100 bytes of payload a browser puts in one; this
+/// leaves room for an encoder over its target and for repairs, and one second
+/// of it holds a keyframe several times larger than any.
+pub const PICTURE_PACKETS_PER_SECOND: u64 = 2_000;
+/// What one published picture may send, as payload bytes a second (24
+/// Mbit/s): twice that screen share. With packets of the size browsers send,
+/// the limit on packets binds first; this one bounds larger packets.
+pub const PICTURE_BYTES_PER_SECOND: u64 = 3_000_000;
+/// How many datagrams a second one session may send, whatever they carry.
+/// The most the web client publishes, a microphone, a 3 Mbit/s camera and a
+/// 12 Mbit/s screen share with its sound, comes to about 1,900 packets a
+/// second; its RTCP, repairs, padding and probes, and the feedback on what it
+/// receives, add a few hundred.
+pub const DATAGRAMS_PER_SECOND: u64 = 5_000;
+/// How many STUN messages a second one session may send. A browser sends a
+/// few tens of checks a second at most while it connects, and one every few
+/// seconds once it is connected. They are counted apart, so media over its
+/// limit cannot keep them out and let the connection time out.
+pub const STUN_PER_SECOND: u64 = 200;
+/// The shortest time between two log lines about the limits of one session.
+pub const LIMIT_LOG_INTERVAL: Duration = Duration::from_secs(10);
 
 pub(crate) use session::SessionKey;
 
@@ -170,7 +213,17 @@ pub struct SessionStats {
     pub forwarded: usize,
     pub ingress: Traffic,
     pub egress: Traffic,
+    pub dropped: Dropped,
     pub downlink: DownlinkStats,
+}
+
+/// What the limits on a session's sending turned away since it began.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct Dropped {
+    /// Datagrams over the session's limit, never handed to its connection.
+    pub datagrams: u64,
+    /// Packets over the limit of their track, forwarded to nobody.
+    pub packets: u64,
 }
 
 /// What a receiver's downlink is thought to carry and what is sent within it,
@@ -1124,6 +1177,7 @@ impl Core {
                             .count(),
                         ingress: s.ingress.into(),
                         egress: s.egress.into(),
+                        dropped: s.limits.dropped(),
                         downlink: self.downlink_stats(now, s),
                     })
                     .collect(),
@@ -1393,6 +1447,7 @@ impl Core {
                         stream_id,
                         keyframe: Default::default(),
                         meter: Default::default(),
+                        limit: TrackLimit::new(kind),
                     });
                     added.push((mid, kind));
                 }
@@ -1786,6 +1841,15 @@ impl Core {
         };
         let input = Input::Receive(now, receive);
         let key = self.route(endpoint, buf, &input, owner)?;
+        // The limit comes after routing, which keeps what routing remembered
+        // of a check with valid credentials even when the limit then drops
+        // it: its address, the UDP endpoint it took over, one of the
+        // `MAX_SOURCE_ADDRS` slots.
+        if !self.within_datagram_limit(now, key, stun::is_stun(buf)) {
+            // A dropped first frame authorises no TCP socket; an authorised
+            // socket stays its session's.
+            return owner;
+        }
 
         let (mut ctx, sessions) = self.ctx();
         let s = sessions
@@ -1810,6 +1874,31 @@ impl Core {
 
         self.run_work(now);
         self.sessions.contains_key(&key).then_some(key)
+    }
+
+    /// Whether a routed datagram is within what its session may send. The
+    /// STUN of a flooding session gets through on a bucket of its own, so its
+    /// connection stays up while it floods and times out like any other once
+    /// the client is gone.
+    ///
+    /// A datagram counts before SRTP has authenticated it, since that is the
+    /// work the limit saves. Whoever can send from a seated client's address
+    /// can therefore spend that client's allowance, its STUN included.
+    fn within_datagram_limit(&mut self, now: Instant, key: SessionKey, stun: bool) -> bool {
+        let Some(s) = self.sessions.get_mut(&key) else {
+            return false;
+        };
+        if s.limits.admit_datagram(now, stun) {
+            return true;
+        }
+        if let Some(dropped) = s.limits.datagram_dropped(now) {
+            warn!(
+                session = %s.id,
+                dropped,
+                "the session sends more datagrams than it may; dropping the excess"
+            );
+        }
+        false
     }
 
     /// Which session a datagram belongs to, first by the bound endpoint and
@@ -2098,6 +2187,19 @@ impl Core {
         let Some(track) = publisher.published.iter_mut().find(|t| t.mid == mid) else {
             return;
         };
+        // A packet over the track's limit is also left out of its cost, so
+        // a flood takes no room in the receivers' downlinks.
+        if !track.limit.admit(now, packet.payload.len()) {
+            if let Some(dropped) = publisher.limits.packet_dropped(now) {
+                warn!(
+                    session = %publisher.id,
+                    %mid,
+                    dropped,
+                    "a track sends more than it may; dropping the excess"
+                );
+            }
+            return;
+        }
         track.meter.record(now, packet.payload.len());
         let kind = track.kind;
         let Some(params) = publisher

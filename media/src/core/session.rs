@@ -10,6 +10,7 @@ use str0m::rtp::Ssrc;
 use str0m::{IceConnectionState, Rtc};
 
 use super::downlink::{Downlink, RateMeter};
+use super::limits::{Limits, TrackLimit};
 use super::{
     CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, Endpoint, KEYFRAME_INTERVAL, MAX_SOURCE_ADDRS,
     OFFER_TIMEOUT,
@@ -105,6 +106,8 @@ pub(crate) struct Published {
     pub keyframe: KeyframeGate,
     /// What forwarding the track costs a receiver.
     pub meter: RateMeter,
+    /// What the publisher may send on the track.
+    pub limit: TrackLimit,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -360,6 +363,8 @@ pub(crate) struct Session {
     pub remote_candidates: usize,
     pub ingress: Counter,
     pub egress: Counter,
+    /// What the session may send, and what was turned away.
+    pub limits: Limits,
     /// Grows with every completed negotiation, which may move payload types.
     pub generation: u64,
     pub rtc_timeout: Instant,
@@ -408,6 +413,7 @@ impl Session {
             remote_candidates: 0,
             ingress: Counter::default(),
             egress: Counter::default(),
+            limits: Limits::default(),
             generation: 0,
             rtc_timeout: now,
             scheduled: None,
