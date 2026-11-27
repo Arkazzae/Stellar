@@ -264,8 +264,9 @@ async fn a_new_database_has_the_schema_and_both_one_time_steps() {
         .unwrap();
 
     // Includes the temporary scrub marker, cleared during key backup
-    // initialization, and the access change journal with its triggers.
-    assert_eq!(objects, 333);
+    // initialization, the access change journal with its triggers, and the
+    // tables of scheduled messages.
+    assert_eq!(objects, 340);
     assert_eq!(steps, ["ordinary-permissions", "view-channel"]);
     assert!(search);
 }
