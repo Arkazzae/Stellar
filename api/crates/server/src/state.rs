@@ -38,6 +38,7 @@ struct Inner {
     post_queue: crate::messages::post::batch::PostQueue,
     scheduled_alarm: crate::background::Alarm,
     poll_alarm: crate::background::Alarm,
+    event_alarm: crate::background::Alarm,
     pin_attempts: AttemptLimiter,
     sealer: Sealer,
     key_backup_sealer: Sealer,
@@ -94,6 +95,7 @@ impl AppState {
                 post_queue: Default::default(),
                 scheduled_alarm: Default::default(),
                 poll_alarm: Default::default(),
+                event_alarm: Default::default(),
             }),
         }
     }
@@ -130,6 +132,12 @@ impl AppState {
     /// again at when the next one ends.
     pub fn poll_alarm(&self) -> &crate::background::Alarm {
         &self.inner.poll_alarm
+    }
+
+    /// Rung when a server event is made or changed, so that the worker that
+    /// starts, ends and reminds looks again at what is due next.
+    pub fn event_alarm(&self) -> &crate::background::Alarm {
+        &self.inner.event_alarm
     }
 
     pub fn metrics(&self) -> &Metrics {
