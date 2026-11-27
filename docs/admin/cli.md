@@ -98,7 +98,7 @@ stellarr secrets clear mail.smtp-password --yes
 ### Users, sessions, and MFA recovery
 
 ```bash
-# Inspect and revoke sessions (terminates live WebSockets & E2EE devices within 1 s)
+# Inspect and revoke sessions (closes live WebSockets within a quarter of a second)
 stellarr users show arkazz
 stellarr sessions list --user arkazz
 stellarr sessions revoke 4a85e7e0-bc1c-4e18-8ed2-191f1e8b0f21 --yes
@@ -111,6 +111,23 @@ stellarr security unlink arkazz 3f2a6c1e-0b7d-4f5e-9a2c-8d1e4b6f7a90 --yes
 ```
 
 See [Operator recovery](account-security.md#operator-recovery) for what `security recover` resets and how the user redeems the printed credential.
+
+### Manual SQLite maintenance
+
+Changes made with the `stellarr` CLI reach open WebSockets on their own: a revoked session is closed, and a stricter MFA policy closes the sessions it no longer accepts. A separate `sqlite3` process records its changes of sessions, accounts, roles, overrides, membership and channels in the same journal through database triggers, but the running API learns about them only from a fresh token in `stellarr.db.access-wake`, next to the database. It then closes the sessions that no longer count, frees voice seats that lost their right, and tells clients to reload their channels. Without a token, an open socket keeps its previous access until the next change the API is told about, a reconnect, or the session's expiry.
+
+Open `sqlite3 stellarr.db` in the database directory and write the token inside the transaction, just before `COMMIT`:
+
+```sql
+.bail on
+BEGIN IMMEDIATE;
+-- Apply the intended session or permission change here.
+.once stellarr.db.access-wake
+SELECT hex(randomblob(16));
+COMMIT;
+```
+
+The API reads the file every 250 ms while sockets are open, then waits for the transaction to finish before applying it. A rolled-back transaction changes nothing. The token holds no data. The API creates the file when it starts. With the API stopped, leave out the two token lines: the change applies when it starts.
 
 ### Backups and offline execution
 
