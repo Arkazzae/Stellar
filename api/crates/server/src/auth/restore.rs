@@ -201,7 +201,8 @@ mod tests {
     #[test]
     fn rows_that_were_ended_before_keep_their_time_and_the_accounts_own_credentials_stand() {
         let (_folder, mut connection) = open();
-        let now = Timestamp::now();
+        // Start two seconds before a TOTP period boundary.
+        let now = Timestamp::from_unix_seconds(1_800_000_028).unwrap();
         let earlier = now.minus(std::time::Duration::from_secs(3600));
         let user = add_user(&connection, None);
         let ended = add_session(&connection, user, now, None);
@@ -262,8 +263,11 @@ mod tests {
         }
         assert_eq!(step(&connection, app), Some(now.unix_seconds() / 30));
         assert_eq!(step(&connection, mail), None);
-        // Run twice, nothing changes the second time.
+        // Restoring again in the same period leaves the step alone.
         run(&mut connection, now.plus(std::time::Duration::from_secs(1)));
         assert_eq!(step(&connection, app), Some(now.unix_seconds() / 30));
+        let next = now.plus(std::time::Duration::from_secs(2));
+        run(&mut connection, next);
+        assert_eq!(step(&connection, app), Some(next.unix_seconds() / 30));
     }
 }
