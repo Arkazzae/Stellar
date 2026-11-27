@@ -134,6 +134,24 @@ impl Stop {
     }
 }
 
+/// Wakes a worker that sleeps until a moment it worked out, when a request
+/// has changed what that moment is. A ring while the worker is busy is kept
+/// for its next wait, so one that comes between its look at the database and
+/// its sleep is not missed.
+#[derive(Debug, Default)]
+pub struct Alarm(tokio::sync::Notify);
+
+impl Alarm {
+    pub fn ring(&self) {
+        self.0.notify_one();
+    }
+
+    /// Resolves at the next ring, or at once for one that was kept.
+    pub async fn rung(&self) {
+        self.0.notified().await;
+    }
+}
+
 /// Keeps the workers the Testing environment asked for (`Testing__Workers`, a
 /// comma-separated list of names; none when it is not set), and all of them in
 /// any other environment.

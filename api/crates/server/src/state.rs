@@ -36,6 +36,7 @@ struct Inner {
     metrics: Metrics,
     mutation_gate: MutationGate,
     post_queue: crate::messages::post::batch::PostQueue,
+    scheduled_alarm: crate::background::Alarm,
     pin_attempts: AttemptLimiter,
     sealer: Sealer,
     key_backup_sealer: Sealer,
@@ -90,6 +91,7 @@ impl AppState {
                 metrics: Metrics::default(),
                 mutation_gate: MutationGate::default(),
                 post_queue: Default::default(),
+                scheduled_alarm: Default::default(),
             }),
         }
     }
@@ -114,6 +116,12 @@ impl AppState {
 
     pub(crate) fn post_queue(&self) -> &crate::messages::post::batch::PostQueue {
         &self.inner.post_queue
+    }
+
+    /// Rung when a scheduled message is added or moved, so that the worker
+    /// that sends them looks again at when the next one is due.
+    pub fn scheduled_alarm(&self) -> &crate::background::Alarm {
+        &self.inner.scheduled_alarm
     }
 
     pub fn metrics(&self) -> &Metrics {
