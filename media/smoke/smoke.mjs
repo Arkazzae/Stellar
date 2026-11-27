@@ -491,14 +491,14 @@ class Scenario {
    * (STELLARR_SMOKE_E2EE), null none, and an object is laid over the room's
    * epoch. `cbr` asks A's voice encoder for a constant bitrate.
    */
-  async join(name, { mic = true, via, e2ee, cbr = false, initScript = null, pattern } = {}) {
-    const identity = this.env.identities.find((i) => i.name === name);
+  async join(name, { mic = true, via, e2ee, cbr = false, initScript = null, pattern, fixture = name } = {}) {
+    const identity = this.env.identities.find((i) => i.name === fixture);
     const wanted = e2ee === undefined ? (this.env.e2ee ? { ...this.env.e2ee } : null) : e2ee;
     const client = await Client.open({
-      browser: this.env.browsers[name],
+      browser: this.env.browsers[fixture],
       url: this.env.url,
       hub: this.env.hub,
-      identity,
+      identity: { ...identity, name },
       roomId: this.room,
       userId: randomUUID(),
       tuneOpus: name === "A",
@@ -654,7 +654,115 @@ async function verifyDirectMedia(s, protocol, withVideo = false) {
   return { summary: `${protocol.toUpperCase()} ${summarise(results)}`, results };
 }
 
+// Each window starts from audio only, so a newly decoded frame measures the
+// time from the change of view to the first picture at each receiver.
+async function galleryWindow(peers, link, count) {
+  await Promise.all(peers.map(({ client, audio }) => client.subscribe(audio)));
+  await sleep(2000);
+  const first = await Promise.all(peers.map(async ({ client, audio, video }) => {
+    const selected = video.slice(0, count);
+    const baseline = await client.stats();
+    const start = performance.now();
+    await client.subscribe([...audio, ...selected]);
+    while (performance.now() - start < SETTLE_MS) {
+      const { inbound } = await client.stats();
+      if (selected.some(mid => (inbound[mid]?.framesDecoded ?? 0) > (baseline.inbound[mid]?.framesDecoded ?? 0))) {
+        return performance.now() - start;
+      }
+      await sleep(200);
+    }
+    return null;
+  }));
+  await sleep(SETTLE_MS);
+  const read = () => Promise.all(peers.map(({ client }) => client.stats()));
+  const before = await read();
+  const queueFrom = link.voiceQueueingMs.length;
+  const initial = { ...link.stats };
+  const start = performance.now();
+  await sleep(WINDOW_MS);
+  const elapsed = performance.now() - start;
+  const final = { ...link.stats };
+  const audioQueueMs = percentiles(link.voiceQueueingMs.slice(queueFrom));
+  const after = await read();
+  const voices = [];
+  let activeVideo = 0;
+  let sentVideoBytes = 0;
+  for (const [i, peer] of peers.entries()) {
+    const window = receivedBetween(before[i], after[i], {}, peer.mapping, elapsed);
+    voices.push(...window.voices);
+    const selected = new Set(peer.video.slice(0, count));
+    for (const picture of window.pictures) {
+      if (selected.has(picture.mid)) activeVideo += Number(picture.fps > 0);
+      else check(picture.kbps === 0, `hidden mid ${picture.mid} received video at ${peer.client.name}`);
+    }
+    const camera = Object.entries(after[i].outbound).find(([, sent]) => sent.kind === "video");
+    check(camera, `no camera sender at ${peer.client.name}`);
+    const [mid, sent] = camera;
+    const bytes = sent.bytesSent - (before[i].outbound[mid]?.bytesSent ?? 0);
+    check(bytes > 0, `camera stopped publishing at ${peer.client.name}`);
+    sentVideoBytes += bytes;
+  }
+  const delays = voices.map(v => v.jitterBufferMs).filter(ms => ms !== null);
+  const decoded = first.filter(ms => ms !== null);
+  return {
+    camerasRequestedPerReceiver: count,
+    requestedVideo: count * peers.length,
+    activeVideo,
+    uploadOfferedMbps: (final.offeredBytes - initial.offeredBytes) * 8 / elapsed / 1000,
+    uploadDeliveredMbps: (final.deliveredBytes - initial.deliveredBytes) * 8 / elapsed / 1000,
+    sourceVideoMbps: sentVideoBytes * 8 / elapsed / 1000,
+    queueDrops: final.queueDrops - initial.queueDrops,
+    audioLossPctByTrack: percentiles(voices.map(v => v.lostPct)),
+    audioJitterBufferMsByTrack: percentiles(delays),
+    audioQueueMs,
+    firstPictureMsByReceiver: percentiles(decoded),
+    receiversWithoutPictureIn10s: first.length - decoded.length,
+  };
+}
+
+/** Start both views from fresh sessions with the same shared bottleneck. */
+async function measureGallery(s, count) {
+  return relayed(s, `gallery-${count}`, async (room, nat) => {
+    const clients = [];
+    for (let i = 0; i < 15; i++) {
+      const fixture = room.env.identities[i % room.env.identities.length].name;
+      const client = await room.join(`peer-${i + 1}`, { mic: false, fixture });
+      await client.subscribe([]);
+      await client.publish("mic", "audio");
+      // Answer the SFU offer for the existing publications before offering
+      // the camera.
+      await directoryReady(client, [...clients, client]);
+      await busyCamera(client, 1_500_000, { width: 1280, height: 720, block: 16 });
+      clients.push(client);
+    }
+    const peers = await Promise.all(clients.map(async (client, i) => {
+      const { mapping } = await directoryReady(client, clients);
+      const audio = mapping.filter(m => m.publication.kind === "audio").map(m => m.mid);
+      // Rotate the four-tile view so every source has viewers.
+      const others = [...clients.slice(i + 1), ...clients.slice(0, i)];
+      const video = others.map(c => mapping.find(m => m.publisher === c && m.publication.kind === "video").mid);
+      const stats = await client.stats();
+      check(stats.pair?.remote?.port === nat.port, `${client.name} bypassed the shared relay`);
+      return { client, audio, video, mapping };
+    }));
+    const link = nat.shapeAll({ kbps: 50_000, queueMs: 100, delayMs: 10, jitterMs: 0 });
+    const result = await galleryWindow(peers, link, count);
+    check(result.activeVideo > 0 && result.audioJitterBufferMsByTrack.n > 0, "room delivered no usable media");
+    return result;
+  });
+}
+
 const SCENARIOS = {
+  async gallery(s) {
+    const full = await measureGallery(s, 14);
+    const four = await measureGallery(s, 4);
+    const rates = [full, four].map(result => result.uploadDeliveredMbps.toFixed(1));
+    return {
+      summary: `15 publishers, shared 50 Mb/s, delivered ${rates.join(" / ")} Mb/s (14 / 4 cameras)`,
+      full,
+      four,
+    };
+  },
   /** Direct bidirectional audio with normal UDP connectivity and no relay. */
   async udp(s) {
     return verifyDirectMedia(s, "udp");
@@ -2239,7 +2347,7 @@ async function main() {
   const ids = Object.keys(SCENARIOS)
     .sort()
     .filter((id) =>
-      wanted.length > 0 ? wanted.includes(id) : !id.startsWith("x") && !(e2ee && id === "i"),
+      wanted.length > 0 ? wanted.includes(id) : id !== "gallery" && !id.startsWith("x") && !(e2ee && id === "i"),
     );
   const out =
     process.env.STELLARR_SMOKE_OUT ?? mkdtempSync(join(tmpdir(), "stellarr-media-smoke-"));
