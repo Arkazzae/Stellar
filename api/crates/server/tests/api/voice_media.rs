@@ -1096,10 +1096,12 @@ async fn an_account_disabled_while_seated_loses_its_connection_its_seat_and_its_
     until(|| rig.media.sessions().contains(&session)).await;
 
     // The watcher of sessions closes the connections of a disabled account, as
-    // the first server's did; the seat goes with the connection.
+    // the first server's did; the seat goes with the connection. Disabled
+    // from outside the API, as an operator's SQL would, with its signal.
     rig.db()
         .execute("UPDATE \"Users\" SET \"IsDisabled\" = 1 WHERE \"Id\" = ?1", [Id::parse(&jonas.id).unwrap()])
         .unwrap();
+    rig.server.signal_access_change();
 
     assert_eq!(peer.hub.finish_close().await, Some(4401));
     rig.occupants_become(rig.salon, &[&maja.id]).await;

@@ -37,11 +37,12 @@ pub mod turn;
 use crate::background::Worker;
 use crate::settings::Settings;
 
+pub(crate) use self::access::unseat_at;
 pub use self::access::{Unseated, enforce, unseat, voice_channels_of};
-pub use self::rooms::end_direct_call;
 use self::control::Control;
 use self::gate::PlaybackGate;
 use self::plane::Plane;
+pub use self::rooms::end_direct_call;
 
 /// What the media plane keeps in memory: the client of the control API, the
 /// gate and readiness of the plane, and the cooldowns of the soundboard. The

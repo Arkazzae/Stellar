@@ -105,6 +105,9 @@ pub struct VoiceMove {
 pub(super) struct Seat {
     user: Id,
     channel: Id,
+    // A moderator can place a member in a room they cannot join themselves.
+    // Earlier ACL changes must not undo that move when the worker catches up.
+    moved_after: i64,
     muted: bool,
     sharing: bool,
     camera: bool,
@@ -283,6 +286,7 @@ impl PresenceTracker {
             let seat = Seat {
                 user,
                 channel,
+                moved_after: 0,
                 muted: false,
                 sharing: false,
                 camera: false,
@@ -327,10 +331,32 @@ impl PresenceTracker {
             .collect()
     }
 
+    pub(crate) fn revoke_voice_access(
+        &self,
+        user: Id,
+        room: Id,
+        change: Option<i64>,
+    ) -> Vec<String> {
+        let mut state = self.state();
+        let connections = seat_connections(&state, |seat| {
+            seat.user == user
+                && seat.channel == room
+                && change.is_none_or(|seq| seq > seat.moved_after)
+        });
+        for id in &connections {
+            take_seat(&mut state, id);
+        }
+        connections
+    }
+
     /// Moves every seat the account holds in one room to another. Connection
     /// and mute state stay as they are; the client is told to rebuild its
     /// peers.
     pub fn move_user_between_voice_channels(&self, user: Id, source: Id, target: Id) -> VoiceMove {
+        self.move_voice_at(user, source, target, 0)
+    }
+
+    pub(crate) fn move_voice_at(&self, user: Id, source: Id, target: Id, cursor: i64) -> VoiceMove {
         let mut state = self.state();
         let connections =
             seat_connections(&state, |seat| seat.user == user && seat.channel == source);
@@ -341,6 +367,7 @@ impl PresenceTracker {
                     connection,
                     Some(Seat {
                         channel: target,
+                        moved_after: cursor,
                         ..seat
                     }),
                 );

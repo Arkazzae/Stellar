@@ -13,8 +13,8 @@
 //!   `EventPublisher` and `Presence` the handlers talk to.
 //! - [`endpoints`] mounts the hub once the state exists; the pipeline's steps
 //!   (client address, rate limit, authentication) run before it.
-//! - [`watcher`] looks at the database every second and closes the
-//!   connections of sessions that no longer count.
+//! - [`watcher`] rechecks live sessions when access changes, a connection joins,
+//!   or a session reaches its expiry. The CLI and API share the access journal.
 //! - [`method`] is how a group adds methods and hooks, and `methods.list.rs`
 //!   is the list of the groups that have.
 //!

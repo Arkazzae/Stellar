@@ -99,6 +99,23 @@ fn base_of(rig: &Rig) -> Id {
 // ------------------------------------------------------------------ permissions
 
 #[tokio::test]
+async fn a_role_edited_by_another_sqlite_writer_evicts_only_its_holder() {
+    let mut scene = scene().await;
+    scene.rig.db().execute("UPDATE ServerRoles SET Permissions = ?1 WHERE Id = ?2", params![VIEW_CHANNEL, scene.role]).unwrap();
+    scene.rig.server.signal_access_change();
+    scene.assert_unseated(true).await;
+}
+
+#[tokio::test]
+async fn an_external_change_from_voice_to_text_releases_the_media_seats() {
+    let mut scene = scene().await;
+    scene.rig.db().execute("UPDATE Channels SET Kind = 0 WHERE Id = ?1", [scene.rig.salon]).unwrap();
+    scene.rig.server.signal_access_change();
+    scene.assert_unseated(false).await;
+    assert_eq!(scene.other.next("VoiceChannelKicked").await["channelId"], scene.rig.salon.to_string());
+}
+
+#[tokio::test]
 async fn a_role_edited_to_lose_connect_takes_its_holder_out() {
     let mut scene = scene().await;
     scene.owner(Method::PATCH, &format!("/api/admin/roles/{}", scene.role), Some(json!({"permissions": ["viewChannel"]})), 200).await;
@@ -405,4 +422,10 @@ async fn a_moderators_move_is_no_loss_of_access() {
     assert_eq!(scene.peer.next("VoiceChannelMoved").await["toChannelId"], night.to_string().as_str());
     assert!(scene.peer.drain("VoiceChannelKicked").await.is_empty());
     scene.peer.ok("SendVoiceSignal", json!([signal(night, "state", "{}", None)])).await;
+
+    // A later permission change still applies to the moderator-granted seat.
+    scene.rig.db().execute("UPDATE PermissionOverrides SET DenyMask = DenyMask | ?1 WHERE RoleId = ?2 AND TargetId = ?3",
+        params![VIEW_CHANNEL, scene.role, night]).unwrap();
+    scene.rig.server.signal_access_change();
+    assert_eq!(scene.peer.next("VoiceChannelKicked").await["channelId"], night.to_string());
 }
