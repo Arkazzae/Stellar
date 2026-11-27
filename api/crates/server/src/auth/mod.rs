@@ -18,7 +18,7 @@ pub mod email_codes;
 pub mod email_send;
 pub mod events;
 #[cfg(test)]
-mod fixtures;
+pub(crate) mod fixtures;
 pub mod flow;
 pub mod fresh;
 pub mod mfa;

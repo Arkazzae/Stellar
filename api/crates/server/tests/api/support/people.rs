@@ -136,6 +136,12 @@ impl Server {
             .await
     }
 
+    /// The explicit wake token a standalone sqlite3 maintenance script writes.
+    pub fn signal_access_change(&self) {
+        let path = self.database_path().with_added_extension("access-wake");
+        std::fs::write(path, stellarr_api::values::Id::random().to_string()).unwrap();
+    }
+
     /// A connection of the test's own to the server's database.
     pub fn database(&self) -> Connection {
         let connection = Connection::open(self.database_path()).expect("the database opens");

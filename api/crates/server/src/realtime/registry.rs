@@ -5,6 +5,8 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
+use tokio::sync::watch;
+
 use crate::values::Id;
 
 /// What the hub knows of one open connection.
@@ -20,6 +22,7 @@ pub struct LiveConnection {
 #[derive(Default)]
 pub struct Registry {
     entries: Mutex<HashMap<String, LiveConnection>>,
+    changes: watch::Sender<()>,
 }
 
 impl Registry {
@@ -32,10 +35,17 @@ impl Registry {
     pub fn register(&self, connection: LiveConnection) {
         self.entries()
             .insert(connection.connection_id.clone(), connection);
+        self.changes.send_replace(());
+    }
+
+    pub(super) fn changes(&self) -> watch::Receiver<()> {
+        self.changes.subscribe()
     }
 
     pub fn unregister(&self, connection_id: &str) {
-        self.entries().remove(connection_id);
+        if self.entries().remove(connection_id).is_some() {
+            self.changes.send_replace(());
+        }
     }
 
     pub fn snapshot(&self) -> Vec<LiveConnection> {
@@ -56,6 +66,9 @@ impl Registry {
             .collect();
         for id in &found {
             entries.remove(id);
+        }
+        if !found.is_empty() {
+            self.changes.send_replace(());
         }
         found
     }

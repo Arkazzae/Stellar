@@ -575,3 +575,166 @@ async fn another_process_signals_only_through_a_token_file_the_api_made() {
     assert!(!wake.exists());
     assert_eq!(users("offline"), 1);
 }
+
+#[tokio::test]
+async fn chat_idle_time_and_rolled_back_changes_leave_the_watcher_asleep() {
+    use crate::auth::fixtures;
+    use crate::background;
+    use crate::realtime::{Realtime, registry::LiveConnection, watcher};
+    use crate::seal::Sealer;
+    use crate::settings::Settings;
+    use crate::state::AppState;
+    use rusqlite::trace::{TraceEvent, TraceEventCodes};
+
+    // What the watcher runs: a read of the journal, a check of sessions.
+    const JOURNAL: &str = "SELECT Seq, Kind";
+    const SESSIONS: &str = "FROM UserSessions s JOIN Users u";
+    let (root, db) = new_database();
+    let writer = Connection::open(db.path()).unwrap();
+    let server = fixtures::add_instance_server(&writer);
+    let user = fixtures::add_user(&writer, None);
+    let now = Timestamp::now();
+    let first = fixtures::add_session(&writer, user, now, None);
+    let second = fixtures::add_session(&writer, user, now, None);
+    let channel = Id::random();
+    writer.execute("INSERT INTO Channels(Id,ServerId,Name,Kind,Position,SlowModeSeconds,HideAfterInactivityHours,UserLimit)
+        VALUES (?1,?2,'chat',0,0,0,0,0)", params![channel, server]).unwrap();
+
+    let sql = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    for pool in [&db.readers, &db.writer] {
+        let sql = sql.clone();
+        pool.run(move |connection| {
+            connection.trace_v2(
+                TraceEventCodes::SQLITE_TRACE_STMT,
+                Some(move |event: TraceEvent<'_>| {
+                    if let TraceEvent::Stmt(stmt, _) = event {
+                        sql.lock().unwrap().push(stmt.expanded_sql().unwrap());
+                    }
+                }),
+            )
+        })
+        .await
+        .unwrap();
+    }
+    let watched = |needle: &'static str| {
+        let sql = sql.clone();
+        move || -> Vec<String> {
+            sql.lock()
+                .unwrap()
+                .iter()
+                .filter(|s| s.contains(needle))
+                .cloned()
+                .collect()
+        }
+    };
+    let (journal_reads, session_checks) = (watched(JOURNAL), watched(SESSIONS));
+    let settings = Settings::load(&[
+        ("STELLARR_ENVIRONMENT".into(), "Testing".into()),
+        (
+            "STELLARR_DATA_ROOT".into(),
+            root.path().display().to_string(),
+        ),
+    ])
+    .unwrap();
+    let hub = Realtime::new();
+    let state = AppState::new(
+        settings,
+        db.clone(),
+        hub.clone(),
+        hub.clone(),
+        Sealer::from_key([1; 32]),
+        Sealer::from_key([2; 32]),
+    );
+    state.plug_in_realtime(hub.clone());
+    for (name, session) in [("first", first), ("second", second)] {
+        hub.registry().register(LiveConnection {
+            connection_id: name.into(),
+            session,
+            user,
+            version: 1,
+        });
+    }
+    let running = background::start(watcher::workers(), &state);
+    let deadline = std::time::Instant::now() + Duration::from_secs(4);
+    while session_checks().is_empty() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the first check never ran"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    sql.lock().unwrap().clear();
+    tokio::time::sleep(Duration::from_millis(1250)).await;
+    assert!(
+        sql.lock().unwrap().is_empty(),
+        "the idle watcher queried SQLite"
+    );
+
+    for _ in 0..10 {
+        db.write(move |tx| {
+            tx.execute(
+                "INSERT INTO Messages(Id,ChannelId,AuthorId,IsSystem,Content,CreatedAt)
+                 VALUES (?1,?2,?3,0,'hello',?4)",
+                params![Id::random(), channel, user, now],
+            )
+        })
+        .await
+        .unwrap();
+    }
+    db.write(move |tx| {
+        tx.execute(
+            "UPDATE UserSessions SET LastSeenAt = ?1, ExpiresAt = ExpiresAt",
+            [now],
+        )
+    })
+    .await
+    .unwrap();
+    let rolled: Result<(), DbError> = db
+        .write(|tx| {
+            tx.execute("UPDATE Users SET IsDisabled = 1", [])?;
+            Err(DbError::Task("roll back".into()))
+        })
+        .await;
+    assert!(rolled.is_err());
+    db.write(|tx| {
+        tx.execute_batch(
+            "SAVEPOINT candidate; UPDATE Users SET IsDisabled = 1;
+             ROLLBACK TO candidate; RELEASE candidate",
+        )
+    })
+    .await
+    .unwrap();
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    assert!(
+        journal_reads().is_empty(),
+        "chat or a rolled-back change woke the watcher"
+    );
+    assert!(session_checks().is_empty());
+    assert_eq!(hub.registry().count(), 2);
+
+    db.write(move |tx| {
+        tx.execute(
+            "UPDATE UserSessions SET RevokedAt = ?1 WHERE Id = ?2",
+            params![now, first],
+        )
+    })
+    .await
+    .unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(4);
+    while hub.registry().count() != 1 {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{:?}",
+            sql.lock().unwrap()
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    running.stop(Duration::from_secs(2)).await;
+    assert_eq!(journal_reads().len(), 1);
+    let checks = session_checks();
+    assert_eq!(checks.len(), 1);
+    assert!(checks[0].contains(&first.to_db_text()));
+    assert!(!checks[0].contains(&second.to_db_text()));
+    assert_eq!(hub.registry().snapshot()[0].session, second);
+}

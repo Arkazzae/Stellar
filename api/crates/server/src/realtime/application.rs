@@ -121,7 +121,8 @@ impl Application for AppHub {
             .as_deref()
             .and_then(Id::parse)
             .filter(|id| account.servers.contains(id));
-        if let Some(active) = requested.or_else(|| account.servers.first().copied()) {
+        let active = requested.or_else(|| account.servers.first().copied());
+        if let Some(active) = active {
             hub.add_to_group(connection, &server_group(active));
             hub.add_to_group(connection, &follower_group(active, user));
         }
@@ -130,6 +131,22 @@ impl Application for AppHub {
             self.realtime
                 .presence()
                 .connect(connection, user, account.show_presence);
+
+        // A membership can be removed after the initial snapshot but before
+        // server_left can find this connection in presence. Once registered,
+        // future removals reach it, and this check covers the admission race.
+        if let Some(server) = active {
+            let member = self
+                .state
+                .database()
+                .read(move |db| crate::permissions::membership::is_member(db, server, user))
+                .await
+                .map_err(|error| HubError::internal(error.to_string()))?;
+            if !member {
+                hub.remove_from_group(connection, &server_group(server));
+                hub.remove_from_group(connection, &follower_group(server, user));
+            }
+        }
 
         // Only the first connection changes what others see. Every connection
         // still gets its own answer, because two tabs may have loaded while

@@ -152,7 +152,14 @@ pub(super) async fn kick_from_voice(
         Kick::Done(seated) => {
             if !seated.is_empty() {
                 state.activities().sync_voice_channel(&state, channel).await;
-                send_to_connections(&state, seated, "VoiceChannelKicked", &Kicked { channel_id: channel });
+                send_to_connections(
+                    &state,
+                    seated,
+                    "VoiceChannelKicked",
+                    &Kicked {
+                        channel_id: channel,
+                    },
+                );
                 if let Err(error) = broadcast_snapshot(&state, channel).await {
                     tracing::warn!(%error, "a room was not told that somebody was sent out of it");
                 }
@@ -197,9 +204,10 @@ pub(super) async fn move_between_voice_channels(
                 return Ok(Move::Unchanged);
             }
 
+            let cursor = crate::database::realtime_cursor(tx)?;
             let moved = held
                 .presence()
-                .move_user_between_voice_channels(target, channel, destination);
+                .move_voice_at(target, channel, destination, cursor);
             if !moved.moved {
                 return Ok(Move::Conflict);
             }

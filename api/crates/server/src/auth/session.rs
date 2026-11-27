@@ -6,7 +6,7 @@
 //! a cookie alone is never trusted, so ending a session in the database ends
 //! it everywhere at once.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::time::Duration;
 
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
@@ -431,46 +431,52 @@ impl Row {
     }
 }
 
-/// The (account, session, version) identities that may keep their connections
-/// in this snapshot. Deadlines are checked even when nobody writes to the database.
+/// The identities that may keep their connections and the first time each must
+/// be checked again, even if nobody writes to the database.
+pub(crate) type ActiveSessions = HashMap<(Id, Id, i64), Timestamp>;
+
 pub(crate) fn active_sessions(
     db: &Connection,
     ids: &[Id],
     now: Timestamp,
-) -> rusqlite::Result<HashSet<(Id, Id, i64)>> {
+) -> rusqlite::Result<ActiveSessions> {
     let policy = SecurityPolicy::load(db)?;
     let mut statement = db.prepare_cached(select_sessions!(
         "s.Id IN (SELECT value FROM json_each(?1))"
     ))?;
-    let mut active = HashSet::new();
+    let mut active = ActiveSessions::new();
     let mut without_proof = Vec::new();
     for row in statement.query_map([json_ids(ids)], Row::read)? {
         let row = row?;
-        if row.active_until(row.security_version, now).is_none() {
+        let Some(absolute) = row.active_until(row.security_version, now) else {
             continue;
-        }
+        };
+        let expires = row.expires_at.min(absolute);
         let identity = (row.user, row.session, row.security_version);
         if policy.is_satisfied(row.mfa_completed, row.mfa_evidence.as_deref()) {
-            active.insert(identity);
+            active.insert(identity, expires);
         } else {
-            without_proof.push(identity);
+            without_proof.push((identity, expires));
         }
     }
     let admins = if policy.mfa_requirement == ADMINS && !without_proof.is_empty() {
-        let users: Vec<_> = without_proof.iter().map(|&(user, _, _)| user).collect();
+        let users: Vec<_> = without_proof
+            .iter()
+            .map(|&((user, _, _), _)| user)
+            .collect();
         access::instance_server(db)?
             .map(|server| Snapshot::load(db, server, Some(&users), Targets::none()))
             .transpose()?
     } else {
         None
     };
-    for identity in without_proof {
+    for (identity, expires) in without_proof {
         let is_admin = admins
             .as_ref()
             .and_then(|snapshot| snapshot.subject(identity.0))
             .is_some_and(|subject| subject.permissions() & access::MANAGE_SERVER != 0);
         if !policy.requires_login_mfa(is_admin) {
-            active.insert(identity);
+            active.insert(identity, expires);
         }
     }
     Ok(active)
@@ -503,12 +509,12 @@ mod sweep_tests {
         fixtures::add_instance_server(&db);
         let now = Timestamp::now();
         let mut ids = Vec::new();
-        let mut expected = HashSet::new();
+        let mut expected = ActiveSessions::new();
         for _ in 0..30 {
             let user = fixtures::add_user(&db, None);
             let id = fixtures::add_session(&db, user, now, None);
             ids.push(id);
-            expected.insert((user, id, 1));
+            expected.insert((user, id, 1), now.plus(Duration::from_secs(86_400)));
         }
         let count = Arc::new(AtomicUsize::new(0));
         let seen = Arc::clone(&count);

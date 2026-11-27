@@ -12,7 +12,7 @@
 //! `VoiceChannelKicked` with the reason `access-revoked`.
 //!
 //! What a person may do is asked of the permissions, once, here: what they hold
-//! at the channel they sit in ([`held_at`]). There is no second copy of the
+//! at the channel they sit in ([`Snapshot`]). There is no second copy of the
 //! rules. A closed connection frees its seat by itself, so a disabled account or
 //! a session that ended needs nothing from here.
 //!
@@ -23,14 +23,15 @@
 
 use std::collections::HashSet;
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 
 use super::hub::send_to_connections;
 use super::rooms::broadcast_snapshot;
 use crate::database::DbError;
-use crate::permissions::authorization::{Scope, held_at};
+use crate::permissions::authorization::Held;
 use crate::permissions::privileges::CONNECT;
+use crate::permissions::snapshot::{Snapshot, Targets};
 use crate::permissions::visibility::ChannelKind;
 use crate::state::AppState;
 use crate::values::Id;
@@ -96,52 +97,71 @@ impl Unseated {
 /// channels are read now. The seats and their media sessions are gone when it
 /// returns; the people and the rooms are told by [`Unseated::announce`].
 pub async fn unseat(state: &AppState, server: Id, rooms: Option<Vec<Id>>) -> Unseated {
+    match unseat_at(state, server, rooms, None).await {
+        Ok(seats) => seats,
+        Err(error) => {
+            tracing::warn!(%error, "could not check voice access");
+            Unseated::default()
+        }
+    }
+}
+
+pub(crate) async fn unseat_at(
+    state: &AppState,
+    server: Id,
+    rooms: Option<Vec<Id>>,
+    change: Option<i64>,
+) -> Result<Unseated, DbError> {
     let Some(realtime) = state.realtime() else {
-        return Unseated::default();
+        return Ok(Unseated::default());
     };
     let presence = realtime.presence();
     let active: HashSet<Id> = presence.active_voice_rooms().into_iter().collect();
     if active.is_empty() {
-        return Unseated::default();
+        return Ok(Unseated::default());
     }
 
     let held = realtime.clone();
     let found = state
         .database()
         .read(move |db| -> Result<Vec<(Id, Id)>, DbError> {
-            let candidates = match rooms {
-                Some(rooms) => rooms,
-                None => voice_channels_of(db, server)?,
+            let mut candidates: HashSet<Id> = if rooms.is_none() || change.is_some() {
+                voice_channels_of(db, server)?.into_iter().collect()
+            } else {
+                HashSet::new()
             };
+            candidates.extend(rooms.into_iter().flatten());
             let mut without = Vec::new();
             for room in candidates.into_iter().filter(|room| active.contains(room)) {
-                for seated in held.presence().voice_users(room) {
-                    let held = held_at(db, seated.user, &Scope::channel(server, room))?;
-                    if !(held.views() && held.has(CONNECT)) {
-                        without.push((seated.user, room));
+                let users: Vec<_> = held.presence().voice_users(room).into_iter().map(|seat| seat.user).collect();
+                let section = db.prepare_cached("SELECT SectionId FROM Channels WHERE Id = ?1 AND ServerId = ?2 AND Kind = ?3")?
+                    .query_row(params![room, server, ChannelKind::Voice], |row| row.get::<_, Option<Id>>(0)).optional()?;
+                let Some(section) = section else {
+                    without.extend(users.into_iter().map(|user| (user, room)));
+                    continue;
+                };
+                let rights = Snapshot::load(db, server, Some(&users), Targets::at(section, Some(room)))?;
+                for user in users {
+                    let permissions = rights.subject(user)
+                        .map(|member| rights.evaluate(member, section, Some(room)))
+                        .transpose()?.map(Held);
+                    if !permissions.is_some_and(|held| held.views() && held.has(CONNECT)) {
+                        without.push((user, room));
                     }
                 }
             }
             Ok(without)
         })
-        .await;
-    let found = match found {
-        Ok(found) => found,
-        Err(error) => {
-            tracing::warn!(%error, "who sits where they may no longer sit was not read");
-            return Unseated::default();
-        }
-    };
+        .await?;
 
     let mut unseated = Unseated::default();
     for (user, room) in found {
-        let connections = presence.voice_connections_of(user, room);
-        presence.remove_user_from_voice_channels(user, &HashSet::from([room]));
+        let connections = presence.revoke_voice_access(user, room, change);
         if !connections.is_empty() {
             unseated.seats.push((user, room, connections));
         }
     }
-    unseated
+    Ok(unseated)
 }
 
 /// [`unseat`] and [`Unseated::announce`] in one: what a change of access calls

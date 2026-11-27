@@ -495,17 +495,35 @@ async fn closed_within_two_seconds(connection: &mut HubClient) -> Option<u16> {
 async fn a_session_revoked_in_the_database_loses_its_connection_and_only_its_own() {
     let (server, _, first, mut closing, _, mut staying) = two_sessions().await;
 
-    server
-        .database()
-        .execute(
-            "UPDATE \"UserSessions\" SET \"RevokedAt\" = ?2 WHERE \"Id\" = ?1",
-            rusqlite::params![first, Timestamp::now()],
-        )
-        .unwrap();
+    let mut writer = server.database();
+    let tx = writer.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).unwrap();
+    tx.execute("UPDATE UserSessions SET RevokedAt=?2 WHERE Id=?1",
+        rusqlite::params![first, Timestamp::now()]).unwrap();
+    server.signal_access_change();
+    assert!(closing.quiet_for(Duration::from_millis(150)).await.is_empty());
+    tx.commit().unwrap();
 
     assert_eq!(closed_within_two_seconds(&mut closing).await, Some(4401));
     assert!(staying.quiet_for(Duration::from_millis(1500)).await.is_empty());
     assert_eq!(staying.invoke("GetRtcClock", json!([])).await["type"], "result");
+}
+
+#[tokio::test]
+async fn a_pruned_journal_rechecks_access_and_lets_valid_clients_rejoin() {
+    let (server, _, first, mut closing, second, mut restarting) = two_sessions().await;
+    let mut writer = server.database();
+    let tx = writer.transaction().unwrap();
+    tx.execute("UPDATE UserSessions SET RevokedAt=?1 WHERE Id=?2",
+        rusqlite::params![Timestamp::now(), first]).unwrap();
+    // The watcher fell far behind: the revocation is old, and it is pruned
+    // in the same commit.
+    tx.execute("UPDATE RealtimeChanges SET At = 0", []).unwrap();
+    tx.execute("WITH RECURSIVE rows(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM rows WHERE n < 1280)
+        INSERT INTO RealtimeChanges(Kind,Subject) SELECT 'session', ?1 FROM rows", [second]).unwrap();
+    server.signal_access_change();
+    tx.commit().unwrap();
+    assert_eq!(closed_within_two_seconds(&mut closing).await, Some(4401));
+    assert_eq!(closed_within_two_seconds(&mut restarting).await, Some(1012));
 }
 
 #[tokio::test]
@@ -521,9 +539,29 @@ async fn a_session_that_ran_out_or_reached_its_absolute_end_loses_its_connection
             )
             .unwrap();
 
+        server.signal_access_change();
         assert_eq!(closed_within_two_seconds(&mut closing).await, Some(4401), "{column}");
         assert_eq!(staying.invoke("GetRtcClock", json!([])).await["type"], "result", "{column}");
     }
+}
+
+#[tokio::test]
+async fn an_idle_connection_expires_without_a_later_database_write() {
+    let (server, _, first, mut closing, _, mut staying) = two_sessions().await;
+    let expires = Timestamp::now().plus(Duration::from_millis(1500));
+    server.database().execute("UPDATE UserSessions SET AbsoluteExpiresAt = ?1 WHERE Id = ?2",
+        rusqlite::params![expires, first]).unwrap();
+    server.signal_access_change();
+    // Long enough for the watcher to read the signal and the new end.
+    assert!(closing.quiet_for(Duration::from_millis(700)).await.is_empty());
+    // The clock-only check can still read the committed snapshot while a CLI
+    // command holds the write lock.
+    let writer = server.database();
+    writer.execute_batch("BEGIN IMMEDIATE").unwrap();
+    assert_eq!(closed_within_two_seconds(&mut closing).await, Some(4401));
+    assert!(Timestamp::now() >= expires);
+    writer.execute_batch("ROLLBACK").unwrap();
+    assert_eq!(staying.invoke("GetRtcClock", json!([])).await["type"], "result");
 }
 
 #[tokio::test]
@@ -538,6 +576,7 @@ async fn a_disabled_account_loses_every_connection() {
         )
         .unwrap();
 
+    server.signal_access_change();
     assert_eq!(closed_within_two_seconds(&mut first).await, Some(4401));
     assert_eq!(closed_within_two_seconds(&mut second).await, Some(4401));
 }
@@ -554,6 +593,7 @@ async fn a_bump_of_the_accounts_session_version_ends_every_connection_it_made() 
         )
         .unwrap();
 
+    server.signal_access_change();
     assert_eq!(closed_within_two_seconds(&mut first).await, Some(4401));
     assert_eq!(closed_within_two_seconds(&mut second).await, Some(4401));
 }
@@ -573,6 +613,7 @@ fn require_second_step(server: &Server, requirement: &str) {
             rusqlite::params![instance, Timestamp::now(), requirement],
         )
         .unwrap();
+    server.signal_access_change();
 }
 
 #[tokio::test]
@@ -604,6 +645,28 @@ async fn an_admin_only_policy_closes_the_unverified_owner_and_keeps_an_ordinary_
 }
 
 #[tokio::test]
+async fn promoting_a_role_from_an_external_connection_applies_admin_mfa_to_its_holder() {
+    let server = Server::start_with(&WATCHER).await;
+    let _owner = server.found("owner").await;
+    let maya = server.register("maya").await;
+    let jo = server.register("johan").await;
+    let db = server.database();
+    let instance = db.query_row("SELECT Id FROM Servers LIMIT 1", [], |r| r.get(0)).unwrap();
+    let role = crate::voice::give_role(&db, instance, &maya.id, "Staff", 2, 0);
+    require_second_step(&server, "admins");
+    let mut maya_socket = connect(&server, &maya).await;
+    settle(&mut maya_socket, &maya).await;
+    let mut jo_socket = connect(&server, &jo).await;
+    settle(&mut jo_socket, &jo).await;
+
+    db.execute("UPDATE ServerRoles SET Permissions = ?1 WHERE Id = ?2",
+        rusqlite::params![crate::voice::MANAGE_SERVER, role]).unwrap();
+    server.signal_access_change();
+    assert_eq!(closed_within_two_seconds(&mut maya_socket).await, Some(4401));
+    assert_eq!(jo_socket.invoke("GetRtcClock", json!([])).await["type"], "result");
+}
+
+#[tokio::test]
 async fn signing_out_closes_the_connections_of_that_session_at_once_without_the_watcher() {
     let server = Server::start().await;
     let owner = server.found("owner").await;
@@ -619,7 +682,7 @@ async fn signing_out_closes_the_connections_of_that_session_at_once_without_the_
 }
 
 #[tokio::test]
-async fn a_session_that_stays_valid_keeps_its_connection_through_many_sweeps() {
+async fn a_valid_idle_session_keeps_its_connection() {
     let (server, _, _, mut first, _, _second) = two_sessions().await;
     drop(server.database());
 
