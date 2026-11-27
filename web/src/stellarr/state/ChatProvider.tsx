@@ -139,6 +139,8 @@ export interface ChatValue {
   sendVoice: (file: File, durationSeconds: number) => Promise<void>;
   /** Sends one canonical GIPHY page as a standalone message. */
   sendGif: (pageUrl: string) => Promise<void>;
+  /** Hands the message, with its files and its answer, over to go out at `sendAt`. */
+  schedule: (text: string, sendAt: Date) => Promise<void>;
   restoringFiles: boolean;
   attach: (files: File[]) => void;
   retryChip: (chipId: string) => void;
@@ -245,7 +247,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const edit = useMessageEdit(ports.messageActions, data.messages, dispatch);
   const composer = useChatComposer({
     chat: ports.chat,
+    scheduled: ports.scheduled,
     channelId,
+    threadRootId: panel.threadRootId,
     user,
     dispatch,
     pendingIds,
@@ -468,6 +472,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       send: composer.send,
       sendVoice: composer.sendVoice,
       sendGif: composer.sendGif,
+      schedule: composer.schedule,
       restoringFiles: queue.restoringFiles,
       attach: queue.attach,
       retryChip: queue.retryChip,

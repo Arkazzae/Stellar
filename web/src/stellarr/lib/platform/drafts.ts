@@ -6,6 +6,12 @@ export interface Draft {
   text: string;
   manualCode: boolean;
   codeLanguage: CodeLanguageId | "auto";
+  /**
+   * When the message is to go out, ISO 8601, if a time was chosen. Kept with
+   * the words, so leaving the channel and coming back does not turn a
+   * scheduled message into one that sends at once.
+   */
+  sendAt?: string;
 }
 const empty: Draft = { text: "", manualCode: false, codeLanguage: "auto" };
 export function draftScope(account: string, ...destination: string[]) {

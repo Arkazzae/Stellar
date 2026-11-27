@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { Icon } from "@stellarr/icons";
 import { AnchoredCard } from "@/components/primitives/AnchoredCard";
@@ -28,6 +28,11 @@ export interface NotificationInboxProps {
   onOpenChannel: (channelId: string) => void;
   /** Accepts an invitation. Without it an invitation row has nothing to offer. */
   onJoinInvite?: (inviteCode: string) => Promise<void>;
+  /**
+   * The reader's scheduled messages from every place, as a second tab, with
+   * how many there are. Without it the inbox has no tabs.
+   */
+  scheduled?: { count: number; list: ReactNode };
 }
 
 interface NotificationRowProps {
@@ -210,8 +215,11 @@ export function NotificationInbox({
   channelName,
   onOpenChannel,
   onJoinInvite,
+  scheduled,
 }: NotificationInboxProps) {
   const { t } = useLanguage();
+  const [tab, setTab] = useState<"notifications" | "scheduled">("notifications");
+  const onScheduled = scheduled !== undefined && tab === "scheduled";
   const [joiningInvite, setJoiningInvite] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
 
@@ -251,7 +259,7 @@ export function NotificationInbox({
           )}
         </div>
         <div className="notification-inbox-head-actions">
-          {unreadCount > 0 ? (
+          {unreadCount > 0 && !onScheduled ? (
             <button
               type="button"
               className="notification-mark-all"
@@ -279,7 +287,37 @@ export function NotificationInbox({
         </div>
       </div>
 
-      {message === null ? null : (
+      {scheduled === undefined ? null : (
+        <div className="notification-tabs" role="tablist" aria-label={t("notifications.title")}>
+          <button
+            type="button"
+            role="tab"
+            className="notification-tab"
+            aria-selected={!onScheduled}
+            onClick={() => setTab("notifications")}
+          >
+            {t("notifications.title")}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            className="notification-tab"
+            aria-selected={onScheduled}
+            onClick={() => setTab("scheduled")}
+          >
+            {t("scheduled.title")}
+            {scheduled.count === 0 ? null : <span>{scheduled.count}</span>}
+          </button>
+        </div>
+      )}
+
+      {onScheduled ? (
+        <div role="tabpanel" className="notification-scheduled">
+          {scheduled.list}
+        </div>
+      ) : null}
+
+      {onScheduled || message === null ? null : (
         <div className="notification-error" role="alert">
           <span>{message}</span>
           {/* Only a failed load can be retried here; a refused invitation is
@@ -292,7 +330,7 @@ export function NotificationInbox({
         </div>
       )}
 
-      {loading ? (
+      {onScheduled ? null : loading ? (
         <div className="notification-loading" aria-label={t("notifications.loading")}>
           {[0, 1, 2].map((placeholder) => (
             <div className="notification-skeleton" key={placeholder} aria-hidden="true">
@@ -327,7 +365,7 @@ export function NotificationInbox({
         </ol>
       )}
 
-      {!loading && hasOlder ? (
+      {!onScheduled && !loading && hasOlder ? (
         <button
           type="button"
           className="notification-load-older"

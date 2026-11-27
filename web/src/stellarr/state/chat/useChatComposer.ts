@@ -5,6 +5,7 @@ import type {
   Attachment,
   ChatPort,
   MessageReference,
+  ScheduledPort,
   User,
 } from "@/ports";
 
@@ -21,7 +22,11 @@ import type { ChatDispatch, PendingIds } from "./shared";
 
 interface ComposerOptions {
   chat: ChatPort;
+  /** Where a message written to go out later is handed. */
+  scheduled: ScheduledPort;
   channelId: string | null;
+  /** The thread being written in, or null for the channel itself. */
+  threadRootId: string | null;
   user: User | null;
   dispatch: ChatDispatch;
   pendingIds: PendingIds;
@@ -42,7 +47,9 @@ interface ComposerOptions {
  */
 export function useChatComposer({
   chat,
+  scheduled,
   channelId,
+  threadRootId,
   user,
   dispatch,
   pendingIds,
@@ -136,8 +143,38 @@ export function useChatComposer({
     [channelId, user, publish, replyTarget, settleReply],
   );
 
+  /**
+   * The same message, with the same files and the same answer, handed over to
+   * go out at `sendAt` instead of now. Like a send, only a confirmed one
+   * consumes the files and the reply. A thread is written to by answering its
+   * first message, as a send there does.
+   */
+  const schedule = useCallback(
+    async (text: string, sendAt: Date) => {
+      if (channelId === null || user === null) return;
+      if (!allUploaded(pending)) {
+        throw new Error("Attachments are still uploading or need a retry.");
+      }
+      const attachments = uploadedAttachments(pending);
+      if (text.length === 0 && attachments.length === 0) return;
+      const answering = replyTarget?.id ?? threadRootId;
+      await scheduled.schedule(
+        { kind: "channel", channelId },
+        {
+          content: text,
+          attachmentIds: attachments.map((attachment) => attachment.id),
+          ...(answering === null ? {} : { replyToMessageId: answering }),
+          sendAt,
+        },
+      );
+      discardChips(new Set(pending.map((chip) => chip.id)));
+      settleReply();
+    },
+    [channelId, user, pending, replyTarget, threadRootId, scheduled, discardChips, settleReply],
+  );
+
   return useMemo(
-    () => ({ ownSendToken, send, sendVoice, sendGif }),
-    [ownSendToken, send, sendVoice, sendGif],
+    () => ({ ownSendToken, send, sendVoice, sendGif, schedule }),
+    [ownSendToken, send, sendVoice, sendGif, schedule],
   );
 }

@@ -3,7 +3,7 @@ import { useMemo, type ReactNode } from "react";
 import { Icon } from "@stellarr/icons";
 import { Avatar } from "@/components/primitives/Avatar";
 import type { MessageTranslationOptions } from "@/components/room/attachments/TranslatedTextAttachment";
-import { Composer } from "@/components/room/composer/Composer";
+import { Composer, type ComposerScheduling } from "@/components/room/composer/Composer";
 import type { ComposerChip } from "@/components/room/composer/ComposerChips";
 import type { MessageGroupVM, TranscriptNotice } from "@/components/room/transcript/MessageGroup";
 import { Transcript, type TranscriptSectionVM } from "@/components/room/transcript/Transcript";
@@ -43,6 +43,8 @@ export interface DmChatProps {
   renderNotice?(notice: TranscriptNotice, group: MessageGroupVM): ReactNode;
   /** Writing is not possible here, and this says why; the composer gives way to it. */
   composerBlocked?: ReactNode;
+  /** Sending later, where the conversation can hold a scheduled message. */
+  scheduling?: ComposerScheduling;
 }
 
 /**
@@ -76,6 +78,7 @@ export function DmChat({
   introText,
   renderNotice,
   composerBlocked,
+  scheduling,
 }: DmChatProps) {
   const t = translation?.t ?? translateForDocument;
   const name = peer.displayName;
@@ -128,6 +131,7 @@ export function DmChat({
           onRetryChip={onRetryChip}
           onReorderChips={onReorderChips}
           customEmoji={customEmoji}
+          {...(scheduling === undefined ? {} : { scheduling })}
           locale={translation?.locale}
           t={t}
         />

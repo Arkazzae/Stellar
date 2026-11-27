@@ -74,6 +74,12 @@ export interface FriendsValue {
   ringing: boolean;
   /** Sends into the open conversation. No-op when there is none. */
   send: (text: string) => Promise<void>;
+  /**
+   * Hands the message and its files over to go out at `sendAt` in the open
+   * conversation. An encrypted conversation cannot hold one: the server only
+   * takes what is sealed for the key in use now.
+   */
+  schedule: (text: string, sendAt: Date) => Promise<void>;
   hasOlderMessages: boolean;
   loadingOlderMessages: boolean;
   loadOlderMessages: () => void;
@@ -116,7 +122,7 @@ function useSocial<T>(port: FriendsPort, read: () => T): T {
  */
 export function FriendsProvider({ children }: { children: ReactNode }) {
   const { locale, t } = useLanguage();
-  const { friends: port } = usePorts();
+  const { friends: port, scheduled } = usePorts();
   const { byShortcode: customEmoji } = useEmoji();
   const { user } = useSessionContext();
   const { activeDmId, openDm, inConversationCall, callChatOpen, cinema } = useUiContext();
@@ -303,6 +309,25 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
     [port, activeDmId, chips, discardChips, reuploadChips],
   );
 
+  const schedule = useCallback(
+    async (text: string, sendAt: Date) => {
+      if (activeDmId === null) return;
+      if (chips.some((chip) => chip.status !== "ready")) {
+        throw new Error("Attachments are still uploading or need a retry.");
+      }
+      const attachmentIds = chips.flatMap((chip) =>
+        chip.attachment === null ? [] : [chip.attachment.id],
+      );
+      if (text.trim().length === 0 && attachmentIds.length === 0) return;
+      await scheduled.schedule(
+        { kind: "conversation", conversationId: activeDmId },
+        { content: text, attachmentIds, sendAt },
+      );
+      discardChips(new Set(chips.map((chip) => chip.id)));
+    },
+    [scheduled, activeDmId, chips, discardChips],
+  );
+
   const joinConversationCall = useCallback(
     (id: string, peer: User | undefined) => {
       joinVoice(id, {
@@ -402,6 +427,7 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
       callConversation,
       ringing,
       send,
+      schedule,
       hasOlderMessages,
       loadingOlderMessages,
       loadOlderMessages,
@@ -428,6 +454,7 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
       callConversation,
       ringing,
       send,
+      schedule,
       hasOlderMessages,
       loadingOlderMessages,
       loadOlderMessages,

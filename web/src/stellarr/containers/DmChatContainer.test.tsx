@@ -14,7 +14,10 @@ const mocks = vi.hoisted(() => ({
   seen: null as DmChatProps | null,
 }));
 
+const NOTHING_SCHEDULED: never[] = [];
+
 vi.mock("@/state/hooks", () => ({
+  usePorts: () => ({ scheduled: { subscribe: () => () => {}, getSnapshot: () => NOTHING_SCHEDULED } }),
   useSession: () => ({ user: { id: "self" } }),
   useFriends: () => mocks.friends,
   useLanguage: () => mocks.language,
@@ -41,6 +44,7 @@ function fakeFriends(): FriendsValue {
     loadingOlderMessages: false,
     chips: [],
     send: vi.fn(async () => {}),
+    schedule: vi.fn(async () => {}),
     loadOlderMessages: vi.fn(),
     attach: vi.fn(),
     retryChip: vi.fn(),
@@ -79,6 +83,19 @@ describe("DmChatContainer", () => {
 
     expect(typeof chat().attachments?.onOpenImage).toBe("function");
     expect(typeof chat().attachments?.onPlayVideo).toBe("function");
+  });
+
+  it("offers sending later in a conversation, but not once it is encrypted", () => {
+    const view = render(<DmChatContainer />);
+    expect(chat().scheduling).toMatchObject({ onSchedule: mocks.friends.schedule, place: "conversation" });
+    view.unmount();
+
+    mocks.friends = {
+      ...fakeFriends(),
+      active: { id: "dm-ada", peer: ADA, encryption: { state: "on" } },
+    } as unknown as FriendsValue;
+    render(<DmChatContainer />);
+    expect(chat().scheduling).toBeUndefined();
   });
 
   it("passes the translation settings on", () => {

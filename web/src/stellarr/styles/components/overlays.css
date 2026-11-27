@@ -138,6 +138,21 @@
   .ctx-item.danger[data-on] { background: var(--danger-soft) }
   .ctx-item.danger .ctx-ico { color: var(--danger-text) }
 
+  .ctx-title {
+    padding: 6px 9px 4px;
+    font-size: var(--text-12);
+    font-weight: 600;
+    color: var(--text-faint);
+  }
+
+  .ctx-detail {
+    margin-left: auto;
+    padding-left: 12px;
+    font-size: var(--text-12);
+    color: var(--text-faint);
+    white-space: nowrap;
+  }
+
   .ctx-sep {
     height: 1px;
     margin: 5px 4px;

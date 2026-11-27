@@ -192,6 +192,22 @@ export function banPerson(t: Translator, subject: ConfirmSubject, reason = ""): 
   };
 }
 
+/**
+ * Dropping a message that waits to go out. Nobody else knew it was coming,
+ * so the only consequence to name is that its words go with it.
+ */
+export function deleteScheduled(t: Translator, subject: ConfirmSubject): ConfirmRequest {
+  return {
+    title: t("scheduled.deleteTitle"),
+    description: t("scheduled.deleteDescription"),
+    subject,
+    confirmLabel: t("scheduled.delete"),
+    busyLabel: t("confirm.deleting"),
+    failure: t("scheduled.actionFailed"),
+    danger: true,
+  };
+}
+
 /** Deleting a channel, from its context menu or from its settings: the same card. */
 export function deleteChannel(t: Translator, subject: ConfirmSubject): ConfirmRequest {
   return {

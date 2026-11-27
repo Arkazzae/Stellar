@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 
 import { offerInstallAfterInvite } from "@/lib/platform/install";
 import { Icon } from "@stellarr/icons";
+import { ScheduledList } from "@/components/scheduled/ScheduledList";
 import { NotificationInbox } from "@/components/shell/NotificationInbox";
 import {
   useDirectory,
@@ -11,7 +12,17 @@ import {
   useUi,
 } from "@/state/hooks";
 
+import { useReaderZone, useScheduledItems, useScheduledListActions } from "./useScheduled";
+
 const BADGE_LIMIT = 99;
+
+/** The inbox's second tab: every scheduled message, from every place. */
+function ScheduledInboxList({ now }: { now: Date }) {
+  const items = useScheduledItems();
+  const actions = useScheduledListActions();
+  const zone = useReaderZone();
+  return <ScheduledList compact items={items} now={now} zone={zone} {...actions} />;
+}
 
 /**
  * The bell in a header and the inbox it opens, anchored to the bell itself.
@@ -25,6 +36,9 @@ export function NotificationInboxButton() {
   const { t } = useLanguage();
   const [button, setButton] = useState<HTMLButtonElement | null>(null);
   const [clicked, setAnchor] = useState<HTMLButtonElement | null>(null);
+  const scheduledCount = useScheduledItems().length;
+  /** When the inbox opened, which the scheduled list's "today" is read against. */
+  const [openedAt, setOpenedAt] = useState(() => new Date());
   const anchor = ui.modal === "inbox" ? button : clicked;
 
   // Stable, because the inbox repositions and re-listens whenever it changes.
@@ -60,7 +74,10 @@ export function NotificationInboxButton() {
         onClick={(event) => {
           const bell = event.currentTarget;
           if (anchor) close();
-          else setAnchor(bell);
+          else {
+            setOpenedAt(new Date());
+            setAnchor(bell);
+          }
         }}
       >
         <Icon name="bell" size={17} />
@@ -93,6 +110,7 @@ export function NotificationInboxButton() {
             close();
           }}
           onJoinInvite={joinInvite}
+          scheduled={{ count: scheduledCount, list: <ScheduledInboxList now={openedAt} /> }}
         />
       )}
     </>

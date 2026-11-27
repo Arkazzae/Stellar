@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { draftScope } from "@/lib/platform/drafts";
 import { DmChat } from "@/components/friends/DmChat";
 import { MediaViewer } from "@/components/room/attachments/MediaViewer";
@@ -7,6 +9,8 @@ import { toPerson } from "./toPerson";
 import { useAttachmentViewer } from "./useAttachmentViewer";
 import { useChatTranslation } from "./useChatTranslation";
 import { useDmEncryptionView } from "./useDmEncryption";
+import { ScheduledDialogContainer } from "./ScheduledDialogContainer";
+import { useReaderZone, useWaitingHere } from "./useScheduled";
 
 /**
  * The open conversation's messages and composer, wired to the friends state.
@@ -26,6 +30,16 @@ export function DmChatContainer() {
   const encryptionView = useDmEncryptionView(friends.active);
 
   const conversation = friends.active;
+  // The server takes only what is sealed for the key in use now, so an
+  // encrypted conversation cannot hold a message for later.
+  const place =
+    conversation === null || conversation.encryption?.state === "on"
+      ? null
+      : { kind: "conversation" as const, conversationId: conversation.id };
+  const zone = useReaderZone();
+  const waiting = useWaitingHere(place);
+  const [listOpen, setListOpen] = useState(false);
+  const [listNow, setListNow] = useState(() => new Date());
   if (conversation === null) return null;
 
   return (
@@ -49,8 +63,25 @@ export function DmChatContainer() {
         customEmoji={customEmoji}
         translation={translation}
         attachments={viewer.attachments}
+        {...(place === null
+          ? {}
+          : {
+              scheduling: {
+                onSchedule: friends.schedule,
+                waiting,
+                place: "conversation" as const,
+                onShowScheduled: () => {
+                  setListNow(new Date());
+                  setListOpen(true);
+                },
+                zone,
+              },
+            })}
         {...encryptionView}
       />
+      {listOpen && place !== null ? (
+        <ScheduledDialogContainer place={place} now={listNow} zone={zone} onClose={() => setListOpen(false)} />
+      ) : null}
       <MediaViewer target={viewer.target} onClose={viewer.close} resolveOriginal={viewer.attachments.resolveOriginal} />
     </>
   );

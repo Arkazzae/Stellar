@@ -26,6 +26,7 @@ vi.mock("@/lib/giphy/giphy", async (importOriginal) => ({
 }));
 
 const sendGif = vi.fn();
+const schedule = vi.fn();
 const voiceSettings = {};
 const room = vi.hoisted(() => ({
   ui: {
@@ -36,7 +37,9 @@ const room = vi.hoisted(() => ({
   closeThread: vi.fn(),
   directory: { canModerateMembers: false, canManageBans: false },
   admin: { supported: { moderation: true }, kick: vi.fn(), ban: vi.fn() },
+  scheduled: { subscribe: () => () => {}, getSnapshot: () => NO_SCHEDULED },
 }));
+const NO_SCHEDULED: never[] = [];
 const ADA = { id: "u-ada", username: "ada", displayName: "Ada Lovelace" };
 
 vi.mock("@/state/hooks", () => ({
@@ -55,6 +58,7 @@ vi.mock("@/state/hooks", () => ({
     notifyTyping: vi.fn(),
     cancelReply: vi.fn(),
     closeThread: room.closeThread,
+    schedule,
   }),
   useDirectory: () => ({
     members: [{ id: "self", username: "me", displayName: "Me" }, ADA],
@@ -65,13 +69,14 @@ vi.mock("@/state/hooks", () => ({
   useEmoji: () => ({ emoji: [] }),
   useLanguage: () => ({ locale: "pl", t: (key: string) => key }),
   usePorts: () => ({
+    scheduled: room.scheduled,
     voiceSettings: { subscribe: () => () => undefined, getSnapshot: () => voiceSettings },
     admin: room.admin,
   }),
 }));
 
-async function renderComposer() {
-  render(<RoomComposer channelName="ogólny" threadRootId={null} />, { wrapper: ConfirmProvider });
+async function renderComposer(threadRootId: string | null = null) {
+  render(<RoomComposer channelName="ogólny" threadRootId={threadRootId} />, { wrapper: ConfirmProvider });
   await act(async () => {
     await Promise.resolve();
   });
@@ -185,5 +190,12 @@ describe("RoomComposer's commands", () => {
     expect(room.ui.toggleChannelPanel).toHaveBeenCalledTimes(1);
 
     expect(openStatus).toBe(room.ui.revealAccountPanel);
+  });
+});
+
+describe("RoomComposer's sending later", () => {
+  it("schedules through the chat, for the channel or for the thread written in", async () => {
+    expect((await renderComposer()).scheduling).toMatchObject({ onSchedule: schedule, place: "channel" });
+    expect((await renderComposer("root-1")).scheduling).toMatchObject({ onSchedule: schedule, place: "thread" });
   });
 });

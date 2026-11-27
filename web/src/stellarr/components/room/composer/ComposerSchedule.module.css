@@ -1,0 +1,310 @@
+/*
+ * Sending later: the chosen time in the field, the button that schedules,
+ * the bar over the field and the date picker. Beside the composer, as its
+ * other parts are, to stay off the first page's budget.
+ */
+
+/* ---------------------------------------------------------------- box -- */
+
+/* A box that will schedule rather than send says so at its edge. */
+.scheduled {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  margin-right: 8px;
+  padding: 0 4px 0 10px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: var(--text-13);
+  font-weight: 550;
+  white-space: nowrap;
+}
+
+.stale {
+  background: var(--danger-soft);
+  color: var(--danger-text);
+}
+
+.chipRemove {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: inherit;
+}
+
+.chipRemove:hover {
+  background: color-mix(in oklab, currentColor 14%, transparent);
+}
+
+/* In code mode and in a narrow form the chip waits over the box, whose row has no room for it. */
+.chipStrip {
+  display: flex;
+  margin: 0 0 6px;
+}
+
+/* The send button, saying what it will do. */
+.later {
+  width: auto;
+  max-width: none;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-13);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Long-pressing the send button opens the menu, not the system's. */
+.pressable {
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+/* The button whose menu is open. */
+.pressable[aria-expanded="true"] {
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* ---------------------------------------------------------------- bar -- */
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  margin: 0 14px -1px;
+  padding: 0 6px 0 12px;
+  border: 1px solid var(--line-subtle);
+  border-bottom: 0;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  background: var(--surface-raised);
+  font-size: var(--text-13);
+  color: var(--text-muted);
+}
+
+.bar > svg {
+  flex: none;
+  color: var(--accent-text);
+}
+
+.barText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.barText b {
+  font-weight: 550;
+  color: var(--text);
+}
+
+.barShow {
+  flex: none;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-13);
+  font-weight: 550;
+  color: var(--text-muted);
+}
+
+.barShow:hover {
+  background: var(--surface-overlay);
+  color: var(--text);
+}
+
+/* ------------------------------------------------------------- picker -- */
+
+.picker {
+  position: absolute;
+  right: 20px;
+  bottom: calc(100% + 8px);
+  z-index: 46;
+  width: min(320px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-pop);
+  animation: rise var(--dur-base) var(--ease-standard);
+}
+
+.pickerHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--text-14);
+  font-weight: 600;
+}
+
+.pickerNav {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.pickerNav button {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+}
+
+.pickerNav button:hover:not(:disabled) {
+  background: var(--surface-overlay);
+  color: var(--text);
+}
+
+.pickerNav button:disabled {
+  opacity: 0.35;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+  text-align: center;
+  font-size: var(--text-13);
+}
+
+.grid i {
+  padding: 4px 0;
+  font-size: var(--text-11);
+  font-style: normal;
+  color: var(--text-faint);
+}
+
+.day {
+  height: 32px;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.day:hover:not(:disabled) {
+  background: var(--surface-overlay);
+}
+
+.day:disabled {
+  color: var(--text-faint);
+  opacity: 0.45;
+}
+
+.day[aria-current="date"] {
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+
+.day[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+.timeRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.time {
+  flex: 1;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-field);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-14);
+  color-scheme: dark light;
+}
+
+.time:focus {
+  border-color: var(--line-strong);
+  outline: none;
+}
+
+.zone {
+  flex: none;
+  font-size: var(--text-12);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.note {
+  margin: 0;
+  font-size: var(--text-13);
+  line-height: 1.45;
+  color: var(--text-faint);
+}
+
+.problem {
+  color: var(--warn-text);
+}
+
+.pickerFoot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (pointer: coarse) {
+  .chipRemove {
+    width: 36px;
+    height: 36px;
+  }
+
+  .day {
+    height: 40px;
+  }
+
+  .time {
+    min-height: 44px;
+    font-size: var(--text-16);
+  }
+}
+
+@media (max-width: 767px) {
+  /* On a phone the picker is the width of the composer, over it. */
+  .picker {
+    left: 16px;
+    right: 16px;
+    width: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .picker {
+    animation: none;
+  }
+}
