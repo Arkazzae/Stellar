@@ -13,7 +13,7 @@ if docker container inspect stellarr >/dev/null 2>&1 || docker volume inspect st
 fi
 cd "$work"
 STELLARR_INSTALLER_VERSION="$version" bash "$root/install.sh" --version "$version" --dir "$instance" \
-  --yes --domain localhost --https-port 18743 --public-ip 127.0.0.1 --language en --disable-turn
+  --yes --domain localhost --https-port 18743 --media-port 19490 --public-ip 127.0.0.1 --language en --disable-turn
 test "$(docker inspect --format '{{.Config.Image}}' stellarr)" = "ghcr.io/arkazzae/stellarr:$version"
 docker compose --project-directory "$instance" up -d --wait
 curl --fail --silent --show-error --insecure "$origin/health/ready" >/dev/null

@@ -5,7 +5,8 @@ version=${1:?expected version}
 work=$(mktemp -d)
 cp "$(dirname "$0")/../../install.sh" "$work/install.sh"
 cd "$work"
-bash install.sh --yes --dir "$work/instance" --domain localhost --public-ip 127.0.0.1 --disable-turn
+# Keep the published media port outside the Linux runner's ephemeral port range.
+bash install.sh --yes --dir "$work/instance" --domain localhost --media-port 19490 --public-ip 127.0.0.1 --disable-turn
 test "$(docker inspect --format '{{.Config.Image}}' stellarr)" = "ghcr.io/arkazzae/stellarr:$version"
 curl -kfsS https://localhost/health/ready >/dev/null
 volume=$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/data/stellarr"}}{{.Name}}{{end}}{{end}}' stellarr)
