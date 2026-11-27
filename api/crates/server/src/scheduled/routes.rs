@@ -249,7 +249,7 @@ pub async fn send_now(
 }
 
 /// Checks a new message where it is going, and writes it.
-fn make(
+pub(super) fn make(
     tx: &rusqlite::Transaction,
     messages: &Messages,
     scheduled: &Scheduled,
