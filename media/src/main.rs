@@ -30,6 +30,8 @@ fn main() -> ExitCode {
         .with_env_filter(filter)
         .with_ansi(std::io::stdout().is_terminal())
         .init();
+    // Panics the core catches would otherwise each write to stderr.
+    stellarr_media::panic_report::install();
 
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()

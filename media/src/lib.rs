@@ -8,6 +8,7 @@ pub mod config;
 pub mod core;
 pub mod events;
 pub mod http;
+pub mod panic_report;
 pub mod sdp_text;
 pub mod server;
 pub mod stun;

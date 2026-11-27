@@ -317,6 +317,9 @@ pub struct Core {
 /// session instead of the process. An `Rtc` holds no locks or threads, so
 /// dropping one that panicked is safe.
 fn guard<T>(f: impl FnOnce() -> T) -> Result<T, ()> {
+    // The panic hook reads this to tell a caught panic from one that ends
+    // the process.
+    let _guarded = crate::panic_report::enter();
     catch_unwind(AssertUnwindSafe(f)).map_err(|_| ())
 }
 
