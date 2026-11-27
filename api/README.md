@@ -60,6 +60,7 @@ cargo test --workspace --locked
 | `own_profile/`, `client_settings/`, `bootstrap/`, `theme_sources/` | Profile & arrival sound, cross-device client settings sync, `/api/bootstrap`, and server-fetched external CSS/theme imports. |
 | `servers/`, `administration/`, `roles/`, `moderation/`, `discord_import/` | Server CRUD, invites, audit logs, ownership transfer, roles & overrides, kicks/bans, and background Discord structure/history/attachment imports. |
 | `channels/`, `messages/`, `message_views/`, `link_previews/` | Channels & sections, PWA share target, transcripts & `MessageChanges`, reactions, pins, threads, FTS5 search, and OpenGraph link unfurling worker. |
+| `polls/` | Polls carried by channel messages: votes, early ends and the list of who chose an answer, counts to the channel and each choice to its voter alone, and the `poll-ends` worker that ends them on time. |
 | `scheduled/` | Messages scheduled to send later, seen and announced to their author only, and the `scheduled-messages` worker that posts them through the channel and conversation post paths when they fall due. |
 | `social/`, `direct/`, `encryption/` | Friendships & blocks, 1:1 DMs, and 1:1 E2EE public keys, versioned key backups, session-bound devices, and conversation epochs. |
 | `uploads/`, `assets/`, `emoji/`, `soundboard/` | Multipart & encrypted uploads, range-streamed `/assets/{id}` downloads, custom server emojis, and soundboard clips. |
