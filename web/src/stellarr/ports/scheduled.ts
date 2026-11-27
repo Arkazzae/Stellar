@@ -11,7 +11,17 @@ import type { Attachment, Message } from "./chat";
  * message in a thread answers the thread's first message, as a reply does.
  */
 export type ScheduledTarget =
-  | { kind: "channel"; channelId: string; serverId?: string }
+  | {
+      kind: "channel";
+      channelId: string;
+      serverId?: string;
+      /**
+       * The names the server and channel have now, for a place the client may
+       * not have loaded. Absent once the server or channel is gone.
+       */
+      serverName?: string;
+      channelName?: string;
+    }
   | { kind: "conversation"; conversationId: string };
 
 /** Why a scheduled message did not go out when it was due. */

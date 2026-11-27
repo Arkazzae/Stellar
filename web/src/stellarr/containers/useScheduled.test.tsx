@@ -7,7 +7,13 @@ import type { ScheduledMessage, ScheduledTarget } from "@/ports";
 import { answerConfirm } from "@/test/confirm";
 import { polish } from "@/test/translators";
 
-import { useScheduledListActions, useWaitingHere, type ScheduledPlace } from "./useScheduled";
+import {
+  scheduledTargetLabel,
+  useScheduledListActions,
+  useWaitingHere,
+  type KnownPlaces,
+  type ScheduledPlace,
+} from "./useScheduled";
 
 const port = vi.hoisted(() => ({
   items: [] as ScheduledMessage[],
@@ -26,7 +32,7 @@ vi.mock("@/state/hooks", () => ({
       remove: port.remove,
     },
   }),
-  useDirectory: () => ({ textChannels: [{ id: "c1", name: "general" }] }),
+  useDirectory: () => ({ server: { id: "s1" }, textChannels: [{ id: "c1", name: "general" }] }),
   useFriends: () => ({ conversations: [{ id: "d1", peer: { id: "u-ania", displayName: "Ania Mazur" } }] }),
   useSession: () => ({ user: { id: "me", displayName: "Maja" } }),
   useLanguage: () => ({ locale: "pl", t: polish }),
@@ -84,6 +90,30 @@ describe("what waits over a field", () => {
     expect(waiting({ kind: "channel", channelId: "elsewhere" })).toEqual({ count: 0, next: null });
     // An encrypted conversation is no place to schedule for.
     expect(waiting(null)).toEqual({ count: 0, next: null });
+  });
+});
+
+describe("where the list says a message goes", () => {
+  const places: KnownPlaces = {
+    serverId: "s1",
+    textChannels: [{ id: "c1", name: "general" }],
+    conversations: [
+      { id: "d1", peer: { id: "u-ania", username: "ania", displayName: "Ania Mazur", presence: "online" } },
+    ],
+  };
+  const label = (target: ScheduledTarget) =>
+    scheduledTargetLabel(item("x", "2026-11-27T08:00:00Z", target), places, polish).text;
+
+  it("names a channel here, a channel elsewhere with its server, and a conversation by its person", () => {
+    expect(label({ kind: "channel", serverId: "s1", channelId: "c1", channelName: "general" })).toBe("# general");
+    expect(
+      label({ kind: "channel", serverId: "s2", serverName: "Klub", channelId: "c9", channelName: "random" }),
+    ).toBe("# random · Klub");
+    expect(label({ kind: "conversation", conversationId: "d1" })).toBe("Ania Mazur · wiadomość prywatna");
+  });
+
+  it("says the channel is gone when the server has no name left for it", () => {
+    expect(label({ kind: "channel", serverId: "s2", channelId: "c9" })).toBe("usunięty kanał");
   });
 });
 

@@ -11,7 +11,7 @@ import { createScheduledAdapter } from "./scheduled";
 function wire(id: string, sendAt: string, extra: Record<string, unknown> = {}) {
   return {
     id,
-    target: { kind: "channel", serverId: "s1", channelId: "c1" },
+    target: { kind: "channel", serverId: "s1", serverName: "Klub", channelId: "c1", channelName: "general" },
     content: `text ${id}`,
     attachments: [],
     replyToMessageId: null,
@@ -176,7 +176,22 @@ describe("a scheduled message from the server", () => {
     const pending = parseScheduledMessage(wire("a", "2026-11-27T08:00:00Z"), "test");
     expect(pending).not.toHaveProperty("replyToMessageId");
     expect(pending).not.toHaveProperty("failure");
-    expect(pending.target).toEqual({ kind: "channel", serverId: "s1", channelId: "c1" });
+    expect(pending.target).toEqual({
+      kind: "channel",
+      serverId: "s1",
+      serverName: "Klub",
+      channelId: "c1",
+      channelName: "general",
+    });
+
+    // The names are null once the channel or its server is gone.
+    const gone = parseScheduledMessage(
+      wire("g", "2026-11-27T08:00:00Z", {
+        target: { kind: "channel", serverId: "s1", serverName: null, channelId: "c1", channelName: null },
+      }),
+      "test",
+    );
+    expect(gone.target).toEqual({ kind: "channel", serverId: "s1", channelId: "c1" });
 
     const failed = parseScheduledMessage(
       wire("b", "2026-11-24T07:00:00Z", { state: "failed", failure: { code: "something_new", at: "2026-11-24T07:00:01Z" } }),

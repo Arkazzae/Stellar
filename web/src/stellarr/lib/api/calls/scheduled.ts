@@ -55,10 +55,14 @@ function parseTarget(value: unknown, path: string): ScheduledTarget {
     return { kind: "conversation", conversationId: expectString(record, "conversationId", path) };
   }
   const serverId = optionalString(record, "serverId");
+  const serverName = optionalString(record, "serverName");
+  const channelName = optionalString(record, "channelName");
   return {
     kind: "channel",
     channelId: expectString(record, "channelId", path),
     ...(serverId === undefined ? {} : { serverId }),
+    ...(serverName === undefined ? {} : { serverName }),
+    ...(channelName === undefined ? {} : { channelName }),
   };
 }
 
