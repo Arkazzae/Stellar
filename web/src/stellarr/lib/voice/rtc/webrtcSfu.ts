@@ -47,9 +47,13 @@ import type { CallCrypto } from "../e2ee/callCrypto";
 
 const DEFAULT_RECOVERY_GRACE_MS = 10_000;
 /**
- * 2 s, 4 s, then 8 s. The API polls a media server that went away every 2 s,
- * so the three attempts span a restart of the media server process rather
- * than being spent before the API has noticed it is back.
+ * 2 s, 4 s, then 8 s, each stretched by up to half again at random. A restart
+ * of the media server closes every session on the instance at once, and each
+ * join costs the media server's single task time that grows with the room, so
+ * the browsers must not all come back in the same instant. The API polls a
+ * media server that went away every 2 s, so the three attempts span a restart
+ * of the media server process rather than being spent before the API has
+ * noticed it is back.
  */
 const DEFAULT_REPLACEMENT_PAUSE_MS = 2_000;
 /** Replacements in a row before the call is given up; a replacement that proves media resets it. */
@@ -84,6 +88,8 @@ export interface SfuDeps {
   recoveryGraceMs?: number;
   /** Pause before the first replacement in a row; each further one waits twice as long. */
   replacementPauseMs?: number;
+  /** A number in [0, 1) that spreads the replacement pauses; `Math.random` unless a test sets it. */
+  random?: () => number;
   /** How long somebody's microphone may take to arrive before the call counts as degraded. */
   arrivalGraceMs?: number;
   settings(): VoiceSettings;
@@ -577,7 +583,9 @@ export class Sfu implements CallTopology {
       } else {
         this.attempts += 1;
         const pause =
-          (this.deps.replacementPauseMs ?? DEFAULT_REPLACEMENT_PAUSE_MS) * 2 ** (this.attempts - 1);
+          (this.deps.replacementPauseMs ?? DEFAULT_REPLACEMENT_PAUSE_MS) *
+          2 ** (this.attempts - 1) *
+          (1 + (this.deps.random ?? Math.random)() / 2);
         this.replacementTimer = setTimeout(() => {
           this.replacementTimer = null;
           void this.open();

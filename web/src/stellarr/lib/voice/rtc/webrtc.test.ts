@@ -355,6 +355,8 @@ function build(options: Partial<WebRtcVoiceClientOptions> = {}): WebRtcVoiceClie
     statsIntervalMs: 60_000,
     recoveryGraceMs: GRACE_MS,
     mediaReplacementPauseMs: PAUSE_MS,
+    // The earliest draw, so a pause is exactly its schedule value, unless a test is about the spread.
+    mediaRandom: () => 0,
     // Every microphone is judged at once, unless a test is about the grace.
     mediaArrivalGraceMs: 0,
     ...options,
@@ -1457,6 +1459,31 @@ describe("recovery", () => {
     });
     expect(micTrack.stop).not.toHaveBeenCalled();
   });
+
+  it.each([0.1, 0.999999])(
+    "stretches each replacement pause by half of the draw %s, so browsers do not return together",
+    async (draw) => {
+      const pauses: number[] = [];
+      const realSetTimeout = globalThis.setTimeout;
+      vi.spyOn(globalThis, "setTimeout").mockImplementation(((run: () => void, ms?: number) => {
+        if (ms !== undefined && ms >= PAUSE_MS && ms <= PAUSE_MS * 6) pauses.push(ms);
+        return realSetTimeout(run, ms);
+      }) as typeof setTimeout);
+      const client = build({ mediaRandom: () => draw });
+      await joined(client);
+      realtime.openMediaSession.mockRejectedValue(new Error("Media server is unavailable."));
+
+      realtime.emit("MediaSessionClosed", { channelId: CHANNEL, sessionId: "media-session-1", reason: "error" });
+
+      await vi.waitFor(() => expect(client.getSnapshot().transport.media).toBe("failed"), {
+        timeout: 1000,
+      });
+      expect(pauses).toHaveLength(3);
+      pauses.forEach((pause, index) => {
+        expect(pause).toBeCloseTo(PAUSE_MS * 2 ** index * (1 + draw / 2), 5);
+      });
+    },
+  );
 
   it("starts the count again once a replacement proves media", async () => {
     const client = build();

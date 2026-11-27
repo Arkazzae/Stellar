@@ -101,6 +101,8 @@ export interface WebRtcVoiceClientOptions {
    * further replacement in a row waits twice as long.
    */
   mediaReplacementPauseMs?: number;
+  /** Spreads those pauses; a number in [0, 1), `Math.random` unless a test sets it. */
+  mediaRandom?: () => number;
   /**
    * How long somebody's microphone may take to arrive, after the connection
    * comes up or after they join, before the call counts as degraded.
@@ -321,6 +323,7 @@ export class WebRtcVoiceClient implements VoiceClient {
       screen: this.screen,
       recoveryGraceMs: options.recoveryGraceMs,
       replacementPauseMs: options.mediaReplacementPauseMs,
+      random: options.mediaRandom,
       arrivalGraceMs: options.mediaArrivalGraceMs,
       settings: () => this.settings,
       bitrate: () => this.bitrate.getBitrate(),
