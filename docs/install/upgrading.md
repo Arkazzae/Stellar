@@ -32,8 +32,11 @@ Allow disk space for a one-time SQLite rebuild. Keep a separate copy of `/data/s
 Re-run the installer to update `docker-compose.yml` and `STELLARR_VERSION` while preserving your `.env` customizations:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Arkazzae/Stellarr/main/install.sh | bash
+# From a Stellarr checkout, point --dir at the existing installation.
+./install.sh --dir /path/to/your/installation
 ```
+
+`install.sh` runs the published installer only after checking its SHA-256 sum and its GitHub release attestation, which needs an authenticated GitHub CLI. To run the installer from source instead, use `cargo run --locked --manifest-path init/installer/Cargo.toml -- --dir /path/to/your/installation`.
 
 Pass `--version 1.2.3` (with `--yes` for unattended scripts) to pin an exact version. Avoid `--force` unless you intentionally want `.env` backed up and regenerated from defaults.
 
