@@ -51,11 +51,9 @@ struct CreatedInvite {
     channel_name: Option<String>,
 }
 
-/// Where an invite link leads: the instance's public address, with the scheme
-/// and port browsers reach it at. The request alone loses the port, as nginx
-/// hands the API the host without it, and behind another proxy it may not be
-/// the public address at all. Without a public address the request's is the
-/// best there is.
+/// Prefer the configured public origin. Otherwise nginx forwards the request
+/// authority, including its port, in X-Forwarded-Host. ClientInfo accepts it
+/// only from a trusted peer.
 fn invite_origin(state: &AppState, client: &ClientInfo, headers: &HeaderMap) -> String {
     let public = &state.settings().operations.public_url;
     if !public.is_empty() {
