@@ -222,7 +222,15 @@ impl TimeZone {
     /// that much later: 02:30 on the night they go from 02:00 to 03:00 is
     /// 03:30. A time they show twice, in the hour repeated when they go back,
     /// is taken the first time.
-    pub fn from_local(&self, year: i64, month: u32, day: u32, hour: u32, minute: u32, second: u32) -> i64 {
+    pub fn from_local(
+        &self,
+        year: i64,
+        month: u32,
+        day: u32,
+        hour: u32,
+        minute: u32,
+        second: u32,
+    ) -> i64 {
         let local = civil::days_from_civil(year, month, day) * 86_400
             + i64::from(hour) * 3600
             + i64::from(minute) * 60
@@ -249,7 +257,8 @@ impl TimeZone {
         let index = shown.year * 12 + i64::from(shown.month) - 1 + months;
         let (year, month) = (index.div_euclid(12), (index.rem_euclid(12) + 1) as u32);
         let day = shown.day.min(civil::days_in_month(year, month));
-        let (year, month, day) = civil::civil_from_days(civil::days_from_civil(year, month, day) + days);
+        let (year, month, day) =
+            civil::civil_from_days(civil::days_from_civil(year, month, day) + days);
         self.from_local(year, month, day, shown.hour, shown.minute, shown.second)
     }
 }

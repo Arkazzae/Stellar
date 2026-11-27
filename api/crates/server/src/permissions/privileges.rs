@@ -177,7 +177,10 @@ mod tests {
         assert!(!is_overridable(MANAGE_BANS, MANAGE_BANS));
         assert!(!is_overridable(ADMINISTRATOR, NONE));
         assert!(!is_overridable(NONE, ADMINISTRATOR));
-        assert!(!is_overridable(CREATE_EVENTS, NONE), "events are the server's");
+        assert!(
+            !is_overridable(CREATE_EVENTS, NONE),
+            "events are the server's"
+        );
         assert!(!is_overridable(NONE, MANAGE_EVENTS));
         assert!(!is_overridable(1 << 20, NONE));
     }
