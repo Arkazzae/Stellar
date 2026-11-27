@@ -29,9 +29,10 @@ export interface ServerInviteNotificationTarget {
   invitedByName: string;
 }
 
-/** Opens an event's card: a reminder, a seat given from the waitlist, a change. */
+/** Opens an event's card on its server: a reminder, a seat given from the waitlist, a change. */
 export interface EventNotificationTarget {
   type: "event";
+  serverId: string;
   eventId: string;
 }
 

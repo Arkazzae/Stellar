@@ -69,6 +69,36 @@ function inbox(overrides: Partial<NotificationInboxProps> = {}) {
   return props;
 }
 
+const EVENT_ROW: InboxNotification = {
+  ...CHANNEL_ROW,
+  id: "n-event",
+  title: "ignored",
+  body: "ignored",
+  source: {
+    type: "system",
+    packageId: "stellarr.events",
+    packageName: "Stellarr",
+    moduleId: "seat",
+    moduleName: "Wieczór planszówek",
+  },
+  target: { type: "event", serverId: "server-2", eventId: "ev-1" },
+};
+
+describe("an event's notice", () => {
+  it("is worded in the reader's language by which notice it is, and opens the event on its server", async () => {
+    const user = userEvent.setup();
+    const onOpenEvent = vi.fn();
+    const props = inbox({ items: [EVENT_ROW], onOpenEvent });
+
+    expect(screen.getByText("Masz miejsce: Wieczór planszówek")).toBeInTheDocument();
+    expect(screen.queryByText("ignored")).toBeNull();
+    await user.click(screen.getByText("Masz miejsce: Wieczór planszówek"));
+
+    expect(onOpenEvent).toHaveBeenCalledExactlyOnceWith({ serverId: "server-2", eventId: "ev-1" });
+    expect(props.onMarkRead).toHaveBeenCalledWith("n-event");
+  });
+});
+
 describe("notification rows", () => {
   it("offers no mark-read control on a row that has been read", () => {
     inbox({ items: [{ ...CHANNEL_ROW, readAt: "2026-08-23T12:05:00Z" }], unreadCount: 0 });

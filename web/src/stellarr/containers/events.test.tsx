@@ -9,6 +9,7 @@ import { serverEvent } from "@/test/events";
 import { polish } from "@/test/translators";
 
 import { EventCardContainer } from "./EventCardContainer";
+import { EventWindowHost } from "./EventWindowHost";
 import { EventsRailContainer } from "./EventsRailContainer";
 
 const world = vi.hoisted(() => ({
@@ -16,6 +17,7 @@ const world = vi.hoisted(() => ({
   listeners: new Set<() => void>(),
   directory: { canCreateEvents: false, canManageEvents: false },
   userId: "u-reader",
+  serverId: "srv-1",
   join: vi.fn(),
   signUp: vi.fn(async () => {}),
 }));
@@ -46,7 +48,8 @@ const port = {
 vi.mock("@/state/hooks", () => ({
   usePorts: () => ({ events: port }),
   useDirectory: () => ({
-    server: { id: "srv-1" },
+    server: { id: world.serverId, name: "Stellarr Dev" },
+    textChannels: [],
     voiceChannels: [{ id: "vc-gaming", name: "Gaming", occupants: [] }],
     members: [],
     ...world.directory,
@@ -69,7 +72,9 @@ beforeEach(() => {
   world.listeners.clear();
   world.directory = { canCreateEvents: false, canManageEvents: false };
   world.userId = "u-reader";
+  world.serverId = "srv-1";
   vi.clearAllMocks();
+  port.load.mockImplementation(async () => {});
   eventWindow.close();
 });
 
@@ -125,5 +130,33 @@ describe("the events row", () => {
     await user.click(within(screen.getByRole("dialog", { name: "Wydarzenia" })).getByRole("button", { name: "Nowe" }));
 
     expect(eventWindow.get()).toEqual({ kind: "create" });
+  });
+});
+
+describe("an event opened from a notice", () => {
+  it("is looked for in its server's events once that server is on screen", async () => {
+    world.serverId = "srv-other";
+    port.load.mockImplementation(async () => {
+      world.events.set("ev-1", serverEvent({ startsAt: "2999-01-01T19:00:00Z", endsAt: undefined }));
+    });
+    const view = render(<EventWindowHost />, { wrapper: ConfirmProvider });
+    act(() => eventWindow.open({ kind: "view", eventId: "ev-1", serverId: "srv-1" }));
+    // Still on another server: nothing is read for it yet.
+    expect(port.load).not.toHaveBeenCalled();
+
+    world.serverId = "srv-1";
+    view.rerender(<EventWindowHost />);
+
+    expect(await screen.findByRole("article", { name: "Wieczór planszówek" })).toBeInTheDocument();
+    expect(port.load).toHaveBeenCalledWith("srv-1");
+  });
+
+  it("says plainly when the event is not among them", async () => {
+    render(<EventWindowHost />, { wrapper: ConfirmProvider });
+    act(() => eventWindow.open({ kind: "view", eventId: "ev-gone", serverId: "srv-1" }));
+
+    expect(await screen.findByRole("dialog", { name: "Tego wydarzenia już nie ma" })).toHaveTextContent(
+      "Skończyło się, zostało odwołane albo nie jest już dla Ciebie widoczne.",
+    );
   });
 });

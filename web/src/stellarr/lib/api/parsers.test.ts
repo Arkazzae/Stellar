@@ -407,9 +407,23 @@ describe("parseInboxNotification", () => {
   });
 
   it("reads an event's target: a reminder, a seat given or a change", () => {
-    const parsed = parseInboxNotification({ ...notification, target: { type: "event", eventId: "ev-1" } }, "/p");
+    const parsed = parseInboxNotification(
+      {
+        ...notification,
+        target: {
+          type: "event",
+          channelId: null,
+          inviteCode: null,
+          serverId: "srv-1",
+          serverName: null,
+          invitedByName: null,
+          eventId: "ev-1",
+        },
+      },
+      "/p",
+    );
 
-    expect(parsed.target).toStrictEqual({ type: "event", eventId: "ev-1" });
+    expect(parsed.target).toStrictEqual({ type: "event", serverId: "srv-1", eventId: "ev-1" });
   });
 
   it("treats a null read time and a null target as absent", () => {

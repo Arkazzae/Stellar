@@ -307,7 +307,11 @@ function parseNotificationTarget(
         invitedByName: expectString(record, "invitedByName", path),
       };
     case "event":
-      return { type: "event", eventId: expectString(record, "eventId", path) };
+      return {
+        type: "event",
+        serverId: expectString(record, "serverId", path),
+        eventId: expectString(record, "eventId", path),
+      };
     default:
       throw new ApiError("malformed", `${path}: "type" is not supported`);
   }
