@@ -23,20 +23,28 @@ pub const CREATE_INVITE: i64 = 1 << 13;
 /// Seeing a channel at all. Somebody who does not hold it in a channel holds
 /// nothing there, and the channel does not exist for them.
 pub const VIEW_CHANNEL: i64 = 1 << 14;
+/// Creating events on the server, and managing one's own.
+pub const CREATE_EVENTS: i64 = 1 << 15;
+/// Managing everybody's events on the server.
+pub const MANAGE_EVENTS: i64 = 1 << 16;
 pub const NONE: i64 = 0;
 /// Every permission there is.
-pub const ALL: i64 = 0x7fff;
+pub const ALL: i64 = 0x1_ffff;
+/// The permissions that are the server's alone, which no channel or section
+/// override can give or take: what an administrator is, and what events
+/// allow, since an event belongs to the server rather than to a channel.
+pub const SERVER_ONLY: i64 = ADMINISTRATOR | CREATE_EVENTS | MANAGE_EVENTS;
 /// What a plain member of a new server holds: see channels, send messages,
 /// attach files, add reactions, take a seat in voice.
 pub const BASE_ROLE_DEFAULTS: i64 =
     VIEW_CHANNEL | SEND_MESSAGES | ATTACH_FILES | ADD_REACTIONS | CONNECT;
-/// What an override can change: everything but Administrator, which is
-/// server-wide only. A stored mask that has it is read as if it had not.
-pub const OVERRIDABLE: i64 = ALL & !ADMINISTRATOR;
+/// What an override can change: everything but the server-wide permissions.
+/// A stored mask that has one is read as if it had not.
+pub const OVERRIDABLE: i64 = ALL & !SERVER_ONLY;
 
 /// In the order lists are written in. The newer names come after the older
 /// ones, so a list a client already knows keeps its order.
-const NAMES: [(i64, &str); 15] = [
+const NAMES: [(i64, &str); 17] = [
     (MANAGE_SERVER, "manageServer"),
     (MANAGE_CHANNELS, "manageChannels"),
     (MANAGE_ROLES, "manageRoles"),
@@ -52,6 +60,8 @@ const NAMES: [(i64, &str); 15] = [
     (CONNECT, "connect"),
     (CREATE_INVITE, "createInvite"),
     (VIEW_CHANNEL, "viewChannel"),
+    (CREATE_EVENTS, "createEvents"),
+    (MANAGE_EVENTS, "manageEvents"),
 ];
 
 /// The wire name of one permission; none for a mask that is not exactly one
@@ -95,16 +105,16 @@ pub fn contains(held: i64, required: i64) -> bool {
 }
 
 /// What an override may say: known bits, none both allowed and denied, and
-/// never Administrator.
+/// none of the server's alone.
 pub fn is_overridable(allow: i64, deny: i64) -> bool {
-    is_valid(allow | deny) && allow & deny == 0 && (allow | deny) & ADMINISTRATOR == 0
+    is_valid(allow | deny) && allow & deny == 0 && (allow | deny) & SERVER_ONLY == 0
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const ALL_NAMES: [&str; 15] = [
+    const ALL_NAMES: [&str; 17] = [
         "manageServer",
         "manageChannels",
         "manageRoles",
@@ -120,6 +130,8 @@ mod tests {
         "connect",
         "createInvite",
         "viewChannel",
+        "createEvents",
+        "manageEvents",
     ];
 
     #[test]
@@ -144,9 +156,11 @@ mod tests {
 
     #[test]
     fn the_constants_are_the_ones_stored_rows_have() {
-        // `Member` and `Owner` are stored as permission masks 24064 and 32767.
+        // `Member` and `Owner` are stored as permission masks 24064 and
+        // 131071; owners made before events were stored as 32767, and the
+        // events migration gives them the two bits since.
         assert_eq!(BASE_ROLE_DEFAULTS, 24064);
-        assert_eq!(ALL, 32767);
+        assert_eq!(ALL, 131_071);
     }
 
     #[test]
@@ -163,6 +177,8 @@ mod tests {
         assert!(!is_overridable(MANAGE_BANS, MANAGE_BANS));
         assert!(!is_overridable(ADMINISTRATOR, NONE));
         assert!(!is_overridable(NONE, ADMINISTRATOR));
+        assert!(!is_overridable(CREATE_EVENTS, NONE), "events are the server's");
+        assert!(!is_overridable(NONE, MANAGE_EVENTS));
         assert!(!is_overridable(1 << 20, NONE));
     }
 }
