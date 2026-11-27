@@ -510,6 +510,144 @@ fn a_service_fails_after_misses_in_a_row_and_is_left_running() {
     assert_eq!(sim.status("a").restarts, 0);
 }
 
+/// Lets `name` miss as many checks in a row as fail it, each answered at once,
+/// and checks that it is being stopped for it.
+fn miss_until_stopping(sim: &mut Sim, name: &str) {
+    for _ in 0..Watch::DEFAULT.misses {
+        sim.wait(Watch::DEFAULT.interval);
+        sim.probe(name, false);
+    }
+    assert_eq!(sim.state(name), State::Stopping);
+}
+
+#[test]
+fn a_service_that_asks_for_it_is_restarted_when_it_starts_failing() {
+    let watch = Watch::DEFAULT;
+    let mut sim = Sim::new(vec![
+        svc("a")
+            .critical()
+            .stop(Signal::Term, 5 * SEC)
+            .restart_failing(),
+    ]);
+    sim.tick();
+    sim.ready("a");
+    let pid = sim.pid("a");
+
+    // Two misses are not enough, and neither is a pass between them.
+    for ok in [false, false, true, false, false] {
+        sim.wait(watch.interval);
+        sim.probe("a", ok);
+        assert_eq!(sim.state("a"), State::Ready);
+    }
+    assert!(sim.io.signals.is_empty());
+
+    // The third one stops it the way a stop on request goes.
+    sim.wait(watch.interval);
+    sim.probe("a", false);
+    assert_eq!(sim.state("a"), State::Stopping);
+    assert_eq!(sim.last_signal(), (pid, Signal::Term, true));
+    assert_eq!(
+        sim.io.logs.last().unwrap(),
+        "a: failed its check 3 times in a row; restarting; SIGTERM sent, SIGKILL in 5s"
+    );
+    assert_eq!(sim.sup.health(), Err("a is stopping".into()));
+    // No more checks of a process that is going.
+    assert_eq!(sim.sup.next_deadline(), Some(sim.now + 5 * SEC));
+
+    sim.wait(2 * SEC);
+    sim.exit("a", Exit::Signal(libc::SIGTERM));
+    assert_eq!(sim.state("a"), State::Backoff);
+    assert_eq!(
+        sim.io.logs.last().unwrap(),
+        "a: killed by SIGTERM 2s after it was asked to stop; next try in 1s"
+    );
+
+    sim.wait(SEC);
+    assert_eq!(sim.state("a"), State::Starting);
+    assert_ne!(sim.pid("a"), pid);
+    assert_eq!(sim.status("a").restarts, 1);
+    sim.ready("a");
+    assert_eq!(sim.sup.health(), Ok(()));
+    // The new run starts its count of misses over.
+    sim.wait(watch.interval);
+    sim.probe("a", false);
+    assert_eq!(sim.state("a"), State::Ready);
+}
+
+/// Lets the ready service `a` answer `answers` checks and then hang as a
+/// stuck process does: each check runs into its timeout, and SIGTERM goes
+/// unheard until SIGKILL. Returns the wait that followed the exit, once it
+/// is over and the next run is ready.
+fn hang_after(sim: &mut Sim, answers: u32) -> Duration {
+    let watch = Watch::DEFAULT;
+    for _ in 0..answers {
+        sim.wait(watch.interval);
+        sim.probe("a", true);
+    }
+    for _ in 0..watch.misses {
+        sim.wait(watch.interval + watch.timeout);
+        sim.probe("a", false);
+    }
+    assert_eq!(sim.state("a"), State::Stopping);
+    sim.wait(5 * SEC);
+    sim.exit("a", Exit::Signal(libc::SIGKILL));
+    let wait = sim.next_try_in("a");
+    sim.wait(wait);
+    sim.ready("a");
+    wait
+}
+
+#[test]
+fn a_service_that_hangs_again_soon_after_its_start_waits_longer_each_time() {
+    let mut sim = Sim::new(vec![svc("a").stop(Signal::Term, 5 * SEC).restart_failing()]);
+    sim.tick();
+    sim.ready("a");
+    // Hanging as soon as it is ready, each run is gone 50 s after its start,
+    // 45 s of misses and 5 s of stop: short of the minute that resets the
+    // count, so the wait grows as after an exit.
+    let waits: Vec<u64> = (0..7).map(|_| hang_after(&mut sim, 0).as_secs()).collect();
+    assert_eq!(waits, [1, 2, 4, 8, 16, 30, 30]);
+    // After an hour of answers the wait is the first one again.
+    assert_eq!(hang_after(&mut sim, 360), SEC);
+}
+
+#[test]
+fn a_request_or_a_shutdown_overrides_the_restart_for_failing() {
+    let mut sim = Sim::new(vec![svc("a").restart_failing()]);
+    sim.tick();
+    sim.ready("a");
+    // A restart on request during the stop starts it at once, with no wait.
+    miss_until_stopping(&mut sim, "a");
+    sim.sup.restart("a", sim.now, &mut sim.io).unwrap();
+    sim.exit("a", Exit::Signal(libc::SIGTERM));
+    assert_eq!(sim.state("a"), State::Starting);
+
+    // A shutdown during the stop leaves it stopped.
+    sim.ready("a");
+    miss_until_stopping(&mut sim, "a");
+    sim.sup.shutdown("SIGTERM", sim.now, &mut sim.io);
+    sim.exit("a", Exit::Signal(libc::SIGTERM));
+    assert_eq!(sim.state("a"), State::Stopped);
+    assert_eq!(sim.sup.phase(), Phase::Done);
+
+    // A third miss that comes back once the shutdown has begun does not stop
+    // it out of turn: b, after it in the start order, goes first.
+    let mut sim = Sim::new(vec![svc("a").restart_failing(), svc("b")]);
+    sim.tick();
+    sim.ready("a");
+    sim.ready("b");
+    for _ in 1..Watch::DEFAULT.misses {
+        sim.wait(Watch::DEFAULT.interval);
+        sim.probe("a", false);
+    }
+    sim.wait(Watch::DEFAULT.interval);
+    sim.sup.shutdown("SIGTERM", sim.now, &mut sim.io);
+    let b = sim.pid("b");
+    sim.probe("a", false);
+    assert_eq!(sim.last_signal(), (b, Signal::Term, true));
+    assert_eq!(sim.state("a"), State::Failing);
+}
+
 #[test]
 fn a_failing_service_holds_back_what_needs_it() {
     let mut sim = Sim::new(vec![svc("db"), svc("api").needs(&["db"])]);
@@ -942,7 +1080,10 @@ fn random_events_keep_the_rules() {
 fn run_random(seed: u64) {
     let mut rng = Rng(seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1);
     let services = vec![
-        svc("a").critical().stop(Signal::Term, 3 * SEC),
+        svc("a")
+            .critical()
+            .stop(Signal::Term, 3 * SEC)
+            .restart_failing(),
         svc("b").needs(&["a"]).stop(Signal::Int, 2 * SEC),
         svc("c").ready(Readiness::Running(SEC)).reload(Signal::Hup),
         svc("d").needs(&["a", "c"]).critical(),

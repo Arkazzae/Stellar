@@ -15,7 +15,9 @@
 //! - `failing`: running, ready once, and its check has failed several times
 //!   in a row since. One check that passes makes it ready again. It is not
 //!   restarted for it: a restart loop on a machine that is only slow would do
-//!   more harm than a service reported as failing.
+//!   more harm than a service reported as failing. A service whose entry sets
+//!   `restart_failing` is the exception: it is stopped the moment it would be
+//!   marked failing and started again after a backoff, as if it had exited.
 //! - `backoff`: exited, and waiting to try again.
 //! - `stopping`: asked to stop, by a restart or by the shutdown.
 //! - `stopped`: stopped by the shutdown, for good.
@@ -110,7 +112,8 @@ pub struct Status {
     pub state: State,
     pub pid: Option<u32>,
     /// How many times the service was started again after its first start,
-    /// whether it had exited or was restarted on request.
+    /// whether it had exited, was restarted on request or for failing its
+    /// check.
     pub restarts: u32,
     /// When the running process started.
     pub up_since: Option<Instant>,
@@ -133,6 +136,9 @@ pub enum Phase {
 enum AfterStop {
     /// Start it again at once: a restart on request.
     Start,
+    /// Start it again after the wait an exit of the run would bring: a
+    /// service restarted for failing its check.
+    Backoff,
     /// Leave it stopped: the shutdown.
     Stay,
 }
@@ -374,9 +380,19 @@ impl Supervisor {
                     io.log(format!("{name}: {exit} after {}; stopped", secs(uptime)));
                 }
             }
-            Run::Stopping { asked, then, .. } => {
+            Run::Stopping {
+                since, asked, then, ..
+            } => {
                 let took = now.saturating_duration_since(asked);
-                if running && then == AfterStop::Start {
+                if running && then == AfterStop::Backoff {
+                    let delay = slot.fail(now.saturating_duration_since(since), service);
+                    slot.state = Run::Backoff { until: now + delay };
+                    io.log(format!(
+                        "{name}: {exit} {} after it was asked to stop; next try in {}",
+                        secs(took),
+                        secs(delay)
+                    ));
+                } else if running && then == AfterStop::Start {
                     slot.failures = 0;
                     slot.state = Run::Waiting;
                     slot.told_waiting = false;
@@ -402,6 +418,7 @@ impl Supervisor {
 
     /// The answer to a readiness check started through [`Io::probe`].
     pub fn probed(&mut self, index: usize, run: u64, ok: bool, now: Instant, io: &mut impl Io) {
+        let running = matches!(self.mode, Mode::Running);
         let Some(slot) = self.slots.get_mut(index) else {
             return;
         };
@@ -440,20 +457,46 @@ impl Supervisor {
                 let watch = service.watch;
                 let misses = if ok { 0 } else { misses.saturating_add(1) };
                 let now_failing = misses >= watch.misses;
-                if failing && !now_failing {
-                    io.log(format!("{name}: answers its check again; ready"));
-                } else if !failing && now_failing {
+                if !failing && now_failing && service.restart_failing && running {
+                    // Stopped the moment it would be marked failing, not after
+                    // more misses: by then it has been silent for about 45 s,
+                    // and its commands time out as its checks do, so waiting
+                    // longer only adds to an outage that is certain. `misses`
+                    // is the knob for a service that should get more time.
+                    // The misses also keep two such restarts at least that far
+                    // apart; the wait after the exit comes on top, as after
+                    // any exit. During the shutdown it is only marked failing,
+                    // and stopped in its turn.
+                    io.signal(pid, service.stop_signal, true);
+                    slot.state = Run::Stopping {
+                        pid,
+                        since,
+                        asked: now,
+                        kill_at: now + service.stop_timeout,
+                        killed: false,
+                        then: AfterStop::Backoff,
+                    };
                     io.log(format!(
-                        "{name}: failed its check {misses} times in a row; failing, and left running"
+                        "{name}: failed its check {misses} times in a row; restarting; {} sent, SIGKILL in {}",
+                        service.stop_signal.name(),
+                        secs(service.stop_timeout)
                     ));
+                } else {
+                    if failing && !now_failing {
+                        io.log(format!("{name}: answers its check again; ready"));
+                    } else if !failing && now_failing {
+                        io.log(format!(
+                            "{name}: failed its check {misses} times in a row; failing, and left running"
+                        ));
+                    }
+                    slot.state = Run::Ready {
+                        pid,
+                        since,
+                        check: Some(now + watch.interval),
+                        misses,
+                        failing: now_failing,
+                    };
                 }
-                slot.state = Run::Ready {
-                    pid,
-                    since,
-                    check: Some(now + watch.interval),
-                    misses,
-                    failing: now_failing,
-                };
             }
             _ => return,
         }
