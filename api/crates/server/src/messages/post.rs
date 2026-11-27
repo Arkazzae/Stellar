@@ -49,6 +49,8 @@ pub struct Submission {
     pub scheduled: Option<Claim>,
     /// The poll the message carries, checked against its limits.
     pub poll: Option<crate::polls::Draft>,
+    /// The server event the message announces, whose card it shows.
+    pub event: Option<Id>,
 }
 
 /// How a post ended.
@@ -130,6 +132,9 @@ pub fn post(
     }
     if let Some(poll) = &submission.poll {
         crate::polls::insert(db, id, poll, now)?;
+    }
+    if let Some(event) = submission.event {
+        crate::server_events::announce_in(db, id, event)?;
     }
 
     // Whoever sent a message has read everything before it, unless it was sent
@@ -467,17 +472,20 @@ pub(crate) async fn announce(
         })
         .await?;
     let events = state.events();
-    match &stored.message.poll {
-        // Everyone is told of the poll alike, so the event cannot say which
-        // answers are the reader's; the author's answer can.
-        Some(_) => {
-            let mut shared = stored.message.clone();
-            if let Some(poll) = shared.poll.as_mut() {
-                poll.mine = None;
-            }
-            events.publish(Event::new(audience, "MessageCreated", &shared));
+    if stored.message.poll.is_some() || stored.message.event.is_some() {
+        // Everyone is told of a poll or an event card alike, so the event
+        // cannot say what is the reader's own; the author's answer can.
+        let mut shared = stored.message.clone();
+        if let Some(poll) = shared.poll.as_mut() {
+            poll.mine = None;
         }
-        None => events.publish(Event::new(audience, "MessageCreated", &stored.message)),
+        if let Some(card) = shared.event.as_mut() {
+            card.mine = None;
+            card.my_position = None;
+        }
+        events.publish(Event::new(audience, "MessageCreated", &shared));
+    } else {
+        events.publish(Event::new(audience, "MessageCreated", &stored.message));
     }
     if let Some(read) = &stored.read {
         events.publish(Event::new(
@@ -549,6 +557,7 @@ pub async fn create(
         client_id: request.client_message_id,
         scheduled: None,
         poll,
+        event: None,
     };
 
     let outcome = state

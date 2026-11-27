@@ -1176,6 +1176,7 @@ fn the_cost_of_a_post_in_statements_does_not_grow_with_what_the_server_holds() {
                 client_id: Some(Id::random()),
                 scheduled: None,
                 poll: None,
+                event: None,
             };
             let mut counts = Vec::new();
             for mentions in [false, true] {

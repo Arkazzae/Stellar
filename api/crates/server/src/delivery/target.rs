@@ -17,6 +17,7 @@ use crate::values::Id;
 enum Target {
     Channel { server_id: Id, message: Box<MessageDto> },
     Dm { conversation_id: Id },
+    Event { server_id: Id, event_id: Id },
 }
 
 pub(super) async fn resolve(
@@ -56,7 +57,12 @@ pub(super) async fn resolve(
                     .ok_or_else(ApiError::not_found)?;
                 Ok(Target::Channel { server_id: server, message: Box::new(message) })
             }
-            None => Err(ApiError::not_found()),
+            Some(kind) if kind.is_event() => {
+                let server = crate::server_events::server_for(db, source, user)?
+                    .ok_or_else(ApiError::not_found)?;
+                Ok(Target::Event { server_id: server, event_id: source })
+            }
+            _ => Err(ApiError::not_found()),
         }
     }).await?;
     let mut response = json_response(StatusCode::OK, &target);

@@ -273,6 +273,10 @@ async fn attempt(
             let build = match kind {
                 Kind::Mention => stellarr_mail::mention,
                 Kind::DirectMessage => stellarr_mail::direct_message,
+                // Events are told by push alone; no row asks for mail.
+                Kind::EventReminder | Kind::EventSeat | Kind::EventCancelled | Kind::EventChanged => {
+                    return Ok(Finished::Cancelled);
+                }
             };
             let message = build(
                 &mailing.sender,
@@ -299,6 +303,10 @@ async fn attempt(
                     MessageKey::NotificationDirectMessagePushTitle,
                     MessageKey::NotificationDirectMessageBody,
                 ),
+                Kind::EventReminder => (MessageKey::EventReminderPushTitle, MessageKey::EventPushBody),
+                Kind::EventSeat => (MessageKey::EventSeatPushTitle, MessageKey::EventPushBody),
+                Kind::EventCancelled => (MessageKey::EventCancelledPushTitle, MessageKey::EventPushBody),
+                Kind::EventChanged => (MessageKey::EventChangedPushTitle, MessageKey::EventPushBody),
             };
             let id = item.id.to_string().replace('-', "");
             let payload = PushPayload {
@@ -424,6 +432,7 @@ fn prepare(db: &Connection, item: &Leased, now: Timestamp) -> rusqlite::Result<O
     let still_wanted = match Kind::parse(&item.kind) {
         Some(Kind::Mention) => mention_wanted(db, item, &username, &preferences)?,
         Some(Kind::DirectMessage) => direct_message_wanted(db, item, &preferences)?,
+        Some(kind) => crate::server_events::notice_wanted(db, kind, item.source, item.recipient, now)?,
         None => false,
     };
     if !still_wanted {

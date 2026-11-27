@@ -286,6 +286,7 @@ fn check(tx: &rusqlite::Connection, messages: &Messages, scheduled: &Scheduled) 
                 client_id: None,
                 scheduled: None,
                 poll: None,
+                event: None,
             },
         ),
         Target::Conversation(conversation) => {

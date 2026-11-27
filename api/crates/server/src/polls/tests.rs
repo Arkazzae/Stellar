@@ -52,6 +52,7 @@ fn posted(world: &World, channel: Id, author: Id, question: &str) -> Id {
         client_id: None,
         scheduled: None,
         poll: Some(draft(question, 3)),
+        event: None,
     };
     match post(&world.db, &messages(), world.server, &submission) {
         Ok(Posted::Stored(stored)) => stored.message.id,
@@ -133,6 +134,7 @@ fn a_page_of_polls_costs_the_statements_of_one_and_a_page_without_none() {
                 client_id: None,
                 scheduled: None,
                 poll: None,
+                event: None,
             };
             match post(&world.db, &messages(), world.server, &submission) {
                 Ok(Posted::Stored(stored)) => stored.message.id,

@@ -8,5 +8,6 @@ workers! {
     polls,
     realtime::watcher,
     scheduled,
+    server_events,
     voice,
 }
