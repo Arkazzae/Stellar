@@ -124,7 +124,7 @@ For larger projects with TypeScript, React, Svelte, PixiJS, or Three.js, install
 npm install --save-dev @stellarr/sdk
 ```
 
-Set `base` in `vite.config.ts` so generated scripts, styles, and chunks resolve from the installed package directory:
+Set `base` in `vite.config.ts` so generated scripts, styles, and chunks resolve from the installed package directory.
 
 ```ts
 import { defineConfig } from "vite";
