@@ -6,6 +6,7 @@
  */
 
 import { resolveCodeLanguage, tokenizeCode } from "./codeLanguages";
+import { isGroupWord } from "./groupMentions";
 import {
   inlineDescendants,
   inlineText,
@@ -134,9 +135,11 @@ function textAndCodeParts(content: string, options: ParseInlineOptions): Message
 /**
  * Whether the body mentions `username` as the transcript would show it. The
  * same parse decides the highlight and the alert, so a name in code, in a
- * link's label or in a URL calls nobody.
+ * link's label or in a URL calls nobody. A group's word is nobody's name, so
+ * an account that took one before it was reserved is never called by it.
  */
 export function mentionsUsername(content: string, username: string): boolean {
+  if (isGroupWord(username)) return false;
   const target: MentionTarget = { userId: "", username, displayName: username };
   const mentions = new Map([[username.toLocaleLowerCase(), target]]);
   return segments(content).some(

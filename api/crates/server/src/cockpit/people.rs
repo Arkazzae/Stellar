@@ -121,7 +121,8 @@ struct CreateUser {
 
 /// A user name contains letters, digits or one of three marks, checked one UTF-16
 /// unit at a time. A character outside
-/// the basic plane is two units, neither of which is a letter.
+/// the basic plane is two units, neither of which is a letter. The words that
+/// call on a whole channel are nobody's name.
 fn is_username(text: &str) -> bool {
     (2..=32).contains(&length(text))
         && text.encode_utf16().all(|unit| {
@@ -129,6 +130,7 @@ fn is_username(text: &str) -> bool {
                 stellarr_unicode::is_letter_or_digit(c) || matches!(c, '_' | '.' | '-')
             })
         })
+        && !crate::messages::mentions::is_group_name(&crate::instance::names::to_upper(text))
 }
 
 pub(super) async fn create(
@@ -556,5 +558,8 @@ mod tests {
         }
         // A letter outside the basic plane is two units that are not letters.
         assert!(!is_username("\u{10400}\u{10401}"));
+        for group in ["everyone", "Here", "WSZYSCY", "obecni"] {
+            assert!(!is_username(group), "{group}");
+        }
     }
 }

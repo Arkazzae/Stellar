@@ -2,8 +2,24 @@
 // highlighted there never rings or pops up here: code, links and escaped
 // characters are the same in both.
 import { mentionsUsername } from "@/lib/messages/messageBody";
+import type { Presence } from "@/ports";
 
-export interface MessageNotificationContext {
+/**
+ * The groups the server stamped a message as calling on. Anybody can type
+ * `@everyone`; only an author who may call on the channel gets the stamp, so
+ * the stamp alone rings or pops up, never the word.
+ */
+export interface GroupCall {
+  mentionsEveryone?: boolean;
+  mentionsHere?: boolean;
+  /**
+   * The reader's own chosen status. Somebody appearing offline is not among
+   * those `@here` reaches, as the server does not count them either.
+   */
+  selfPresence?: Presence;
+}
+
+export interface MessageNotificationContext extends GroupCall {
   authorId: string;
   channelId: string;
   content?: string;
@@ -15,7 +31,7 @@ export interface MessageNotificationContext {
   mutedChannelIds: readonly string[];
 }
 
-export interface MentionNotificationContext {
+export interface MentionNotificationContext extends GroupCall {
   authorId: string;
   channelId: string;
   content: string;
@@ -26,6 +42,24 @@ export interface MentionNotificationContext {
   mutedChannelIds: readonly string[];
   /** Whether the person is somewhere else: the page hidden or the window unfocused. */
   away: boolean;
+}
+
+/** Whether the message calls on the reader through a group it was stamped with. */
+function calledAsGroup({ mentionsEveryone, mentionsHere, selfPresence }: GroupCall): boolean {
+  return mentionsEveryone === true || (mentionsHere === true && selfPresence !== "offline");
+}
+
+/**
+ * Whether a message calls on the reader: by their username, as the transcript
+ * reads it, or through a group the server stamped it with.
+ */
+export function callsOnReader(
+  content: string,
+  selfUsername: string | null,
+  groups: GroupCall,
+): boolean {
+  if (calledAsGroup(groups)) return true;
+  return selfUsername !== null && mentionsUsername(content, selfUsername);
 }
 
 /**
@@ -45,10 +79,11 @@ export function shouldShowMentionNotification({
   enabled,
   mutedChannelIds,
   away,
+  ...groups
 }: MentionNotificationContext): boolean {
   if (!enabled || !away || selfUsername === null) return false;
   if (authorId === selfId || mutedChannelIds.includes(channelId)) return false;
-  return mentionsUsername(content, selfUsername);
+  return callsOnReader(content, selfUsername, groups);
 }
 
 /** The first words of a message, on one line, for a notification's body. */
@@ -68,10 +103,11 @@ export function shouldPlayMessageNotificationSound({
   soundEnabled,
   mentionsOnly = false,
   mutedChannelIds,
+  ...groups
 }: MessageNotificationContext): boolean {
   if (!soundEnabled || authorId === selfId || mutedChannelIds.includes(channelId)) {
     return false;
   }
-  if (selfUsername !== null && mentionsUsername(content, selfUsername)) return true;
+  if (callsOnReader(content, selfUsername, groups)) return true;
   return !mentionsOnly && channelId !== openChannelId;
 }

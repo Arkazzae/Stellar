@@ -37,6 +37,7 @@ use super::TARGET;
 use crate::auth::events;
 use crate::database::DbError;
 use crate::mail::setup::{self, MailSetup, Mailing};
+use crate::messages::mentions;
 use crate::permissions::visibility;
 use crate::social;
 use crate::state::AppState;
@@ -491,18 +492,30 @@ struct Preferences {
     muted: String,
 }
 
+/// Whether a mention is still worth telling: by its name, by mail or push as
+/// the person chose, or through a group the message still calls on, by push
+/// alone. A row of mail for a group, however it came to be written, is never
+/// sent.
 fn mention_wanted(
     db: &Connection,
     item: &Leased,
     username: &str,
     preferences: &Preferences,
 ) -> rusqlite::Result<bool> {
-    let Some((channel, author, content, created_at)) = db
+    let Some((channel, author, content, created_at, groups)) = db
         .query_row(
-            "SELECT \"ChannelId\", \"AuthorId\", \"Content\", \"CreatedAt\" FROM \"Messages\"
+            "SELECT \"ChannelId\", \"AuthorId\", \"Content\", \"CreatedAt\", \"GroupMention\" FROM \"Messages\"
              WHERE \"Id\" = ?1 AND \"IsSystem\" = 0",
             [item.source],
-            |row| Ok((row.get::<_, Id>(0)?, row.get::<_, Id>(1)?, row.get::<_, String>(2)?, row.get::<_, Timestamp>(3)?)),
+            |row| {
+                Ok((
+                    row.get::<_, Id>(0)?,
+                    row.get::<_, Id>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Timestamp>(3)?,
+                    row.get::<_, i64>(4)?,
+                ))
+            },
         )
         .optional()?
     else {
@@ -528,9 +541,16 @@ fn mention_wanted(
     if read {
         return Ok(false);
     }
-    // An edit may have removed the name; only a mention still in the message
-    // is worth an external notice.
-    Ok(stellarr_mentions::extract_normalized_usernames(&content).contains(username))
+    // An edit may have removed the name or the group's word; only a call
+    // still in the message is worth an external notice. A group's word is
+    // nobody's name, even an account's that had it before it was reserved.
+    let names = stellarr_mentions::extract_normalized_usernames(&content);
+    if !mentions::is_group_name(username) && names.contains(username) {
+        return Ok(true);
+    }
+    // The stored groups are what the author was allowed to call on; the words
+    // still there say which of them the message still calls on.
+    Ok(item.channel != "email" && groups & mentions::groups_in(&names) != 0)
 }
 
 fn direct_message_wanted(

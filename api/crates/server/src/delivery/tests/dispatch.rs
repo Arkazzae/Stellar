@@ -6,6 +6,7 @@ use rusqlite::params;
 
 use super::support::{Behaviour, FakePush, FakeSmtp, Mood, World, minutes, open, wired_to};
 use crate::delivery::dispatcher::{backoff, dispatch};
+use crate::messages::mentions::EVERYONE;
 use crate::values::{Id, Timestamp};
 
 fn soon() -> Timestamp {
@@ -198,6 +199,132 @@ async fn a_friend_is_still_told_when_strangers_may_not_message() {
 
     assert_eq!(fake.seen().len(), 1);
     assert!(world.rows(message).await.iter().any(|row| row.status == "sent"));
+}
+
+// ---- Calls on a whole channel
+
+/// What became of each row of a message, as (channel, status), mail first.
+async fn outcome(world: &World, message: Id) -> Vec<(String, String)> {
+    world.rows(message).await.into_iter().map(|row| (row.channel, row.status)).collect()
+}
+
+fn pairs(rows: &[(&str, &str)]) -> Vec<(String, String)> {
+    rows.iter().map(|(channel, status)| (channel.to_string(), status.to_string())).collect()
+}
+
+#[tokio::test]
+async fn a_group_alone_is_told_by_push_and_a_letter_for_it_is_never_sent() {
+    let world = World::new(&[]).await;
+    let browser = ada_with_everything(&world).await;
+    let smtp = FakeSmtp::start(Mood::Takes).await;
+    world.mail_to(smtp.port).await;
+    let fake = FakePush::start(Behaviour::Status(201)).await;
+    // Rows of both kinds, as if somebody named had been owed them: the words
+    // no longer name Ada, so only the group's push is left to send.
+    let message = world.group_mention(world.maja, "Hej @everyone", EVERYONE, &[world.ada], &[]).await;
+
+    let sent = dispatch(&world.state, &wired_to(&world, &fake), soon()).await.unwrap();
+
+    assert_eq!(sent, 1);
+    assert!(smtp.mails().is_empty());
+    let (_, plain) = open(&browser, &fake.seen()[0].body);
+    let json: serde_json::Value = serde_json::from_slice(&plain).unwrap();
+    assert_eq!(json["title"], "New mention");
+    assert!(!String::from_utf8_lossy(&plain).contains("Hej"));
+    assert_eq!(outcome(&world, message).await, pairs(&[("email", "cancelled"), ("push", "sent")]));
+}
+
+#[tokio::test]
+async fn a_sentence_ending_on_a_groups_word_is_still_a_call_when_the_push_goes_out() {
+    let world = World::new(&[]).await;
+    ada_with_everything(&world).await;
+    let fake = FakePush::start(Behaviour::Status(201)).await;
+    let message = world.group_mention(world.maja, "Spotkanie o 20 @wszyscy.", EVERYONE, &[], &[world.ada]).await;
+
+    let sent = dispatch(&world.state, &wired_to(&world, &fake), soon()).await.unwrap();
+
+    assert_eq!(sent, 1);
+    assert_eq!(outcome(&world, message).await, pairs(&[("push", "sent")]));
+}
+
+#[tokio::test]
+async fn somebody_named_beside_a_group_is_told_by_mail_and_by_push() {
+    let world = World::new(&[]).await;
+    ada_with_everything(&world).await;
+    let smtp = FakeSmtp::start(Mood::Takes).await;
+    world.mail_to(smtp.port).await;
+    let fake = FakePush::start(Behaviour::Status(201)).await;
+    let message = world.group_mention(world.maja, "@everyone, @ada", EVERYONE, &[world.ada], &[]).await;
+
+    let sent = dispatch(&world.state, &wired_to(&world, &fake), soon()).await.unwrap();
+
+    assert_eq!(sent, 2);
+    assert_eq!(smtp.mails().len(), 1);
+    assert_eq!(outcome(&world, message).await, pairs(&[("email", "sent"), ("push", "sent")]));
+}
+
+#[tokio::test]
+async fn nothing_is_sent_for_a_group_call_that_changed_after_the_message() {
+    for reason in ["edit", "unstamped", "mute", "read", "blocked", "membership"] {
+        let world = World::new(&[]).await;
+        ada_with_everything(&world).await;
+        let fake = FakePush::start(Behaviour::Status(201)).await;
+        let stamp = if reason == "unstamped" { 0 } else { EVERYONE };
+        let message = world.group_mention(world.maja, "@wszyscy zobaczcie", stamp, &[], &[world.ada]).await;
+        let (ada, maja, channel) = (world.ada, world.maja, world.channel);
+        world
+            .write(move |tx| {
+                match reason {
+                    "edit" => tx.execute("UPDATE \"Messages\" SET \"Content\" = 'zobaczcie' WHERE \"Id\" = ?1", [message])?,
+                    // A row the author's permission never allowed.
+                    "unstamped" => 0,
+                    "mute" => tx.execute(
+                        "UPDATE \"UserPreferences\" SET \"MutedChannelIdsJson\" = ?2 WHERE \"UserId\" = ?1",
+                        params![ada, format!("[\"{channel}\"]")],
+                    )?,
+                    "read" => tx.execute(
+                        "INSERT INTO \"ChannelReads\" (\"ChannelId\", \"UserId\", \"LastReadAt\") VALUES (?1, ?2, ?3)",
+                        params![channel, ada, Timestamp::now().plus(minutes(5))],
+                    )?,
+                    "blocked" => tx.execute(
+                        "INSERT INTO \"UserBlocks\" (\"BlockerId\", \"BlockedId\", \"CreatedAt\") VALUES (?1, ?2, ?3)",
+                        params![ada, maja, Timestamp::now()],
+                    )?,
+                    "membership" => tx.execute("DELETE FROM \"ServerMembers\" WHERE \"UserId\" = ?1", [ada])?,
+                    _ => unreachable!(),
+                };
+                Ok(())
+            })
+            .await;
+
+        let sent = dispatch(&world.state, &wired_to(&world, &fake), soon()).await.unwrap();
+
+        assert_eq!(sent, 0, "{reason}");
+        assert!(fake.seen().is_empty(), "{reason}");
+        assert_eq!(outcome(&world, message).await, pairs(&[("push", "cancelled")]), "{reason}");
+    }
+}
+
+#[tokio::test]
+async fn an_account_named_like_a_group_is_told_only_as_one_of_it() {
+    let world = World::new(&[]).await;
+    let legacy = world.member("everyone").await;
+    world.prefer(legacy, true, true).await;
+    world.verify_email(legacy, "everyone@example.test").await;
+    world.browser(legacy, "legacy").await;
+    let smtp = FakeSmtp::start(Mood::Takes).await;
+    world.mail_to(smtp.port).await;
+    let fake = FakePush::start(Behaviour::Status(201)).await;
+    // Rows as a server that still read the word as a name would have written.
+    let unstamped = world.mention(world.maja, "@everyone", &[legacy]).await;
+    let stamped = world.group_mention(world.maja, "@everyone", EVERYONE, &[legacy], &[]).await;
+
+    let sent = dispatch(&world.state, &wired_to(&world, &fake), soon()).await.unwrap();
+
+    assert_eq!(sent, 1);
+    assert!(smtp.mails().is_empty());
+    assert_eq!(outcome(&world, unstamped).await, pairs(&[("email", "cancelled"), ("push", "cancelled")]));
+    assert_eq!(outcome(&world, stamped).await, pairs(&[("email", "cancelled"), ("push", "sent")]));
 }
 
 #[tokio::test]

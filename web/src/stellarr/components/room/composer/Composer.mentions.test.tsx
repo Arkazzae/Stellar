@@ -11,7 +11,12 @@ const people: MentionCandidate[] = [
   { id: "u-bob", username: "bob", displayName: "Bob Stone" },
 ];
 
-function setup(onSubmit = vi.fn()) {
+const groups: MentionCandidate[] = [
+  { id: "group:everyone", username: "wszyscy", displayName: "Powiadom wszystkich na kanale", group: "everyone" },
+  { id: "group:here", username: "obecni", displayName: "Powiadom osoby online na kanale", group: "here" },
+];
+
+function setup(onSubmit = vi.fn(), groupMentions?: readonly MentionCandidate[]) {
   const user = userEvent.setup();
   render(
     <Composer
@@ -22,6 +27,7 @@ function setup(onSubmit = vi.fn()) {
       onRetryChip={vi.fn()}
       onReorderChips={vi.fn()}
       mentionCandidates={people}
+      {...(groupMentions === undefined ? {} : { groupMentions })}
     />,
   );
   return { user, onSubmit, field: screen.getByRole("combobox") as HTMLTextAreaElement };
@@ -48,6 +54,33 @@ describe("Composer mentions", () => {
     expect(first).toHaveAttribute("aria-selected", "true");
     expect(second).toHaveAttribute("aria-selected", "false");
     expect(field).toHaveAttribute("aria-activedescendant", first!.id);
+  });
+
+  it("offers calling on the whole channel first, to whoever may, and inserts its word", async () => {
+    const { user, field, onSubmit } = setup(vi.fn(), groups);
+
+    await user.type(field, "@");
+    expect(options()[0]).toBe("@@wszyscyPowiadom wszystkich na kanale");
+    expect(options()[1]).toBe("@@obecniPowiadom osoby online na kanale");
+
+    // The English word finds the group in a Polish interface too, and the
+    // Polish one is what is written.
+    await user.type(field, "ev");
+    expect(options()).toEqual([expect.stringContaining("@wszyscy")]);
+    await user.keyboard("{Enter}");
+
+    expect(field).toHaveValue("@wszyscy ");
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("offers no group to whoever may not call on the channel", async () => {
+    const { user, field } = setup();
+
+    await user.type(field, "@");
+
+    expect(options().some((option) => option?.includes("wszyscy"))).toBe(false);
+    await user.type(field, "wsz");
+    expect(suggestions()).toBeNull();
   });
 
   it.each(["{Tab}", "{Enter}"])("inserts the selected person on %s without sending", async (key) => {

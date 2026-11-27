@@ -18,6 +18,20 @@ describe("message Markdown", () => {
     expect(screen.getByText("@ada")).toHaveClass("msg-mention", "self");
     expect(screen.getByText("kod").tagName).toBe("CODE");
   });
+  it("draws a stamped call on a group like a mention of oneself, leading to nobody", () => {
+    render(<TextAttachment
+      locale="pl" t={(key, values) => translateMessage("pl", key, values)}
+      nodes={parseInline("@wszyscy i @obecni", { groups: new Set(["everyone"]) })}
+    />);
+    const pill = screen.getByText("@wszyscy");
+    expect(pill).toHaveClass("msg-mention", "self");
+    expect(pill).toHaveAttribute("data-group", "everyone");
+    expect(pill).not.toHaveAttribute("data-user-id");
+    expect(pill).not.toHaveAttribute("role");
+    // A group the message was not stamped with stays text.
+    expect(screen.queryByText("@obecni")).toBeNull();
+    expect(pill.parentElement).toHaveTextContent("@wszyscy i @obecni");
+  });
   it("hides a spoiler until it is clicked or opened from the keyboard", () => {
     render(<TextAttachment
       locale="pl" t={(key, values) => translateMessage("pl", key, values)}

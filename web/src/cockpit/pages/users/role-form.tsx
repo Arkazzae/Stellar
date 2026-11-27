@@ -31,6 +31,7 @@ const permissionKeys = [
   "sendMessages",
   "attachFiles",
   "addReactions",
+  "mentionEveryone",
   "connect",
   "createInvite",
   "viewChannel",

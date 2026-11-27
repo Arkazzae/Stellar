@@ -105,6 +105,8 @@ pub fn announcement(connection: &Connection, welcome: &Welcome) -> rusqlite::Res
         reactions: Vec::new(),
         poll: None,
         event: None,
+        mentions_everyone: false,
+        mentions_here: false,
     };
     Ok(Event::new(audience, "MessageCreated", &message))
 }

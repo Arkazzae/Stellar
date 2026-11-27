@@ -42,6 +42,38 @@ async fn a_mention_queues_one_row_for_each_destination_that_is_opted_in() {
 }
 
 #[tokio::test]
+async fn a_call_on_a_group_is_owed_by_push_alone_to_those_it_does_not_name() {
+    let world = World::new(&[]).await;
+    let ilya = world.member("ilya").await;
+    for person in [world.ada, ilya] {
+        world.prefer(person, true, true).await;
+    }
+    world.verify_email(world.ada, "ada@example.test").await;
+    world.verify_email(ilya, "ilya@example.test").await;
+    let ada_browser = world.browser(world.ada, "ada").await;
+    let ilya_browser = world.browser(ilya, "ilya").await;
+
+    let message = world
+        .group_mention(world.maja, "@everyone @ilya", crate::messages::mentions::EVERYONE, &[ilya], &[world.ada])
+        .await;
+
+    let rows = world.rows(message).await;
+    let of = |user: Id| -> Vec<(String, Option<Id>)> {
+        rows.iter()
+            .filter(|row| row.recipient == user)
+            .map(|row| (row.channel.clone(), row.subscription))
+            .collect()
+    };
+    assert_eq!(of(world.ada), [("push".to_string(), Some(ada_browser.id))], "no letter for a group");
+    assert_eq!(
+        of(ilya),
+        [("email".to_string(), None), ("push".to_string(), Some(ilya_browser.id))],
+        "somebody named is told as they chose"
+    );
+    assert!(rows.iter().all(|row| row.kind == "mention"));
+}
+
+#[tokio::test]
 async fn a_direct_message_is_owed_to_the_peer_as_its_own_kind() {
     let world = World::new(&[]).await;
     world.prefer(world.ada, false, true).await;

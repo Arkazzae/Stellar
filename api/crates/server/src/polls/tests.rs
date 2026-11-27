@@ -54,7 +54,7 @@ fn posted(world: &World, channel: Id, author: Id, question: &str) -> Id {
         poll: Some(draft(question, 3)),
         event: None,
     };
-    match post(&world.db, &messages(), world.server, &submission) {
+    match post(&world.db, &messages(), &Unconnected, world.server, &submission) {
         Ok(Posted::Stored(stored)) => stored.message.id,
         other => panic!("the poll was not posted: {other:?}"),
     }
@@ -136,7 +136,7 @@ fn a_page_of_polls_costs_the_statements_of_one_and_a_page_without_none() {
                 poll: None,
                 event: None,
             };
-            match post(&world.db, &messages(), world.server, &submission) {
+            match post(&world.db, &messages(), &Unconnected, world.server, &submission) {
                 Ok(Posted::Stored(stored)) => stored.message.id,
                 other => panic!("not posted: {other:?}"),
             }

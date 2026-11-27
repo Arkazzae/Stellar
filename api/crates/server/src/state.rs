@@ -188,6 +188,12 @@ impl AppState {
         &*self.inner.presence
     }
 
+    /// The same, to be moved into work that outlives the request, such as a
+    /// post that waits its turn to write.
+    pub(crate) fn presence_handle(&self) -> Arc<dyn Presence> {
+        Arc::clone(&self.inner.presence)
+    }
+
     /// The realtime hub, when this process runs one. The workers that look
     /// after its connections reach it here; handlers talk to it through
     /// [`events`](Self::events) and [`presence`](Self::presence).

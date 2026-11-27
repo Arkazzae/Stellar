@@ -25,24 +25,37 @@ pub struct EditMessageRequest {
     content: Option<String>,
 }
 
-/// The channel of a message of the server, and who wrote it, unless it is a
-/// notice of the server, which nobody may rewrite or remove.
-fn find(
-    db: &rusqlite::Connection,
-    server: Id,
-    message: Id,
-) -> rusqlite::Result<Option<(Id, Id, String)>> {
-    let found: Option<(Id, Id, String, bool)> = db
+/// A message of the server as an edit or a removal finds it.
+struct Found {
+    channel: Id,
+    author: Id,
+    content: String,
+    /// The groups it calls on; see [`super::mentions`].
+    groups: i64,
+}
+
+/// The channel of a message of the server, who wrote it and what it says,
+/// unless it is a notice of the server, which nobody may rewrite or remove.
+fn find(db: &rusqlite::Connection, server: Id, message: Id) -> rusqlite::Result<Option<Found>> {
+    let found: Option<(Found, bool)> = db
         .query_row(
-            "SELECT m.\"ChannelId\", m.\"AuthorId\", m.\"Content\", m.\"IsSystem\" FROM \"Messages\" m
+            "SELECT m.\"ChannelId\", m.\"AuthorId\", m.\"Content\", m.\"GroupMention\", m.\"IsSystem\" FROM \"Messages\" m
              WHERE m.\"Id\" = ?1 AND EXISTS (SELECT 1 FROM \"Channels\" c WHERE c.\"Id\" = m.\"ChannelId\" AND c.\"ServerId\" = ?2)",
             params![message, server],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            |row| {
+                Ok((
+                    Found {
+                        channel: row.get(0)?,
+                        author: row.get(1)?,
+                        content: row.get(2)?,
+                        groups: row.get(3)?,
+                    },
+                    row.get(4)?,
+                ))
+            },
         )
         .optional()?;
-    Ok(found.and_then(|(channel, author, content, system)| {
-        (!system).then_some((channel, author, content))
-    }))
+    Ok(found.and_then(|(found, system)| (!system).then_some(found)))
 }
 
 /// Rewrites a message. Only its author may: removing what somebody said is one
@@ -74,7 +87,13 @@ pub async fn edit(
     let (channel, changed, shared, own) = state
         .database()
         .write(move |tx| -> Result<_, ApiError> {
-            let Some((channel, author, stored)) = find(tx, server, message)? else {
+            let Some(Found {
+                channel,
+                author,
+                content: stored,
+                groups,
+            }) = find(tx, server, message)?
+            else {
                 return Err(ApiError::not_found());
             };
             if author != user || !visibility::views(tx, user, channel)? {
@@ -95,9 +114,17 @@ pub async fn edit(
             // claim readers rely on.
             let changed = stored != content;
             if changed {
+                // A call to a group may go with its word but never comes with
+                // one: whether the author may call on the channel was decided
+                // when the message was posted, and an edit tells nobody.
                 tx.execute(
-                    "UPDATE \"Messages\" SET \"Content\" = ?1, \"EditedAt\" = ?2 WHERE \"Id\" = ?3",
-                    params![content, Timestamp::now(), message],
+                    "UPDATE \"Messages\" SET \"Content\" = ?1, \"EditedAt\" = ?2, \"GroupMention\" = ?4 WHERE \"Id\" = ?3",
+                    params![
+                        content,
+                        Timestamp::now(),
+                        message,
+                        super::mentions::groups_kept(groups, &content)
+                    ],
                 )?;
             }
             // The event is shared by everyone who sees the channel, so it
@@ -145,7 +172,10 @@ pub async fn delete(
     let (channel, thumbnails) = state
         .database()
         .write(move |tx| -> Result<_, ApiError> {
-            let Some((channel, author, _)) = find(tx, server, message)? else {
+            let Some(Found {
+                channel, author, ..
+            }) = find(tx, server, message)?
+            else {
                 return Err(ApiError::not_found());
             };
             // Its author needs to see the channel; anybody else to manage

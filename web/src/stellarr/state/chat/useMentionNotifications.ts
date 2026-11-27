@@ -6,12 +6,17 @@ import {
   shouldShowMentionNotification,
 } from "@/lib/notifications/notifications";
 import { showMessageNotification } from "@/lib/notifications/browser";
-import type { ChatPort, UserPreferences } from "@/ports";
+import type { ChatPort, Presence, UserPreferences } from "@/ports";
 
 interface MentionNotificationsOptions {
   chat: ChatPort;
   selfId: string | null;
   selfUsername: string | null;
+  /**
+   * The reader's chosen status, which decides whether `@here` reaches them;
+   * without it they count as online.
+   */
+  selfPresence?: Presence;
   preferences: UserPreferences;
   /** The name of a text channel of this server, or null for one it does not know. */
   channelName: (channelId: string) => string | null;
@@ -38,16 +43,17 @@ export function useMentionNotifications({
   chat,
   selfId,
   selfUsername,
+  selfPresence,
   preferences,
   channelName,
   openChannel,
   t,
 }: MentionNotificationsOptions): void {
-  // Read when a message arrives, so a change of name, preference or language
-  // does not resubscribe and cannot miss one in between.
-  const latest = useRef({ selfId, selfUsername, preferences, channelName, openChannel, t });
+  // Read when a message arrives, so a change of name, status, preference or
+  // language does not resubscribe and cannot miss one in between.
+  const latest = useRef({ selfId, selfUsername, selfPresence, preferences, channelName, openChannel, t });
   useEffect(() => {
-    latest.current = { selfId, selfUsername, preferences, channelName, openChannel, t };
+    latest.current = { selfId, selfUsername, selfPresence, preferences, channelName, openChannel, t };
   });
 
   useEffect(
@@ -63,6 +69,10 @@ export function useMentionNotifications({
           enabled: now.preferences.mentionPopups,
           mutedChannelIds: now.preferences.mutedChannelIds,
           away: isAway(),
+          // The server's stamp, never the words: anybody can type `@everyone`.
+          mentionsEveryone: message.mentionsEveryone === true,
+          mentionsHere: message.mentionsHere === true,
+          selfPresence: now.selfPresence,
         })) {
           return;
         }

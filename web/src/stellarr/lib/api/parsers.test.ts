@@ -62,6 +62,16 @@ describe("parseMessage", () => {
     expect(marked.pinnedAt).toBe("2026-01-01T19:10:00Z");
   });
 
+  it("keeps the server's stamp of a call on a group only when it is a literal true", () => {
+    const plain = parseMessage({ ...MESSAGE, mentionsEveryone: false, mentionsHere: false });
+    expect("mentionsEveryone" in plain || "mentionsHere" in plain).toBe(false);
+    expect("mentionsEveryone" in parseMessage({ ...MESSAGE, mentionsEveryone: "true" })).toBe(false);
+
+    const stamped = parseMessage({ ...MESSAGE, content: "@everyone @here", mentionsEveryone: true, mentionsHere: true });
+    expect(stamped.mentionsEveryone).toBe(true);
+    expect(stamped.mentionsHere).toBe(true);
+  });
+
   it("reads the message a reply answers", () => {
     const message = parseMessage({
       ...MESSAGE,

@@ -31,6 +31,7 @@ async fn post_three(world: &World) -> ([bool; 3], Vec<String>) {
     run(
         world.database.clone(),
         Messages::new(Language::English),
+        Arc::new(crate::events::Unconnected),
         receiver,
         Arc::default(),
     )

@@ -1,8 +1,10 @@
 //! Group only already-queued posts, keeping separate outcomes for their callers.
 use super::{Posted, Submission, post};
 use crate::database::{Database, DbError};
+use crate::events::Presence;
 use crate::http::ApiError;
 use crate::messages::Stop;
+use crate::state::AppState;
 use crate::values::Id;
 use std::sync::{Arc, OnceLock};
 use stellarr_messages::Messages;
@@ -29,16 +31,12 @@ pub(crate) struct PostQueue {
 }
 
 impl PostQueue {
-    pub(crate) async fn submit(
-        &self,
-        database: &Database,
-        messages: Messages,
-        server: Id,
-        submission: Submission,
-    ) -> Outcome {
+    pub(crate) async fn submit(&self, state: &AppState, server: Id, submission: Submission) -> Outcome {
+        let (database, messages) = (state.database(), *state.messages());
+        let presence = state.presence_handle();
         if let Ok(_turn) = self.turn.try_lock() {
             return database
-                .write(move |tx| post(tx, &messages, server, &submission))
+                .write(move |tx| post(tx, &messages, &*presence, server, &submission))
                 .await;
         }
 
@@ -47,6 +45,7 @@ impl PostQueue {
             tokio::spawn(run(
                 database.clone(),
                 messages,
+                presence,
                 receiver,
                 Arc::clone(&self.turn),
             ));
@@ -70,6 +69,7 @@ impl PostQueue {
 async fn run(
     database: Database,
     messages: Messages,
+    presence: Arc<dyn Presence>,
     mut receiver: mpsc::Receiver<Job>,
     turn: Arc<Mutex<()>>,
 ) {
@@ -81,8 +81,9 @@ async fn run(
                 submission,
                 reply,
             } = first;
+            let presence = Arc::clone(&presence);
             let result = database
-                .write(move |tx| post(tx, &messages, server, &submission))
+                .write(move |tx| post(tx, &messages, &*presence, server, &submission))
                 .await;
             let _ = reply.send(result);
             continue;
@@ -101,13 +102,14 @@ async fn run(
             .map(|job| ((job.server, job.submission), job.reply))
             .unzip();
 
+        let presence = Arc::clone(&presence);
         let result = database
             .write(move |tx| -> Result<_, DbError> {
                 let mut outcomes = Vec::with_capacity(requests.len());
                 for (server, submission) in requests {
                     // A later step can reject a post after its INSERT succeeded.
                     tx.execute_batch("SAVEPOINT message_post")?;
-                    let outcome = post(tx, &messages, server, &submission);
+                    let outcome = post(tx, &messages, &*presence, server, &submission);
                     if outcome.is_err() {
                         tx.execute_batch("ROLLBACK TO message_post")?;
                     }

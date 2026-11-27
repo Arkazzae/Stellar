@@ -206,7 +206,7 @@ const NO_SECTIONS: TranscriptSectionVM[] = [];
 export function ChatProvider({ children }: { children: ReactNode }) {
   const ports = usePorts();
   const { preferences } = useAccountContext();
-  const { user, hasEnded } = useSessionContext();
+  const { user, hasEnded, presence } = useSessionContext();
   const { members, server, textChannels } = useDirectoryContext();
   const { byShortcode: customEmoji } = useEmoji();
   const { locale, t } = useLanguage();
@@ -283,6 +283,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     onRemoved,
     selfId: user?.id ?? null,
     selfUsername: user?.username ?? null,
+    selfPresence: presence,
     openChannelId: channelId,
     preferences,
   });
@@ -290,6 +291,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     chat: ports.chat,
     selfId: user?.id ?? null,
     selfUsername: user?.username ?? null,
+    selfPresence: presence,
     preferences,
     channelName: (id) => textChannels.find((channel) => channel.id === id)?.name ?? null,
     openChannel: selectTextChannel,

@@ -112,7 +112,7 @@ async fn the_first_registration_founds_the_instance_and_signs_the_caller_in() {
         .unwrap()
         .collect::<Result<_, _>>()
         .unwrap();
-    assert_eq!(roles, [("Owner".to_string(), 131_071, true), ("Member".to_string(), 24064, false)]);
+    assert_eq!(roles, [("Owner".to_string(), 262_143, true), ("Member".to_string(), 24064, false)]);
     let channels: Vec<(String, i64)> = server
         .database()
         .prepare("SELECT \"Name\", \"Kind\" FROM \"Channels\" ORDER BY \"Position\"")

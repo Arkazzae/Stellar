@@ -51,7 +51,7 @@ async fn the_owner_of_a_new_instance_is_given_everything_in_the_order_clients_re
     assert_eq!(names, ["general", "voice"]);
     assert_eq!(answer["members"].as_array().unwrap().len(), 1);
     assert_eq!(answer["messages"][0]["content"], "**Owner** has joined the server. Say hello!");
-    assert_eq!(answer["permissions"].as_array().unwrap().len(), 17);
+    assert_eq!(answer["permissions"].as_array().unwrap().len(), 18);
     assert_eq!(answer["rtc"]["protocolVersion"], 1);
     assert_eq!(answer["rtc"]["signalingHub"], "/hubs/app");
     assert_eq!(answer["rtc"]["mediaServer"], "udp://localhost:49000");

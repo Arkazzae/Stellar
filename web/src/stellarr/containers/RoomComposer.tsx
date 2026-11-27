@@ -11,7 +11,9 @@ import {
   type ComposerScheduling,
 } from "@/components/room/composer/Composer";
 import { useGifsEnabled, useGiphyAccess } from "@/hooks/useGifsEnabled";
-import type { Translator } from "@/i18n";
+import type { MessageKey, Translator } from "@/i18n";
+import { groupMentionCandidates } from "@/lib/messages/composerMentions";
+import type { GroupMention } from "@/lib/messages/groupMentions";
 import { captureMicrophone, MicCaptureError } from "@/lib/voice/capture/micPipeline";
 import { VoiceMessageCaptureError } from "@/ports";
 import {
@@ -45,7 +47,7 @@ export function RoomComposer({ channelName, threadRootId }: RoomComposerProps) {
   // in their settings; either way the composer offers no GIF button.
   const gifsOffered = useGifsEnabled();
   const giphyAccess = useGiphyAccess();
-  const { members, server, canCreateEvents } = useDirectory();
+  const { members, server, canCreateEvents, canMentionEveryone } = useDirectory();
   const { user } = useSession();
   const scope = user && chat.channelId ? draftScope(user.id, server.id, chat.channelId, threadRootId ?? "") : undefined;
   const { emoji: customEmoji } = useEmoji();
@@ -114,6 +116,14 @@ export function RoomComposer({ channelName, threadRootId }: RoomComposerProps) {
           zone,
         };
 
+  // The words that call on the whole channel are offered to whoever may say
+  // them, in the reader's language. The client knows only what is held
+  // server-wide; an override in the channel still decides, on the server.
+  const groupMentions = useMemo(
+    () => (canMentionEveryone ? groupMentionCandidates(locale, (group) => t(GROUP_MENTION_LABEL[group])) : undefined),
+    [canMentionEveryone, locale, t],
+  );
+
   // As in the member menu, nobody kicks or bans themselves.
   const selfId = user?.id;
   const others = useMemo(
@@ -177,6 +187,7 @@ export function RoomComposer({ channelName, threadRootId }: RoomComposerProps) {
         onTyping={chat.notifyTyping}
         customEmoji={customEmoji}
         mentionCandidates={members}
+        {...(groupMentions === undefined ? {} : { groupMentions })}
         commandHost={commandHost}
         {...(scheduling === undefined ? {} : { scheduling })}
         {...(gifsOffered && giphyAccess === "on" ? { onGif: chat.sendGif } : {})}
@@ -216,6 +227,12 @@ export function RoomComposer({ channelName, threadRootId }: RoomComposerProps) {
     </>
   );
 }
+
+/** What each group's entry in the mention list says it does. */
+const GROUP_MENTION_LABEL: Record<GroupMention, MessageKey> = {
+  everyone: "composer.groupMention.everyone",
+  here: "composer.groupMention.here",
+};
 
 /** The sentence for why the microphone could not be opened. */
 function captureFailure(cause: unknown, t: Translator): string {

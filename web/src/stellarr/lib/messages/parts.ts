@@ -12,6 +12,7 @@ import { formatBytes } from "@/lib/format/format";
 import { giphyIdFromUrl } from "@/lib/giphy/giphy";
 import type { Attachment, Message, MessageEmbed } from "@/ports";
 
+import { stampedGroups } from "./groupMentions";
 import { bodyParts } from "./messageBody";
 import type {
   AudioPart,
@@ -244,7 +245,10 @@ export function toParts(message: Message, options: ToPartsOptions = {}): Message
       const part = embedPart(embed);
       return part === null ? [] : [{ url: embed.url, part }];
     });
-    const inline = { emoji: options.emoji, mentions: options.mentions };
+    // A group's word is a pill only where the server stamped the message: the
+    // stamp is a field of the message, so a presenter that caches parts by
+    // the message object parses again when an edit takes it away.
+    const inline = { emoji: options.emoji, mentions: options.mentions, groups: stampedGroups(message) };
     parts.push(
       ...bodyParts(content, inline, new Set(previews.map((preview) => preview.url))),
       ...previews.map((preview) => preview.part),

@@ -179,6 +179,10 @@ export function parseMessage(value: unknown, path = "message"): Message {
     ...(line === undefined ? {} : { line }),
     ...definedField("poll", readPoll(record["poll"], `${path}.poll`)),
     ...definedField("event", readEvent(record["event"], `${path}.event`)),
+    // Only a literal true is a call: anything else, a server that predates
+    // group mentions included, calls on nobody.
+    ...(record["mentionsEveryone"] === true ? { mentionsEveryone: true as const } : {}),
+    ...(record["mentionsHere"] === true ? { mentionsHere: true as const } : {}),
   };
 }
 

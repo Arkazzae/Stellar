@@ -121,6 +121,15 @@ function renderNodes(nodes: readonly InlineNode[], view: Rendering): ReactNode[]
             {node.text}
           </span>
         );
+      case "group-mention":
+        // A call on the reader along with everyone else, so it carries the
+        // stronger highlight a mention of oneself does. It names nobody and
+        // leads to no profile.
+        return (
+          <span key={index} className="msg-mention self" data-group={node.group}>
+            {node.text}
+          </span>
+        );
       case "edited":
         return (
           <span

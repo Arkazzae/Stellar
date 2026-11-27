@@ -191,6 +191,11 @@ export interface ComposerProps {
   customEmoji?: readonly CustomEmoji[];
   /** Server members offered after typing @. */
   mentionCandidates?: readonly MentionCandidate[];
+  /**
+   * `@everyone` and `@here`, offered before the members; only for whoever may
+   * call on the channel, so without them none is offered.
+   */
+  groupMentions?: readonly MentionCandidate[];
   openVoiceMessageMicrophone?: OpenVoiceMessageCapture;
   onSendVoice?(file: File, durationSeconds: number): Promise<void>;
   /** The commands that lead out of the composer. */
@@ -224,6 +229,7 @@ export function Composer({
   onGif,
   customEmoji = [],
   mentionCandidates = [],
+  groupMentions,
   openVoiceMessageMicrophone,
   onSendVoice,
   commandHost,
@@ -493,6 +499,7 @@ export function Composer({
   const mentions = useMentionSuggestions({
     text,
     candidates: mentionCandidates,
+    ...(groupMentions === undefined ? {} : { groups: groupMentions }),
     locale,
     enabled: !codeMode && active === null,
   });

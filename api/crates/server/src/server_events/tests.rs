@@ -714,8 +714,10 @@ fn the_migration_stores_the_event_permissions_on_owner_and_administrator_roles()
     // As they were stored before events.
     world.set_permissions(world.owner_role, 0x7fff);
     world.set_permissions(admin, crate::permissions::privileges::ADMINISTRATOR);
+    // Back to before the events step; the step of group mentions after it
+    // runs again too, and changes nothing it has not changed already.
     let version: i64 = world.db.pragma_query_value(None, "user_version", |row| row.get(0)).unwrap();
-    world.db.pragma_update(None, "user_version", version - 1).unwrap();
+    world.db.pragma_update(None, "user_version", version - 2).unwrap();
     drop(
         Database::open(&DatabaseSettings {
             path: world.database.path().to_path_buf(),

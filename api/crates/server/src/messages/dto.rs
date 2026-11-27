@@ -112,6 +112,12 @@ pub struct MessageDto {
     pub poll: Option<crate::polls::PollDto>,
     /// The card of the server event the message announces.
     pub event: Option<crate::server_events::EventDto>,
+    /// Whether the message calls on everyone who sees its channel, as the
+    /// server decided when it was posted; see [`super::mentions`]. Clients
+    /// highlight and ring by it, never by the words alone.
+    pub mentions_everyone: bool,
+    /// Whether it calls on those who were online when it was posted.
+    pub mentions_here: bool,
 }
 
 /// Pushed when the embeds of a message have been rebuilt; an empty list means
@@ -190,6 +196,7 @@ struct Row_ {
     author: UserDto,
     has_poll: bool,
     has_event: bool,
+    group_mention: i64,
 }
 
 fn message_from(row: &Row<'_>) -> rusqlite::Result<Row_> {
@@ -221,6 +228,7 @@ fn message_from(row: &Row<'_>) -> rusqlite::Result<Row_> {
         },
         has_poll: row.get(18)?,
         has_event: row.get(19)?,
+        group_mention: row.get(20)?,
     })
 }
 
@@ -228,7 +236,8 @@ const MESSAGE_COLUMNS: &str = "m.\"Id\", m.\"ChannelId\", m.\"AuthorId\", m.\"Is
     m.\"PinnedAt\", m.\"ReplyToMessageId\", u.\"Username\", u.\"DisplayName\", u.\"AvatarColor\", u.\"AvatarUrl\",
     u.\"BannerUrl\", u.\"CustomStatus\", u.\"Bio\", u.\"Pronouns\", u.\"Origin\",
     EXISTS (SELECT 1 FROM \"Polls\" p WHERE p.\"MessageId\" = m.\"Id\"),
-    EXISTS (SELECT 1 FROM \"ServerEventAnnouncements\" a WHERE a.\"MessageId\" = m.\"Id\")";
+    EXISTS (SELECT 1 FROM \"ServerEventAnnouncements\" a WHERE a.\"MessageId\" = m.\"Id\"),
+    m.\"GroupMention\"";
 
 /// Reads the messages with these ids as they are shown in a transcript, in the
 /// order of `ids`; an id that is no message is left out. Reactions are counted
@@ -414,6 +423,8 @@ pub fn load(
             reactions: tally(reactions.remove(&row.id).unwrap_or_default(), viewer),
             poll: polls.get(&row.id).cloned(),
             event: cards.get(&row.id).cloned(),
+            mentions_everyone: row.group_mention & super::mentions::EVERYONE != 0,
+            mentions_here: row.group_mention & super::mentions::HERE != 0,
         });
     }
     Ok(out)

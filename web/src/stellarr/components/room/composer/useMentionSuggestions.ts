@@ -8,10 +8,18 @@ import {
   type ActiveMention,
   type MentionCandidate,
 } from "@/lib/messages/composerMentions";
+import { isGroupWord } from "@/lib/messages/groupMentions";
+
+const NO_GROUPS: readonly MentionCandidate[] = [];
 
 interface Options {
   text: string;
   candidates: readonly MentionCandidate[];
+  /**
+   * `@everyone` and `@here`, offered before the members, for whoever may call
+   * on the channel; without them the list offers members alone.
+   */
+  groups?: readonly MentionCandidate[];
   locale: InterfaceLocale;
   /** False while the draft is code, where an @ is just a character. */
   enabled: boolean;
@@ -29,7 +37,14 @@ interface Options {
  * The caret is state here rather than read from the field, because the list
  * has to re-evaluate when the caret moves without the text changing.
  */
-export function useMentionSuggestions({ text, candidates, locale, enabled, whole = false }: Options) {
+export function useMentionSuggestions({
+  text,
+  candidates,
+  groups = NO_GROUPS,
+  locale,
+  enabled,
+  whole = false,
+}: Options) {
   const [caret, setCaret] = useState(0);
   const [index, setIndex] = useState(0);
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
@@ -40,9 +55,16 @@ export function useMentionSuggestions({ text, candidates, locale, enabled, whole
       ? { start: 0, end: text.length, query: text.replace(/^@/, "").trim(), key: `whole:${text}` }
       : activeMention(text, caret);
   const query = mention?.query;
+  // In the text, writing a group's word calls on the group, so nobody who took
+  // one as a username before it was reserved is offered under it there. A
+  // command's person argument names an account, and may still pick them.
+  const named = useMemo(
+    () => (whole ? candidates : candidates.filter((candidate) => !isGroupWord(candidate.username))),
+    [candidates, whole],
+  );
   const matches = useMemo(
-    () => (query === undefined ? [] : matchMentions(candidates, query, locale)),
-    [candidates, query, locale],
+    () => (query === undefined ? [] : matchMentions(named, query, locale, groups)),
+    [named, groups, query, locale],
   );
   const open = mention !== null && mention.key !== dismissedKey && matches.length > 0;
 

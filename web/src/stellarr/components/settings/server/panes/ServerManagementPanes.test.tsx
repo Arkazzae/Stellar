@@ -175,7 +175,10 @@ describe("RolesPane", () => {
       "Wysyłanie wiadomości",
       "Załączanie plików",
       "Dodawanie reakcji",
+      "Oznaczanie wszystkich",
     ]);
+    // Plain members do not call on the whole channel unless given it.
+    expect(within(text).getByRole("switch", { name: "Oznaczanie wszystkich" })).not.toBeChecked();
     expect(within(screen.getByRole("group", { name: "Kanały głosowe" })).getByRole("switch")).toBeChecked();
     expect(
       within(screen.getByRole("group", { name: "Ludzie" })).getByRole("switch", { name: "Tworzenie zaproszeń" }),
@@ -193,6 +196,27 @@ describe("RolesPane", () => {
         name: "Członek",
         color: "#8b7cf6",
         permissions: ["sendMessages", "addReactions", "connect", "createInvite"],
+      }),
+    );
+  });
+
+  it("gives calling on the whole channel with the message permissions, explained, and saves it", async () => {
+    const user = userEvent.setup();
+    const props = pane();
+
+    await user.click(screen.getByRole("button", { name: "Edytuj rolę Ekipa" }));
+    const text = screen.getByRole("group", { name: "Kanały tekstowe" });
+    const mention = within(text).getByRole("switch", { name: "Oznaczanie wszystkich" });
+    expect(mention).not.toBeChecked();
+    expect(text).toHaveTextContent("przez @wszyscy");
+    await user.click(mention);
+    await user.click(screen.getByRole("button", { name: "Zapisz zmiany" }));
+
+    await waitFor(() =>
+      expect(props.onUpdate).toHaveBeenCalledWith("role-crew", {
+        name: "Ekipa",
+        color: "#8b7cf6",
+        permissions: ["manageChannels", "mentionEveryone"],
       }),
     );
   });

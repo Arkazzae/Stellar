@@ -3,7 +3,7 @@ import { useCallback, useEffect, useReducer } from "react";
 import type { InterfaceLocale } from "@/i18n";
 import { playSystemFx } from "@/lib/audio/systemFx";
 import { shouldPlayMessageNotificationSound } from "@/lib/notifications/notifications";
-import type { Message, Ports, UserPreferences } from "@/ports";
+import type { Message, Ports, Presence, UserPreferences } from "@/ports";
 
 import type { ChatDispatch } from "./shared";
 import { refreshThreads } from "./useThreadCatalogue";
@@ -16,6 +16,11 @@ interface ChatFeedOptions {
   onRemoved: (messageId: string) => void;
   selfId: string | null;
   selfUsername: string | null;
+  /**
+   * The reader's chosen status, which decides whether `@here` reaches them;
+   * without it they count as online.
+   */
+  selfPresence?: Presence;
   openChannelId: string | null;
   preferences: UserPreferences;
 }
@@ -34,6 +39,7 @@ export function useChatFeed({
   onRemoved,
   selfId,
   selfUsername,
+  selfPresence,
   openChannelId,
   preferences,
 }: ChatFeedOptions): { reactionEpoch: number } {
@@ -54,11 +60,15 @@ export function useChatFeed({
         soundEnabled: preferences.messageSound,
         mentionsOnly: preferences.mentionsOnly,
         mutedChannelIds: preferences.mutedChannelIds,
+        // The server's stamp, never the words: anybody can type `@everyone`.
+        mentionsEveryone: message.mentionsEveryone === true,
+        mentionsHere: message.mentionsHere === true,
+        selfPresence,
       })) {
         playSystemFx("notification");
       }
     },
-    [dispatch, selfId, selfUsername, openChannelId, preferences],
+    [dispatch, selfId, selfUsername, selfPresence, openChannelId, preferences],
   );
 
   // One subscription for the whole session: the backend's server group fires
