@@ -4,7 +4,8 @@ import { deleteScheduled, messageSubject } from "@/components/confirmations";
 import { useConfirm } from "@/components/primitives/confirmContext";
 import type { ScheduledListActions, ScheduledTargetLabel } from "@/components/scheduled/ScheduledList";
 import { readerZone } from "@/lib/schedule/zonedTime";
-import type { ScheduledMessage } from "@/ports";
+import type { Translator } from "@/i18n";
+import type { DmConversation, ScheduledMessage } from "@/ports";
 import { useDirectory, useFriends, useLanguage, usePorts, useSession } from "@/state/hooks";
 
 /** The author's scheduled messages, current as the live events arrive. */
@@ -46,6 +47,37 @@ export function useWaitingHere(place: ScheduledPlace | null): { count: number; n
   return { count: here.length, next: first === undefined ? null : new Date(first.sendAt) };
 }
 
+/** What the client knows of the places a message can go to. */
+export interface KnownPlaces {
+  /** The server on screen: its channels need no server's name beside them. */
+  serverId: string;
+  textChannels: readonly { id: string; name: string }[];
+  conversations: readonly Pick<DmConversation, "id" | "peer">[];
+}
+
+/**
+ * Where a scheduled message goes, as the list names it: "# general", a
+ * channel elsewhere with its server's name, or the person a conversation is
+ * with. The names the message carries are used where the client has none.
+ */
+export function scheduledTargetLabel(item: ScheduledMessage, places: KnownPlaces, t: Translator): ScheduledTargetLabel {
+  const { target } = item;
+  if (target.kind === "conversation") {
+    const peer = places.conversations.find((conversation) => conversation.id === target.conversationId)?.peer;
+    if (peer === undefined) return { text: t("scheduled.target.conversation") };
+    return {
+      text: t("scheduled.target.person", { name: peer.displayName }),
+      ...(peer.avatarUrl === undefined ? {} : { avatarUrl: peer.avatarUrl }),
+    };
+  }
+  const here = target.serverId === undefined || target.serverId === places.serverId;
+  const channel = places.textChannels.find((candidate) => candidate.id === target.channelId)?.name ?? target.channelName;
+  // Without a name the channel, or its whole server, is gone.
+  if (channel === undefined) return { text: t("scheduled.target.goneChannel") };
+  if (here || target.serverName === undefined) return { text: t("scheduled.target.channel", { channel }) };
+  return { text: t("scheduled.target.channelOnServer", { channel, server: target.serverName }) };
+}
+
 /**
  * What the scheduled list needs beyond the messages: their places named, and
  * the actions. Deleting asks first on the question card; the other actions
@@ -55,28 +87,14 @@ export function useScheduledListActions(): ScheduledListActions & {
   targetOf(item: ScheduledMessage): ScheduledTargetLabel;
 } {
   const { scheduled } = usePorts();
-  const { textChannels } = useDirectory();
+  const { server, textChannels } = useDirectory();
   const { conversations } = useFriends();
   const { user } = useSession();
   const { t } = useLanguage();
   const confirm = useConfirm();
 
-  const targetOf = (item: ScheduledMessage): ScheduledTargetLabel => {
-    if (item.target.kind === "conversation") {
-      const { conversationId } = item.target;
-      const peer = conversations.find((conversation) => conversation.id === conversationId)?.peer;
-      if (peer === undefined) return { text: t("scheduled.target.conversation") };
-      return {
-        text: t("scheduled.target.person", { name: peer.displayName }),
-        ...(peer.avatarUrl === undefined ? {} : { avatarUrl: peer.avatarUrl }),
-      };
-    }
-    const { channelId } = item.target;
-    const channel = textChannels.find((candidate) => candidate.id === channelId);
-    // A channel of another server is not in this server's directory.
-    if (channel === undefined) return { text: t("scheduled.target.otherChannel") };
-    return { text: t("scheduled.target.channel", { channel: channel.name }) };
-  };
+  const targetOf = (item: ScheduledMessage) =>
+    scheduledTargetLabel(item, { serverId: server.id, textChannels, conversations }, t);
 
   return {
     targetOf,
