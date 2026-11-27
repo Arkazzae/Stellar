@@ -1,6 +1,8 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type * as PushModule from "@/lib/notifications/push";
+
 const world = vi.hoisted(() => ({
   port: undefined as unknown as {
     getCapabilities: ReturnType<typeof vi.fn>;
@@ -16,15 +18,7 @@ const world = vi.hoisted(() => ({
 }));
 
 const push = vi.hoisted(() => {
-  class PushEnrollmentError extends Error {
-    readonly code: string;
-    constructor(code: string) {
-      super(code);
-      this.code = code;
-    }
-  }
   return {
-    PushEnrollmentError,
     supported: vi.fn(() => true),
     permission: vi.fn((): NotificationPermission | "unsupported" => "granted"),
     requestPermission: vi.fn(),
@@ -41,7 +35,10 @@ vi.mock("@/state/hooks", () => ({
   useSession: () => ({ user: world.user }),
 }));
 
-vi.mock("@/lib/notifications/push", () => ({
+// The error type, its detail and the Brave check are the real ones; only what
+// touches the browser's push machinery is replaced.
+vi.mock("@/lib/notifications/push", async (importOriginal) => ({
+  ...(await importOriginal<typeof PushModule>()),
   pushManagerSupported: push.supported,
   deviceNotificationPermission: push.permission,
   requestDeviceNotificationPermission: push.requestPermission,
@@ -49,8 +46,9 @@ vi.mock("@/lib/notifications/push", () => ({
   inspectDevicePush: push.inspect,
   enrollDevicePush: push.enroll,
   disableDevicePush: push.disable,
-  PushEnrollmentError: push.PushEnrollmentError,
 }));
+
+import { PushEnrollmentError } from "@/lib/notifications/push";
 
 import { useNotificationDelivery } from "./useNotificationDelivery";
 
@@ -208,7 +206,7 @@ describe("useNotificationDelivery device enrollment", () => {
   });
 
   it("shows the server failure and lets the module roll the subscription back", async () => {
-    push.enroll.mockRejectedValueOnce(new push.PushEnrollmentError("server"));
+    push.enroll.mockRejectedValueOnce(new PushEnrollmentError("server"));
     const { result } = await mounted();
 
     await act(async () => result.current?.onEnableDevice());
@@ -238,5 +236,101 @@ describe("useNotificationDelivery device enrollment", () => {
 
     expect(result.current?.device.status).toBe("idle");
     expect(result.current?.device.pending).toBe(false);
+  });
+});
+
+describe("useNotificationDelivery failure messages", () => {
+  async function failWith(cause: unknown) {
+    push.enroll.mockRejectedValueOnce(cause);
+    const view = await mounted();
+    await act(async () => view.result.current?.onEnableDevice());
+    await waitFor(() => expect(view.result.current?.device.pending).toBe(false));
+    return view;
+  }
+
+  it("names a missing push service and keeps the browser's words for it", async () => {
+    const { result } = await failWith(
+      new PushEnrollmentError(
+        "push-service",
+        new DOMException("Registration failed - push service error", "AbortError"),
+      ),
+    );
+
+    expect(result.current?.device).toMatchObject({
+      error: "preference.pushDeviceServiceFailed",
+      errorDetail: "AbortError – Registration failed - push service error",
+      status: "idle",
+    });
+
+    // The next attempt starts clean and, once it works, leaves nothing behind.
+    await act(async () => result.current?.onEnableDevice());
+    await waitFor(() => expect(result.current?.device.status).toBe("enrolled"));
+    expect(result.current?.device).toMatchObject({ error: null, errorDetail: null });
+  });
+
+  it("points Brave at its own push setting", async () => {
+    Object.defineProperty(navigator, "brave", { value: { isBrave: () => true }, configurable: true });
+    try {
+      const { result } = await failWith(
+        new PushEnrollmentError(
+          "push-service",
+          new DOMException("Registration failed - push service error", "AbortError"),
+        ),
+      );
+
+      expect(result.current?.device.error).toBe("preference.pushDeviceServiceBrave");
+    } finally {
+      Reflect.deleteProperty(navigator, "brave");
+    }
+  });
+
+  it.each([
+    ["denied", "preference.pushDeviceDenied"],
+    ["key-mismatch", "preference.pushDeviceKeyMismatch"],
+    ["timeout", "preference.pushDeviceTimeout"],
+    ["malformed", "preference.pushDeviceMalformed"],
+    ["worker", "preference.pushDeviceWorkerFailed"],
+  ] as const)("says what a %s failure means", async (code, message) => {
+    const { result } = await failWith(new PushEnrollmentError(code));
+
+    expect(result.current?.device.error).toBe(message);
+    // Nothing came from the browser, so there is nothing to quote.
+    expect(result.current?.device.errorDetail).toBeNull();
+  });
+
+  it("lets a cancelled enrollment go without calling it a failure", async () => {
+    const { result } = await failWith(new PushEnrollmentError("cancelled"));
+
+    expect(result.current?.device).toMatchObject({
+      pending: false,
+      error: null,
+      errorDetail: null,
+      status: "idle",
+    });
+  });
+
+  it("keeps an unexpected error generic but quotes it", async () => {
+    const { result } = await failWith(new TypeError("boom"));
+
+    expect(result.current?.device).toMatchObject({
+      error: "preference.pushDeviceSubscribeFailed",
+      errorDetail: "TypeError – boom",
+    });
+  });
+
+  it("treats a refused permission request as a permission problem, not a push one", async () => {
+    push.requestPermission.mockImplementationOnce(() =>
+      Promise.reject(new DOMException("The request is not allowed.", "SecurityError")),
+    );
+    const { result } = await mounted();
+
+    await act(async () => result.current?.onEnableDevice());
+    await waitFor(() => expect(result.current?.device.pending).toBe(false));
+
+    expect(push.enroll).not.toHaveBeenCalled();
+    expect(result.current?.device).toMatchObject({
+      error: "preference.pushDevicePermissionFailed",
+      errorDetail: "SecurityError – The request is not allowed.",
+    });
   });
 });

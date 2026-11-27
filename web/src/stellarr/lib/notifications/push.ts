@@ -26,8 +26,20 @@ export type PushFailureCode =
   | "unsupported"
   | "invalid-key"
   | "worker"
+  /** The browser has no working push service (`AbortError` from subscribe). */
+  | "push-service"
+  /** The browser refused the subscription itself (`NotAllowedError`). */
+  | "denied"
+  /** A subscription under another key is still there (`InvalidStateError`). */
+  | "key-mismatch"
+  /** The push service did not answer within `SUBSCRIBE_TIMEOUT_MS`. */
+  | "timeout"
+  /** The browser answered with a subscription that lacks an endpoint or keys. */
+  | "malformed"
+  /** Any other rejection from subscribe. */
   | "subscribe"
   | "server"
+  /** Nobody waits for the enrollment any more; nothing failed. */
   | "cancelled";
 
 export class PushEnrollmentError extends Error {
@@ -39,6 +51,68 @@ export class PushEnrollmentError extends Error {
     this.code = code;
     if (cause !== undefined) this.cause = cause;
   }
+}
+
+/** The longest browser message shown back to the person. */
+const DETAIL_LIMIT = 300;
+
+function errorName(cause: unknown): string | null {
+  if (typeof cause !== "object" || cause === null) return null;
+  const { name } = cause as { name?: unknown };
+  return typeof name === "string" ? name : null;
+}
+
+/**
+ * What a rejected `pushManager.subscribe()` means. The exception's name is
+ * standard across browsers and its message is not, so only the name decides.
+ * Chromium without a push service (Brave with Google push messaging off, a
+ * build without Google API keys, many desktop shells) rejects with
+ * `AbortError: Registration failed - push service error` or `- push service
+ * not available`; Firefox rejects the same way when its service is unreachable.
+ */
+function subscribeFailure(cause: unknown): PushEnrollmentError {
+  if (cause instanceof PushEnrollmentError) return cause;
+  switch (errorName(cause)) {
+    case "AbortError":
+      return new PushEnrollmentError("push-service", cause);
+    case "NotAllowedError":
+      return new PushEnrollmentError("denied", cause);
+    case "InvalidStateError":
+      return new PushEnrollmentError("key-mismatch", cause);
+    case "InvalidAccessError":
+      return new PushEnrollmentError("invalid-key", cause);
+    default:
+      return new PushEnrollmentError("subscribe", cause);
+  }
+}
+
+/**
+ * The browser's own words for a failure, as `AbortError – Registration failed
+ * - push service error`, so it can be quoted when asking for help. Null when
+ * nothing was said: a timeout or a malformed answer is ours, not the
+ * browser's. None of the causes kept here carry an endpoint or a key.
+ */
+export function pushFailureDetail(error: unknown): string | null {
+  const cause = error instanceof PushEnrollmentError ? error.cause : error;
+  if (typeof cause === "string") return cause.trim() === "" ? null : cause.slice(0, DETAIL_LIMIT);
+  if (typeof cause !== "object" || cause === null) return null;
+  const { name, message } = cause as { name?: unknown; message?: unknown };
+  const parts = [name, message].filter(
+    (part): part is string => typeof part === "string" && part.trim() !== "",
+  );
+  if (parts.length === 0) return null;
+  const detail = parts.join(" – ");
+  return detail.length > DETAIL_LIMIT ? `${detail.slice(0, DETAIL_LIMIT - 1)}…` : detail;
+}
+
+/**
+ * Brave names itself only through `navigator.brave`, not its user agent. Its
+ * push service is off until the person turns it on, which the pane says.
+ */
+export function browserIsBrave(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const { brave } = navigator as Navigator & { brave?: unknown };
+  return typeof brave === "object" && brave !== null;
 }
 
 export interface RememberedSubscription {
@@ -254,7 +328,7 @@ function payloadOf(subscription: PushSubscription): PushSubscriptionInput {
     typeof auth !== "string" ||
     auth.length === 0
   ) {
-    throw new PushEnrollmentError("subscribe");
+    throw new PushEnrollmentError("malformed");
   }
   return { endpoint, keys: { p256dh, auth } };
 }
@@ -265,6 +339,54 @@ async function unsubscribeQuietly(subscription: PushSubscription): Promise<void>
   } catch {
     // A subscription that cannot be removed is reported by the enrollment
     // step that needed it; cleanup never hides the original failure.
+  }
+}
+
+/** The browser's current subscription, or null when it cannot be read in time. */
+async function currentSubscription(
+  registration: ServiceWorkerRegistration,
+): Promise<PushSubscription | null> {
+  try {
+    return await timeout(
+      registration.pushManager.getSubscription(),
+      INSPECTION_TIMEOUT_MS,
+      "worker",
+    );
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Removes a subscription this browser holds before a new one replaces it. The
+ * server scopes the deletion to this account, so another owner's row is
+ * untouched, and the server's session binding stays authoritative for it.
+ */
+async function replaceExisting(
+  existing: PushSubscription,
+  deleteEndpoint: (endpoint: string) => Promise<void>,
+): Promise<void> {
+  try {
+    await timeout(deleteEndpoint(existing.endpoint), CLEANUP_TIMEOUT_MS, "server");
+  } catch {
+    // Local replacement still has to happen.
+  }
+  await unsubscribeQuietly(existing);
+  forgetRememberedSubscription();
+}
+
+async function subscribe(
+  registration: ServiceWorkerRegistration,
+  applicationServerKey: Uint8Array<ArrayBuffer>,
+): Promise<PushSubscription> {
+  try {
+    return await timeout(
+      registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey }),
+      SUBSCRIBE_TIMEOUT_MS,
+      "timeout",
+    );
+  } catch (cause) {
+    throw subscribeFailure(cause);
   }
 }
 
@@ -308,46 +430,25 @@ export async function enrollDevicePush(options: EnrollPushOptions): Promise<Enro
   if (!runnable()) throw new PushEnrollmentError("unsupported");
 
   const registration = await registerWorker();
-  let existing: PushSubscription | null = null;
-  try {
-    existing = await timeout(
-      registration.pushManager.getSubscription(),
-      INSPECTION_TIMEOUT_MS,
-      "worker",
-    );
-  } catch {
-    existing = null;
-  }
-
-  if (existing !== null) {
-    // The endpoint is about to be replaced. The server scopes the deletion to
-    // this account, so another owner's row is untouched.
-    try {
-      await timeout(
-        options.deleteEndpoint(existing.endpoint),
-        CLEANUP_TIMEOUT_MS,
-        "server",
-      );
-    } catch {
-      // Local replacement still has to happen; the server's session binding
-      // remains authoritative for the old row.
-    }
-    await unsubscribeQuietly(existing);
-    forgetRememberedSubscription();
-  }
+  const existing = await currentSubscription(registration);
+  if (existing !== null) await replaceExisting(existing, options.deleteEndpoint);
 
   let subscription: PushSubscription;
   try {
-    subscription = await timeout(
-      registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: options.applicationServerKey,
-      }),
-      SUBSCRIBE_TIMEOUT_MS,
-      "subscribe",
-    );
-  } catch (cause) {
-    throw cause instanceof PushEnrollmentError ? cause : new PushEnrollmentError("subscribe", cause);
+    subscription = await subscribe(registration, options.applicationServerKey);
+  } catch (error) {
+    // A subscription under another key blocks a new one. The look above can
+    // miss it (it timed out) or fail to remove it (unsubscribe is quiet), so
+    // look once more, remove what is there and ask once again. A second
+    // refusal is the person's to clear, and the pane says how.
+    if (!(error instanceof PushEnrollmentError) || error.code !== "key-mismatch") throw error;
+    if (options.isStillWanted !== undefined && !options.isStillWanted()) {
+      throw new PushEnrollmentError("cancelled");
+    }
+    const leftover = await currentSubscription(registration);
+    if (leftover === null) throw error;
+    await replaceExisting(leftover, options.deleteEndpoint);
+    subscription = await subscribe(registration, options.applicationServerKey);
   }
 
   let payload: PushSubscriptionInput;
@@ -357,7 +458,7 @@ export async function enrollDevicePush(options: EnrollPushOptions): Promise<Enro
     await unsubscribeQuietly(subscription);
     throw cause instanceof PushEnrollmentError
       ? cause
-      : new PushEnrollmentError("subscribe", cause);
+      : new PushEnrollmentError("malformed", cause);
   }
 
   if (options.isStillWanted !== undefined && !options.isStillWanted()) {

@@ -4,11 +4,13 @@ import type { NotificationDeliveryProps } from "@/components/account/panes/Notif
 import type { MessageKey } from "@/i18n";
 import {
   PushEnrollmentError,
+  browserIsBrave,
   decodeApplicationServerKey,
   deviceNotificationPermission,
   disableDevicePush,
   enrollDevicePush,
   inspectDevicePush,
+  pushFailureDetail,
   pushManagerSupported,
   requestDeviceNotificationPermission,
 } from "@/lib/notifications/push";
@@ -21,9 +23,15 @@ const IDLE_DEVICE: NotificationDeliveryProps["device"] = {
   status: "idle",
   pending: false,
   error: null,
+  errorDetail: null,
 };
 
-function failureMessage(cause: unknown): MessageKey {
+/**
+ * What went wrong, in words that say what to do about it. Null for an
+ * enrollment nobody waits for any more (a second click, a sign-out, another
+ * account): it was let go, nothing failed.
+ */
+function failureMessage(cause: unknown): MessageKey | null {
   const code = cause instanceof PushEnrollmentError ? cause.code : "subscribe";
   switch (code) {
     case "unsupported":
@@ -32,10 +40,22 @@ function failureMessage(cause: unknown): MessageKey {
       return "preference.pushDeviceKeyFailed";
     case "worker":
       return "preference.pushDeviceWorkerFailed";
+    case "push-service":
+      return browserIsBrave()
+        ? "preference.pushDeviceServiceBrave"
+        : "preference.pushDeviceServiceFailed";
+    case "denied":
+      return "preference.pushDeviceDenied";
+    case "key-mismatch":
+      return "preference.pushDeviceKeyMismatch";
+    case "timeout":
+      return "preference.pushDeviceTimeout";
+    case "malformed":
+      return "preference.pushDeviceMalformed";
     case "server":
       return "preference.pushDeviceServerFailed";
     case "cancelled":
-      return "preference.pushDeviceSubscribeFailed";
+      return null;
     case "subscribe":
       return "preference.pushDeviceSubscribeFailed";
   }
@@ -97,7 +117,13 @@ export function useNotificationDelivery(open: boolean): NotificationDeliveryProp
     deviceRequest.current += 1;
     setEmailError(null);
     setPushError(null);
-    setDevice((current) => ({ ...current, pending: false, error: null, status: "idle" }));
+    setDevice((current) => ({
+      ...current,
+      pending: false,
+      error: null,
+      errorDetail: null,
+      status: "idle",
+    }));
   }, [userId]);
 
   useEffect(() => {
@@ -130,13 +156,7 @@ export function useNotificationDelivery(open: boolean): NotificationDeliveryProp
     if (target === null) return;
     if (!pushManagerSupported()) {
       if (!isCurrent(target)) return;
-      setDevice({
-        supported: false,
-        permission: "unsupported",
-        status: "idle",
-        pending: false,
-        error: null,
-      });
+      setDevice({ ...IDLE_DEVICE });
       return;
     }
     const inspection = await inspectDevicePush(target);
@@ -229,6 +249,7 @@ export function useNotificationDelivery(open: boolean): NotificationDeliveryProp
         permission: "unsupported",
         pending: false,
         error: "preference.pushDeviceUnsupported",
+        errorDetail: null,
       }));
       return;
     }
@@ -241,6 +262,7 @@ export function useNotificationDelivery(open: boolean): NotificationDeliveryProp
         ...current,
         pending: false,
         error: "preference.pushDeviceUnavailable",
+        errorDetail: null,
       }));
       return;
     }
@@ -250,11 +272,12 @@ export function useNotificationDelivery(open: boolean): NotificationDeliveryProp
     let key: Uint8Array<ArrayBuffer>;
     try {
       key = decodeApplicationServerKey(capabilities.applicationServerKey);
-    } catch {
+    } catch (cause) {
       setDevice((current) => ({
         ...current,
         pending: false,
         error: "preference.pushDeviceKeyFailed",
+        errorDetail: pushFailureDetail(cause),
       }));
       return;
     }
@@ -267,40 +290,54 @@ export function useNotificationDelivery(open: boolean): NotificationDeliveryProp
       permission: deviceNotificationPermission(),
       pending: true,
       error: null,
+      errorDetail: null,
     }));
+
+    const permissionFailed = (cause: unknown) =>
+      setDevice((current) => ({
+        ...current,
+        pending: false,
+        permission: deviceNotificationPermission(),
+        error: "preference.pushDevicePermissionFailed",
+        errorDetail: pushFailureDetail(cause),
+      }));
 
     // Started directly in the click, before the first `await`: browsers only
     // show the permission prompt for a request made inside the gesture.
     let permissionAnswer: Promise<NotificationPermission | "unsupported">;
     try {
       permissionAnswer = requestDeviceNotificationPermission();
-    } catch {
-      setDevice((current) => ({
-        ...current,
-        pending: false,
-        permission: deviceNotificationPermission(),
-        error: "preference.pushDevicePermissionFailed",
-      }));
+    } catch (cause) {
+      permissionFailed(cause);
       return;
     }
 
     void (async () => {
+      let permission: NotificationPermission | "unsupported";
       try {
-        const permission = await permissionAnswer;
-        if (!stillWanted()) return;
-        if (permission !== "granted") {
-          setDevice((current) => ({
-            ...current,
-            pending: false,
-            permission: permission === "unsupported" ? "unsupported" : permission,
-            error:
-              permission === "unsupported"
-                ? "preference.pushDeviceUnsupported"
-                : "preference.pushDevicePermissionFailed",
-          }));
-          return;
-        }
+        permission = await permissionAnswer;
+      } catch (cause) {
+        // A refused request (an insecure page, a policy) is about permission,
+        // not about the push service that was never reached.
+        if (stillWanted()) permissionFailed(cause);
+        return;
+      }
+      if (!stillWanted()) return;
+      if (permission !== "granted") {
+        setDevice((current) => ({
+          ...current,
+          pending: false,
+          permission: permission === "unsupported" ? "unsupported" : permission,
+          error:
+            permission === "unsupported"
+              ? "preference.pushDeviceUnsupported"
+              : "preference.pushDevicePermissionFailed",
+          errorDetail: null,
+        }));
+        return;
+      }
 
+      try {
         await enrollDevicePush({
           userId: target,
           applicationServerKey: key,
@@ -315,14 +352,17 @@ export function useNotificationDelivery(open: boolean): NotificationDeliveryProp
           permission: deviceNotificationPermission(),
           status: "enrolled",
           error: null,
+          errorDetail: null,
         }));
       } catch (cause) {
         if (!stillWanted()) return;
+        const error = failureMessage(cause);
         setDevice((current) => ({
           ...current,
           pending: false,
           permission: deviceNotificationPermission(),
-          error: failureMessage(cause),
+          error,
+          errorDetail: error === null ? null : pushFailureDetail(cause),
         }));
       }
     })();
@@ -333,7 +373,7 @@ export function useNotificationDelivery(open: boolean): NotificationDeliveryProp
     if (port === undefined || target === null) return;
     const request = ++deviceRequest.current;
     const stillWanted = () => isCurrent(target) && request === deviceRequest.current;
-    setDevice((current) => ({ ...current, pending: true, error: null }));
+    setDevice((current) => ({ ...current, pending: true, error: null, errorDetail: null }));
 
     void disableDevicePush({
       userId: target,
@@ -347,9 +387,10 @@ export function useNotificationDelivery(open: boolean): NotificationDeliveryProp
           permission: deviceNotificationPermission(),
           status: "idle",
           error: result.serverRemoved ? null : "preference.pushDeviceDeleteFailed",
+          errorDetail: null,
         }));
       },
-      () => {
+      (cause: unknown) => {
         if (!stillWanted()) return;
         setDevice((current) => ({
           ...current,
@@ -357,6 +398,7 @@ export function useNotificationDelivery(open: boolean): NotificationDeliveryProp
           permission: deviceNotificationPermission(),
           status: "idle",
           error: "preference.pushDeviceDeleteFailed",
+          errorDetail: pushFailureDetail(cause),
         }));
       },
     );
