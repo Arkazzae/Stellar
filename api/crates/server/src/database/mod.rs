@@ -24,6 +24,7 @@
 //! - A change is committed before the event that announces it is published,
 //!   and the event is sent after `write` has returned.
 
+mod access_signal;
 mod error;
 mod gate;
 mod schema;
@@ -36,11 +37,13 @@ use rusqlite::{Connection, OpenFlags, Transaction, TransactionBehavior};
 use tokio::sync::Semaphore;
 
 use crate::settings::DatabaseSettings;
+use crate::values::Id;
 
+pub use access_signal::{AccessSignal, AccessTransaction, wake_file};
 pub use error::DbError;
 pub use gate::MutationGate;
 
-/// One of the sixteen connections is reserved for the writer.
+/// One of the sixteen pooled connections is reserved for the writer.
 const MAX_READERS: usize = 15;
 const WRITER_FLAGS: OpenFlags =
     OpenFlags::SQLITE_OPEN_READ_WRITE.union(OpenFlags::SQLITE_OPEN_CREATE);
@@ -49,11 +52,15 @@ const WRITER_FLAGS: OpenFlags =
 pub struct Database {
     readers: Arc<Pool>,
     writer: Arc<Pool>,
+    pub(crate) access_signal: AccessSignal,
+    pub(crate) realtime_origin: Id,
+    pub(crate) initial_realtime_cursor: i64,
 }
 
 struct Pool {
     settings: DatabaseSettings,
     flags: OpenFlags,
+    realtime_writer: Option<(Id, AccessSignal)>,
     idle: Mutex<Vec<Connection>>,
     permits: Arc<Semaphore>,
 }
@@ -65,14 +72,35 @@ impl Database {
     pub fn open(settings: &DatabaseSettings) -> Result<Database, DbError> {
         let mut connection = connect(settings, WRITER_FLAGS)?;
         schema::prepare(&mut connection)?;
+        let realtime_origin = Id::random();
+        access_signal::prepare_wake_file(&settings.path).map_err(|e| {
+            DbError::Task(format!(
+                "cannot create {}: {e}",
+                access_signal::wake_file(&settings.path).display()
+            ))
+        })?;
+        let access_signal = AccessSignal::local();
+        access_signal.register(&connection)?;
+        mark_writer(&connection, realtime_origin)?;
+        let initial_realtime_cursor = realtime_cursor(&connection)?;
         Ok(Database {
             readers: Pool::new(
                 settings,
                 OpenFlags::SQLITE_OPEN_READ_ONLY,
                 MAX_READERS,
                 vec![],
+                None,
             ),
-            writer: Pool::new(settings, WRITER_FLAGS, 1, vec![connection]),
+            writer: Pool::new(
+                settings,
+                WRITER_FLAGS,
+                1,
+                vec![connection],
+                Some((realtime_origin, access_signal.clone())),
+            ),
+            access_signal,
+            realtime_origin,
+            initial_realtime_cursor,
         })
     }
 
@@ -106,6 +134,16 @@ impl Database {
         &self.writer.settings.path
     }
 
+    /// The token file other processes write when they change access.
+    pub(crate) fn wake_file(&self) -> std::path::PathBuf {
+        wake_file(self.path())
+    }
+
+    /// Makes the token file again if somebody removed it while the API runs.
+    pub(crate) fn prepare_wake_file(&self) -> std::io::Result<()> {
+        access_signal::prepare_wake_file(self.path())
+    }
+
     /// Runs `work` on a connection, inside one snapshot of the database. A
     /// statement in it that would change something fails.
     pub async fn read<T, E, F>(&self, work: F) -> Result<T, E>
@@ -135,10 +173,11 @@ impl Database {
         T: Send + 'static,
         E: From<DbError> + From<rusqlite::Error> + Send + 'static,
     {
+        let signal = self.access_signal.clone();
         self.writer
             .run(move |connection| {
-                let transaction =
-                    connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                let transaction = AccessTransaction::new(tx, Some(&signal));
                 let value = work(&transaction)?;
                 transaction.commit()?;
                 Ok(value)
@@ -153,6 +192,7 @@ impl Database {
         F: FnOnce(&Transaction) -> rusqlite::Result<()> + Send + 'static,
     {
         let timeout = self.writer.settings.busy_timeout;
+        let signal = self.access_signal.clone();
         self.writer
             .run(move |connection| {
                 connection.busy_timeout(Duration::ZERO)?;
@@ -160,6 +200,7 @@ impl Database {
                     let transaction = retry_lock(timeout, || {
                         Transaction::new_unchecked(connection, TransactionBehavior::Immediate)
                     })?;
+                    let transaction = AccessTransaction::new(transaction, Some(&signal));
                     work(&transaction)?;
                     transaction.commit()
                 })();
@@ -187,16 +228,33 @@ impl Database {
     }
 }
 
+pub(crate) fn realtime_cursor(db: &Connection) -> rusqlite::Result<i64> {
+    db.prepare_cached("SELECT coalesce(max(Seq), 0) FROM RealtimeChanges")?
+        .query_row([], |row| row.get(0))
+}
+
+// Handlers already announce local changes to channels and voice seats. Other
+// connections, including the CLI, leave Origin NULL for the worker to handle.
+fn mark_writer(db: &Connection, origin: Id) -> rusqlite::Result<()> {
+    db.execute_batch(&format!(
+        "CREATE TEMP TRIGGER MarkLocalRealtimeChange AFTER INSERT ON main.RealtimeChanges
+         BEGIN UPDATE RealtimeChanges SET Origin = '{}' WHERE Seq = NEW.Seq; END",
+        origin.to_db_text()
+    ))
+}
+
 impl Pool {
     fn new(
         settings: &DatabaseSettings,
         flags: OpenFlags,
         size: usize,
         idle: Vec<Connection>,
+        realtime_writer: Option<(Id, AccessSignal)>,
     ) -> Arc<Self> {
         Arc::new(Self {
             settings: settings.clone(),
             flags,
+            realtime_writer,
             idle: Mutex::new(idle),
             permits: Arc::new(Semaphore::new(size)),
         })
@@ -222,7 +280,14 @@ impl Pool {
                 .pop();
             let mut connection = match taken {
                 Some(connection) => connection,
-                None => connect(&pool.settings, pool.flags).map_err(E::from)?,
+                None => {
+                    let db = connect(&pool.settings, pool.flags).map_err(E::from)?;
+                    if let Some((origin, signal)) = &pool.realtime_writer {
+                        signal.register(&db).map_err(DbError::from)?;
+                        mark_writer(&db, *origin).map_err(DbError::from)?;
+                    }
+                    db
+                }
             };
             if pool.flags.contains(OpenFlags::SQLITE_OPEN_READ_WRITE) {
                 for (setting, value) in [("foreign_keys", true), ("query_only", false)] {

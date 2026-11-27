@@ -44,6 +44,7 @@ const MIGRATIONS: &[&str] = &[
         ArchivedKeyId TEXT
     ); CREATE TABLE IF NOT EXISTS RetiredPinAccounts (UserId TEXT PRIMARY KEY);
     CREATE TABLE IF NOT EXISTS RecoveryCodeUpgradeScrub (Pending INTEGER);",
+    include_str!("realtime_changes.sql"),
 ];
 
 /// Sets the journal mode, which the database file remembers, and gives an
