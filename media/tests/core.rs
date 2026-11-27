@@ -453,6 +453,46 @@ fn an_oversized_or_malformed_description_is_refused_and_the_session_lives_on() {
     assert!(net.log.iter().all(|e| e["type"] != "closed"));
 }
 
+/// str0m 0.25.0 panics in `accept_offer` ("Pt locked multiple times") on an
+/// offer whose two video sections disagree about a payload type. The panic
+/// closes the session that sent the offer, and the others keep hearing each
+/// other.
+#[test]
+fn an_offer_that_panics_str0m_closes_only_its_own_session() {
+    let mut net = Net::new();
+    let a = net.join(1);
+    let b = net.join(2);
+    let mic_a = net.publish(a, MediaKind::Audio, "a");
+    net.publish(b, MediaKind::Audio, "b");
+    net.connect_all();
+    let victim = net.join(3);
+
+    let (_, result) = net.offer_with(
+        victim,
+        |api| {
+            api.add_media(MediaKind::Video, Direction::RecvOnly, None, None, None);
+            api.add_media(MediaKind::Video, Direction::RecvOnly, None, None, None);
+        },
+        |sdp| {
+            let edited = sdp.replacen("a=fmtp:100 profile-id=2\r\n", "", 1);
+            assert_ne!(edited, sdp, "the offer has the line to remove");
+            edited
+        },
+    );
+    assert!(matches!(result, Err(ApiError::InvalidSdp(_))), "{result:?}");
+    assert_eq!(net.client(victim).closed.as_deref(), Some("error"));
+
+    let before = net.client(b).received.len();
+    for _ in 0..10 {
+        net.send_audio(a, mic_a, &[1; 40]);
+        net.step(Duration::from_millis(20));
+    }
+    assert!(
+        net.client(b).received.len() > before,
+        "the other two still hear each other"
+    );
+}
+
 #[test]
 fn an_offer_of_the_media_server_larger_than_128_kib_closes_the_session() {
     let mut net = Net::offline();
