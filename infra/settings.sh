@@ -75,12 +75,17 @@ require_public_host() {
 
 # Prints a persistent secret, creating it with mode 0600 on first use.
 read_or_create_secret() {
-  local name="$2" file="$1/secrets/$2" pending value
+  local name="$2" file="$1/secrets/$2" pending
   if [[ ! -e "$file" ]]; then
     pending="$(mktemp "$file.XXXXXX")"
     openssl rand -hex 32 > "$pending"
     mv -f "$pending" "$file"
   fi
+  read_secret "$1" "$name"
+}
+
+read_secret() {
+  local name="$2" file="$1/secrets/$2" value
   # A successful read before EOF means the file contained a NUL.
   if [[ -L "$file" || ! -f "$file" ]] || IFS= read -r -d '' value < "$file"; then
     value=''

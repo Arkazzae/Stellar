@@ -87,13 +87,13 @@ jobs:
           # settings in those two files are the ones the image reads and the
           # configuration page lists, and runs ShellCheck on the scripts that
           # read them.
-          check installer '^(install\.sh$|init/installer/|infra/tests/(install|setting-names|entrypoint|smoke)|infra/(entrypoint|settings|stellarr-cli|tls-maintenance)\.sh$|api/crates/server/src/settings/variables\.rs$|docs/install/configuration\.md$|docker-compose\.yml$|infra/compose/|\.env\.example$|\.github/workflows/(ci|installer-build)\.yml$)'
+          check installer '^(install\.sh$|init/installer/|infra/tests/(install|setting-names|entrypoint|smoke)|infra/(entrypoint|settings|stellarr-cli|tls-maintenance)\.sh$|deploy/services/[^/]+\.sh$|api/crates/server/src/settings/variables\.rs$|docs/install/configuration\.md$|docker-compose\.yml$|infra/compose/|\.env\.example$|\.github/workflows/(ci|installer-build)\.yml$)'
           # vite.config.ts, documents.ts and worklets.ts lay out the build that
           # nginx serves. The image job drills the process manager in the
           # image, so its sources count, not only its manifest. It takes the
           # recipes' outputs from the recipes job, which builds them with the
           # bake file.
-          check image '^(locales/|deploy/split/|Dockerfile$|sdk/(dev/|host/|client\.js$|media\.js$|package\.json$)|docker-bake\.hcl$|\.dockerignore$|artifacts/|infra/|api/(Cargo\.(toml|lock)$|crates/[^/]+/(Cargo\.toml$|build\.rs$|src/|assets/))|packages/|package(-lock)?\.json$|\.npmrc$|web/|media/(Cargo\.(toml|lock)$|src/|build\.rs$)|docker-compose\.yml$|infra/compose/|init/(Cargo\.(toml|lock)$|src/)|\.github/workflows/ci\.yml$)'
+          check image '^(locales/|deploy/services/|Dockerfile$|sdk/(dev/|host/|client\.js$|media\.js$|package\.json$)|docker-bake\.hcl$|\.dockerignore$|artifacts/|infra/|api/(Cargo\.(toml|lock)$|crates/[^/]+/(Cargo\.toml$|build\.rs$|src/|assets/))|packages/|package(-lock)?\.json$|\.npmrc$|web/|media/(Cargo\.(toml|lock)$|src/|build\.rs$)|docker-compose\.yml$|infra/compose/|init/(Cargo\.(toml|lock)$|src/)|\.github/workflows/ci\.yml$)'
 
   sdk:
     needs: changes
@@ -408,7 +408,7 @@ jobs:
       - run: cargo build --locked --features test-seams --target x86_64-unknown-linux-musl
         working-directory: init/installer
       - name: Check the scripts with ShellCheck
-        run: docker run --rm -v "$PWD":/mnt:ro -w /mnt koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d -x install.sh infra/tests/install.test.sh infra/tests/setting-names.test.sh infra/tests/smoke.test.sh infra/settings.sh infra/entrypoint.sh infra/stellarr-cli.sh infra/tests/entrypoint.test.sh
+        run: docker run --rm -v "$PWD":/mnt:ro -w /mnt koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d -x install.sh infra/tests/install.test.sh infra/tests/setting-names.test.sh infra/tests/smoke.test.sh infra/settings.sh infra/entrypoint.sh infra/stellarr-cli.sh infra/tests/entrypoint.test.sh deploy/services/credentials.sh deploy/services/health.sh
       - name: Check production port mappings
         run: |
           docker compose config --format json | jq -e '
@@ -494,19 +494,33 @@ jobs:
           tags: stellarr:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - name: Start the split Compose deployment
+      - name: Build and start the Compose services
         env:
-          STELLARR_IMAGE: stellarr:ci
           STELLARR_HTTPS_PORT: "18445"
           STELLARR_TURN_RELAY_RANGE: 49160-49162
         run: |
-          stack=(docker compose -p stellarr-split-ci -f deploy/split/compose.yml)
-          turn=(-f deploy/split/turn.yml)
+          stack=(docker compose -p stellarr-services-ci -f deploy/services/compose.yml)
+          turn=(-f deploy/services/turn.yml)
           trap '"${stack[@]}" "${turn[@]}" down -v' EXIT
+          # The README's route: from the checkout root, .env names the files.
+          printf '%s\n' COMPOSE_FILE=deploy/services/compose.yml:deploy/services/turn.yml \
+            COMPOSE_PROJECT_NAME=from-dotenv STELLARR_DOMAIN=chat.example.com >.env
+          docker compose config --format json | jq -e '.name == "from-dotenv" and
+            .services.web.environment.STELLARR_DOMAIN == "chat.example.com" and
+            .services.api.environment.STELLARR_DOMAIN == "chat.example.com" and
+            .services.turn.environment.STELLARR_DOMAIN == "chat.example.com"' >/dev/null
+          rm .env
+          "${stack[@]}" "${turn[@]}" build
           "${stack[@]}" up -d --wait --wait-timeout 90
           curl -kfSs https://localhost:18445/health/ready
           "${stack[@]}" "${turn[@]}" up -d --wait --wait-timeout 90
-          "${stack[@]}" "${turn[@]}" exec -T --user stellarr api stellarr doctor
+          "${stack[@]}" "${turn[@]}" exec -T api stellarr doctor
+          for service in web api media turn; do
+            "${stack[@]}" "${turn[@]}" exec -T "$service" sh -ec '
+              grep -Eq "^Uid:[[:space:]]+999[[:space:]]" /proc/1/status
+              grep -Eq "^CapEff:[[:space:]]+0+$" /proc/1/status
+            '
+          done
       # A build can succeed while a process inside cannot start, so run the
       # image and wait until its health check passes: stellarr-init reports
       # nginx, the API with its database, and the media server ready.

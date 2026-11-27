@@ -197,6 +197,58 @@ FROM rust-watch AS media-dev
 # Target of infra/compose/dev.yml: the API.
 FROM rust-watch AS api-dev
 
+# Separate Compose services share a numeric identity so existing data volumes
+# retain their ownership. Only the one-shot credentials job runs as root.
+FROM ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db AS service-base
+RUN groupadd --gid 999 stellarr && useradd --uid 999 --gid 999 --no-create-home --shell /usr/sbin/nologin stellarr \
+    && install -d -m 0755 /usr/local/lib/stellarr
+COPY --chmod=0644 infra/settings.sh /usr/local/lib/stellarr/settings.sh
+
+FROM service-base AS credentials-runtime
+RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
+COPY --chmod=0755 deploy/services/credentials.sh /usr/local/bin/prepare-credentials
+ENTRYPOINT ["/usr/local/bin/prepare-credentials"]
+
+FROM service-base AS service-runtime
+COPY --chmod=0755 infra/entrypoint.sh /usr/local/bin/stellarr-entrypoint
+COPY --chmod=0755 deploy/services/health.sh /usr/local/bin/http-health
+
+FROM service-runtime AS media-runtime
+COPY --from=media-build /out/stellarr-media /opt/stellarr/media/stellarr-media
+USER stellarr
+ENTRYPOINT ["/usr/local/bin/stellarr-entrypoint", "media"]
+
+FROM service-runtime AS api-runtime
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates tzdata \
+    && rm -rf /var/lib/apt/lists/* && install -d -m 0700 -o stellarr -g stellarr /data/stellarr
+COPY --from=api-build /out/api/stellarr-api /opt/stellarr/api/stellarr-api
+COPY --from=api-build /out/cli/stellarr /opt/stellarr/cli/stellarr
+COPY --chmod=0755 infra/stellarr-cli.sh /usr/local/bin/stellarr
+USER stellarr
+WORKDIR /opt/stellarr/api
+ENTRYPOINT ["/usr/local/bin/stellarr-entrypoint", "api"]
+
+FROM service-runtime AS turn-runtime
+RUN apt-get update && apt-get install -y --no-install-recommends coturn && rm -rf /var/lib/apt/lists/* \
+    && install -d -m 0700 -o stellarr -g stellarr /run/turn && chown -R stellarr:stellarr /var/lib/turn
+COPY infra/turnserver.conf.template /etc/turnserver.conf.template
+USER stellarr
+ENTRYPOINT ["/usr/local/bin/stellarr-entrypoint", "turn"]
+
+FROM service-runtime AS web-runtime
+RUN apt-get update && apt-get install -y --no-install-recommends nginx openssl && rm -rf /var/lib/apt/lists/* \
+    && install -d -m 0700 -o stellarr -g stellarr /data/stellarr /run/stellarr /run/nginx /run/stellarr-tls /run/stellarr-turn \
+    && chown -R stellarr:stellarr /var/lib/nginx \
+    && touch /etc/nginx/stellarr-trusted-proxies.conf /etc/nginx/stellarr-activity-server.conf \
+    && chown stellarr:stellarr /etc/nginx/nginx.conf /etc/nginx/stellarr-trusted-proxies.conf /etc/nginx/stellarr-activity-server.conf
+COPY infra/nginx.conf /etc/nginx/nginx.conf.template
+COPY --chmod=0755 infra/tls-maintenance.sh /usr/local/bin/stellarr-tls-maintenance
+COPY --from=web-build /src/web/dist /opt/stellarr/web
+COPY --from=web-build /out/stellarr-csp-script-hashes /etc/nginx/stellarr-csp-script-hashes
+COPY artifacts/NOTICES artifacts/manifest.json /usr/share/doc/stellarr/artifacts/
+USER stellarr
+ENTRYPOINT ["/usr/local/bin/stellarr-entrypoint", "web"]
+
 # The same distribution as before, pinned by the digest of its multi-platform
 # index, so nginx, coturn and openssl are the same packages. What the Rust
 # programs need at run time is the C library, which the base has, the CA bundle

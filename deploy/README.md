@@ -1,10 +1,10 @@
 # Platform Templates (`deploy/`)
 
-The default [Compose deployment](../docker-compose.yml) runs one container. This directory contains the optional split deployment and platform integrations.
+The default [Compose deployment](../docker-compose.yml) runs one container. This directory contains the deployment with separate service images and platform integrations.
 
 | Target | Artifact | Documentation |
 | --- | --- | --- |
-| **Split Docker Compose** | [`split/compose.yml`](split/compose.yml) | [Setup and operations](split/README.md) |
+| **Compose services** | [`services/compose.yml`](services/compose.yml) | [Setup and operations](services/README.md) |
 | **Unraid** | [`unraid/stellarr.xml`](unraid/stellarr.xml) | [`docs/install/unraid.md`](../docs/install/unraid.md) |
 | **Cloudflare R2 Relay Worker** | [`cloudflare/backup-relay/`](cloudflare/backup-relay/README.md) | [`docs/admin/cloudflare-r2.md`](../docs/admin/cloudflare-r2.md) |
 

@@ -1,9 +1,14 @@
 services:
+  credentials:
+    environment:
+      STELLARR_TURN_ENABLED: "true"
+    volumes:
+      - turn_key:/run/credentials/turn
   web:
     environment:
       STELLARR_TURN_ENABLED: "true"
     volumes:
-      - turn_tls:/run/stellarr-turn
+      - turn_cert:/run/stellarr-turn
   media:
     ports:
       - "${STELLARR_TURN_PORT:-3478}:3478/udp"
@@ -12,19 +17,16 @@ services:
       - "${STELLARR_TURNS_PORT:-5349}:5349/tcp"
       - "${STELLARR_TURN_RELAY_RANGE:-49160-49200}:${STELLARR_TURN_RELAY_RANGE:-49160-49200}/udp"
   turn:
-    image: ${STELLARR_IMAGE:-ghcr.io/arkazzae/stellarr:${STELLARR_VERSION:-latest}}
-    entrypoint: ["/bin/bash", "/opt/split-entrypoint", "split-turn"]
+    build: {context: ../.., target: turn-runtime}
     restart: unless-stopped
     labels:
-      net.unraid.docker.icon: https://raw.githubusercontent.com/Arkazzae/Stellarr/main/deploy/split/icons/turn.png
-    tmpfs: [/data/stellarr]
+      net.unraid.docker.icon: https://raw.githubusercontent.com/Arkazzae/Stellarr/main/deploy/services/icons/turn.png
     network_mode: service:media
     depends_on:
       web: {condition: service_healthy}
       media: {condition: service_healthy, restart: true}
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
-    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
     pids_limit: 512
     environment:
       STELLARR_TURN_ENABLED: "true"
@@ -34,9 +36,8 @@ services:
       STELLARR_TURNS_ENABLED: ${STELLARR_TURNS_ENABLED:-false}
       STELLARR_TURN_RELAY_RANGE: ${STELLARR_TURN_RELAY_RANGE:-49160-49200}
     volumes:
-      - ../../infra/entrypoint.sh:/opt/split-entrypoint:ro
-      - turn_key:/run/credentials/turn
-      - turn_tls:/run/stellarr-turn
+      - turn_key:/run/credentials/turn:ro
+      - turn_cert:/run/stellarr-turn:ro
     healthcheck:
       test: ["CMD-SHELL", "turnutils_stunclient -p 3478 127.0.0.1 2>&1 | grep -q 'reflexive addr'"]
       interval: 10s
@@ -57,4 +58,4 @@ services:
 
 volumes:
   turn_key:
-  turn_tls:
+  turn_cert:

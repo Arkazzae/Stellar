@@ -41,7 +41,7 @@ if [[ "$container_mode" == true && ! -L "$tls_root" ]] && mountpoint -q -- "$tls
 fi
 
 as_tls_owner() {
-  if [[ "$container_mode" == true && "$external_tls" == false ]]; then
+  if [[ "$container_mode" == true && "$external_tls" == false && "$EUID" == 0 ]]; then
     setpriv --reuid=stellarr --regid=stellarr --clear-groups -- "$@"
   else
     "$@"
@@ -61,6 +61,10 @@ install_runtime_pair() {
   mv -f "$chain" "$runtime_tls/fullchain.pem" || return 1
   mv -f "$key" "$runtime_tls/privkey.pem" || return 1
   if [[ "${STELLARR_TURN_ENABLED:-false}" == true ]]; then
+    if (( EUID != 0 )); then
+      install -m 0600 "$runtime_tls/fullchain.pem" "$runtime_tls/privkey.pem" "$runtime_turn" || return 1
+      return 0
+    fi
     install -d -m 0750 -o root -g turnserver "$runtime_turn" || return 1
     install -d -m 0700 -o turnserver -g turnserver "$runtime_turn/state" || return 1
     install -m 0600 -o turnserver -g turnserver \
