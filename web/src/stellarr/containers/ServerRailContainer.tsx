@@ -2,6 +2,7 @@ import { ServerRail } from "@/components/shell/rail/ServerRail";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { initials } from "@/lib/format/format";
 import {
+  useActivities,
   useDirectory,
   useFriends,
   usePorts,
@@ -10,6 +11,7 @@ import {
 } from "@/state/hooks";
 
 export function ServerRailContainer() {
+  const { openPicker } = useActivities();
   const directory = useDirectory();
   const { server } = directory;
   const friends = useFriends();
@@ -43,6 +45,11 @@ export function ServerRailContainer() {
       }))}
       {...(server.iconUrl === undefined ? {} : { iconUrl: server.iconUrl })}
       dmSpace={ui.space === "dm"}
+      activityOpen={ui.activityOpen}
+      onOpenActivities={() => {
+        if (railIsDrawer) ui.setRailOpen(false);
+        openPicker({ scope: "personal" });
+      }}
       onOpenMessages={ui.openFriends}
       onOpenServer={ui.openServer}
       onSelectServer={activateServer}

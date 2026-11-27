@@ -121,6 +121,27 @@ describe("AppContainer", () => {
     expect(screen.getByTestId("friends-room").closest(".app")).toHaveClass("dm-space");
   });
 
+  it("shows a personal activity over the channel without opening Friends", () => {
+    setStubs({
+      ui: { activityOpen: true },
+      activities: { personal: {
+        place: "personal", install: "board", access: "test-seat", src: "/board",
+        title: "Whiteboard", icon: null, permissions: [], embedHosts: [],
+      } },
+    });
+    render(<AppContainer />);
+    expect(screen.getByRole("main", { name: "Whiteboard" })).toBeVisible();
+    expect(screen.getByTestId("channel-rail")).toBeVisible();
+    expect(screen.queryByTestId("friends-room")).toBeNull();
+    expect(screen.queryByTestId("roster")).toBeNull();
+  });
+
+  it("announces a personal session ending from anywhere in the shell", () => {
+    setStubs({ activities: { ended: { place: "personal", name: "Whiteboard" } } });
+    render(<AppContainer />);
+    expect(screen.getByRole("status")).toHaveTextContent("Aktywność Whiteboard się zakończyła.");
+  });
+
   it("gives the roster's column to the profile beside an open conversation", () => {
     setStubs({
       ui: { space: "dm", activeDmId: "dm-ada", profilePanelOpen: true },

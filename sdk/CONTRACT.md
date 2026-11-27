@@ -134,7 +134,7 @@ flowchart LR
 ### Distribution and lifecycle (*Decided & Implemented*)
 
 - **Deterministic archives (`stellarr pack`):** Normalizes file permissions (`0644`) and timestamps (`2000-01-01T00:00:00Z`), emitting `<id>-<sha256_16>.zip` and `stellarr-release.json` (`{ protocol: 1, activities: [{ id, name, version, asset, sha256, bytes }] }`). Multiple activities can publish from one GitHub repository using scoped tags (`<id>/v<version>`).
-- **Session scoping:** Each voice channel/call runs at most one live session per installed activity; `"personal"` activities run independent per-account sessions under **Friends → Activities**.
+- **Session scoping:** Each voice channel/call runs at most one live session per installed activity; `"personal"` activities run independent per-account sessions from **Add a server and more → Solo activities** in the left rail.
 - **Cockpit actions:** **Disable** ends live sessions while retaining files/grants; **Enable** reopens launches; **Update** previews SemVer/permission/`connects` diffs and switches new sessions while existing sessions finish on their pinned origin; **Uninstall** terminates sessions and deletes stored releases/grants.
 
 ### Enforced limits (`sdk/dev/room.js`, `sdk/dev/files.js` & `sdk/host/media-host.js`)

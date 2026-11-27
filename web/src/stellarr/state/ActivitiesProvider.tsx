@@ -240,6 +240,7 @@ export function ActivitiesProvider({ children }: { children: ReactNode }) {
     const current = slot === "voice" ? latest.current.voiceSession : latest.current.personal;
     if (current?.access !== access) return;
     set(null);
+    if (slot === "personal") latest.current.ui.closeActivity();
     if (announce) setEnded({ place: current.place, name: current.title });
   }, []);
 
@@ -427,6 +428,7 @@ export function ActivitiesProvider({ children }: { children: ReactNode }) {
     const current = slot === "voice" ? latest.current.voiceSession : latest.current.personal;
     if (current === null) return;
     (slot === "voice" ? setVoiceSession : setPersonal)(null);
+    if (slot === "personal") latest.current.ui.closeActivity();
     void activitiesApi.leave(current.place, leaseOf(current)).catch(() => undefined);
     if (slot === "voice") {
       const me = latest.current.selfId;

@@ -259,6 +259,7 @@ function defaults(): HookStubs {
       openDm: vi.fn(),
       activityOpen: false,
       openActivity: vi.fn(),
+      closeActivity: vi.fn(),
       openServer: vi.fn(),
       setFriendsTab: vi.fn(),
       selectTextChannel: vi.fn(),

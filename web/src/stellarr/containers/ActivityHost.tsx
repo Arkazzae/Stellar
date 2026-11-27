@@ -292,7 +292,7 @@ export function ActivityPanel({ slot, session, target }: PanelProps) {
         <button
           type="button"
           className="burger"
-          aria-label={t("common.showConversations")}
+          aria-label={t(ui.space === "dm" ? "common.showConversations" : "room.showChannels")}
           aria-expanded={ui.railOpen}
           onClick={ui.toggleRail}
         >

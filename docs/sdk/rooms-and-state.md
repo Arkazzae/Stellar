@@ -28,7 +28,7 @@ flowchart TD
 Declare `"launchModes"` in `stellarr.json` as `["voice"]` (default), `["personal"]`, or `["voice", "personal"]`:
 
 - **`voice` mode:** Scoped to a voice channel or 1:1 call (`session.context.place` holds `{ id }`). Launching joins the existing room session if one is already running.
-- **`personal` mode:** Launched solo from **Friends → Activities → Launch for myself** (`session.context.place === null`). Each account gets its own isolated room and state.
+- **`personal` mode:** Launched solo from **Add a server and more → Solo activities** in the left rail (`session.context.place === null`). Each account gets its own isolated room and state.
 
 ### Reading participants and connection state
 

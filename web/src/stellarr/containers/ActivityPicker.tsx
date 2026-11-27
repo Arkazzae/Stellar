@@ -60,7 +60,12 @@ export function ActivityPicker() {
   if (shown === null) return null;
   return (
     <Modal open={picker !== null} onClose={closePicker} labelledBy={titleId} className="act-modal act-picker" exitMs={200}>
-      <PickerCard request={shown} titleId={titleId} onClose={closePicker} />
+      <PickerCard
+        key={shown.scope === "voice" ? shown.channelId : PERSONAL}
+        request={shown}
+        titleId={titleId}
+        onClose={closePicker}
+      />
     </Modal>
   );
 }
@@ -267,7 +272,7 @@ function PickerCard({ request, titleId, onClose }: { request: PickerRequest; tit
   if (library === null && online && failure === null) {
     body = <Skeleton label={t("common.loading")} />;
   } else if (library !== null && entries.length === 0) {
-    body = <EmptyState library={library} onMessage={(owner) => {
+    body = <EmptyState personal={!voice} library={library} onMessage={(owner) => {
       friends.messagePerson(owner.id);
       onClose();
     }} />;
@@ -319,13 +324,6 @@ function PickerCard({ request, titleId, onClose }: { request: PickerRequest; tit
             ))}
           </ul>
         )}
-        {!voice && library.voiceOnly.length > 0 ? (
-          <p className="act-note">
-            {t(`activities.voiceOnly.${pluralForm(locale, library.voiceOnly.length)}`, {
-              names: list(library.voiceOnly),
-            })}
-          </p>
-        ) : null}
       </>
     );
   }
@@ -334,7 +332,7 @@ function PickerCard({ request, titleId, onClose }: { request: PickerRequest; tit
     <div className="am-card">
       <DialogHeader
         titleId={titleId}
-        title={t("activities.title")}
+        title={t(voice ? "activities.title" : "activities.solo")}
         detail={voice ? t("activities.pickerVoice", { channel }) : t("activities.pickerPersonal")}
         onClose={onClose}
         centered
@@ -362,6 +360,13 @@ function PickerCard({ request, titleId, onClose }: { request: PickerRequest; tit
         ) : null}
         {top}
         {body}
+        {!voice && library !== null && library.voiceOnly.length > 0 ? (
+          <p className="act-note">
+            {t(`activities.voiceOnly.${pluralForm(locale, library.voiceOnly.length)}`, {
+              names: list(library.voiceOnly),
+            })}
+          </p>
+        ) : null}
       </div>
     </div>
   );
@@ -518,15 +523,19 @@ function OwnerRow({ owner, onMessage }: { owner: ActivityOwner; onMessage: (owne
   );
 }
 
-function EmptyState({ library, onMessage }: { library: ActivityLibrary; onMessage: (owner: ActivityOwner) => void }) {
+function EmptyState({ library, personal, onMessage }: {
+  library: ActivityLibrary;
+  personal: boolean;
+  onMessage: (owner: ActivityOwner) => void;
+}) {
   const { t } = useLanguage();
   return (
     <div className="act-state">
       <Icon name="game" size={26} />
-      <h3>{t("activities.emptyTitle")}</h3>
+      <h3>{t(personal ? "activities.emptySolo" : "activities.emptyTitle")}</h3>
       {library.viewerIsOwner ? (
         <>
-          <p>{t("activities.emptyOwner")}</p>
+          <p>{t(personal ? "activities.emptySoloOwner" : "activities.emptyOwner")}</p>
           <a className="act-link" href={COCKPIT_ACTIVITIES}>
             {t("activities.openCockpit")}
           </a>

@@ -34,6 +34,7 @@ const world = vi.hoisted(() => ({
   ui: {
     joinVoiceChannel: (() => undefined) as (channelId: string) => void,
     returnToChannel: (() => undefined) as () => void,
+    closeActivity: vi.fn(),
     openActivity: (() => undefined) as () => void,
   },
 }));
@@ -117,7 +118,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   world.call = { channelId: null, connection: "idle", error: null };
   world.handlers.clear();
-  world.ui = { joinVoiceChannel: vi.fn(), returnToChannel: vi.fn(), openActivity: vi.fn() };
+  world.ui = { joinVoiceChannel: vi.fn(), returnToChannel: vi.fn(), openActivity: vi.fn(), closeActivity: vi.fn() };
   api.live.mockResolvedValue(new Map());
   api.list.mockResolvedValue({ ...library, activities: [] });
 });

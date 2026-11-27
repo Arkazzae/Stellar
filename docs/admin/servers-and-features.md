@@ -41,7 +41,7 @@ Click any voice channel to join, or drag your own row (or another participant's 
 Instance owners can install static multiplayer mini-apps and watch-party tools from GitHub releases in **Cockpit → Activities** (served on the instance's existing HTTPS address by default, with optional dedicated wildcard hostnames via `STELLARR_ACTIVITY_DOMAIN`; see [Configuration](../install/configuration.md#address-and-tls) and the [Activity SDK](../sdk/getting-started.md)):
 
 - **Shared voice launch:** Start an activity from the voice call bar or join a live activity directly from the channel bar (one active session per installed activity in a voice room).
-- **Personal launch:** Activities supporting `personal` mode can also be opened solo outside calls via **Friends → Activities → Launch for myself**.
+- **Personal launch:** Activities supporting `personal` mode can also be opened solo outside calls via **Add a server and more → Solo activities** in the left rail.
 - **Independent game volume:** Each participant adjusts activity music and sound effects locally (`0–100%`) via the **Game audio** slider beside call volume without affecting voice audio or other players.
 
 ---

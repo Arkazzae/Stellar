@@ -8,6 +8,7 @@ import {
   type ActivityEntry,
   type ActivityLibrary,
 } from "@/lib/activities/api";
+import type { PickerRequest } from "@/state/hooks";
 import type * as Api from "@/lib/activities/api";
 import type { VoiceActivitySummary } from "@/lib/realtime/types";
 import { resetStubs, setStubs, stubs } from "@/test/hookStubs";
@@ -57,7 +58,7 @@ const running: VoiceActivitySummary = {
   seats: null,
 };
 
-function open(picker = { scope: "voice" as const, channelId: "voice-1", change: false }) {
+function open(picker: PickerRequest = { scope: "voice", channelId: "voice-1", change: false }) {
   setStubs({ activities: { picker } });
   return render(
     <ConfirmProvider>
@@ -192,4 +193,26 @@ it.each([
     expect(dialog().getByRole("link", { name: action })).toHaveAttribute("href", "/cockpit/activities");
     expect(dialog().queryByText("Właściciel instancji")).toBeNull();
   }
+});
+
+it("offers only personal launches when opened from the rail", async () => {
+  list.mockResolvedValueOnce(library({ activities: [entry("board", "Whiteboard")], voiceOnly: ["SyncTube"] }));
+  open({ scope: "personal" });
+  await settle();
+
+  const picker = within(screen.getByRole("dialog", { name: "Aktywności solo" }));
+  expect(list).toHaveBeenCalledWith("personal", { device: "desktop" }, expect.any(AbortSignal));
+  expect(picker.queryByRole("button", { name: /SyncTube/ })).toBeNull();
+  fireEvent.click(picker.getByRole("button", { name: "Whiteboard Uruchom" }));
+  expect(stubs.activities.launch).toHaveBeenCalledWith("personal", { install: "board", name: "Whiteboard", icon: null, seats: null }, {});
+});
+
+it("explains a voice-only library in the solo picker", async () => {
+  list.mockResolvedValueOnce(library({ activities: [], voiceOnly: ["SyncTube"] }));
+  open({ scope: "personal" });
+  await settle();
+
+  expect(screen.getByText("Brak włączonych aktywności solo")).toBeInTheDocument();
+  expect(screen.getByText(/SyncTube/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /SyncTube/ })).toBeNull();
 });

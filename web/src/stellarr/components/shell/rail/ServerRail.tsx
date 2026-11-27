@@ -24,14 +24,15 @@ export interface ServerRailProps {
   servers?: RailServer[];
   /** True while the messages side of the app is showing. */
   dmSpace: boolean;
+  activityOpen?: boolean;
+  onOpenActivities?: () => void;
   onOpenMessages: () => void;
   onOpenServer: () => void;
   onSelectServer?: (serverId: string) => void;
   /** Unread private messages, summed across conversations. */
   unread: number;
   /**
-   * The next two are rows of the launcher at the foot of the column. An absent
-   * one renders disabled rather than hidden, so the menu says what will be there.
+   * App installation, server creation and discovery share the rail launcher.
    */
   onOpenClient?: () => void;
   onCreateServer?: () => void;
@@ -52,6 +53,8 @@ export function ServerRail({
   activeServerId,
   servers,
   dmSpace,
+  activityOpen = false,
+  onOpenActivities,
   onOpenMessages,
   onOpenServer,
   onSelectServer,
@@ -79,6 +82,14 @@ export function ServerRail({
       onSelect: onDiscoverServers,
     },
   ];
+  if (onOpenActivities) {
+    launcherItems.push({
+      key: "activities",
+      icon: "game",
+      label: t("activities.solo"),
+      onSelect: onOpenActivities,
+    });
+  }
   if (onOpenClient) {
     launcherItems.push({
       key: "client",
@@ -94,7 +105,7 @@ export function ServerRail({
 
   const selectServer = (serverId: string) => {
     if (serverId !== currentId) onSelectServer?.(serverId);
-    else if (dmSpace) onOpenServer();
+    else if (dmSpace || activityOpen) onOpenServer();
     else onClose?.();
   };
 
@@ -109,10 +120,10 @@ export function ServerRail({
       <div className="srv-inner">
         <button
           type="button"
-          className={dmSpace ? "srv-item dm on" : "srv-item dm"}
+          className={dmSpace && !activityOpen ? "srv-item dm on" : "srv-item dm"}
           title={t("shell.friendsAndMessages")}
           aria-label={t("shell.friendsAndMessages")}
-          aria-current={dmSpace ? "page" : undefined}
+          aria-current={dmSpace && !activityOpen ? "page" : undefined}
           onClick={onOpenMessages}
         >
           <Icon name="thread" size={20} />
@@ -128,7 +139,7 @@ export function ServerRail({
 
         <div className="srv-list">
           {shownServers.map((server) => {
-            const current = !dmSpace && server.id === currentId;
+            const current = !activityOpen && !dmSpace && server.id === currentId;
             return (
               <button
                 key={server.id}
