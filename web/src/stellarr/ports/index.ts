@@ -17,6 +17,7 @@ export type * from "./friends";
 export type * from "./notificationDelivery";
 export type * from "./notifications";
 export type * from "./presence";
+export * from "./polls";
 export * from "./scheduled";
 export type * from "./security";
 export type * from "./session";
@@ -34,6 +35,7 @@ import type { FriendsPort } from "./friends";
 import type { NotificationDeliveryPort } from "./notificationDelivery";
 import type { NotificationPort } from "./notifications";
 import type { ConnectionPort, PresencePort } from "./presence";
+import type { PollsPort } from "./polls";
 import type { ScheduledPort } from "./scheduled";
 import type { AccountSecurityPort } from "./security";
 import type { SessionPort } from "./session";
@@ -61,6 +63,7 @@ export interface Ports {
   soundboard: SoundboardPort;
   /** The signed-in person's own messages waiting to go out. */
   scheduled: ScheduledPort;
+  polls: PollsPort;
   voiceSettings: VoiceSettingsPort;
   /**
    * Created per session rather than per app: voice needs the signed-in user

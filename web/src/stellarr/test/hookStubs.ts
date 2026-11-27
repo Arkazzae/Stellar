@@ -193,6 +193,13 @@ function defaults(): HookStubs {
         getSnapshot: () => NOTHING_SCHEDULED,
         subscribe: () => () => {},
       },
+      polls: {
+        vote: vi.fn(),
+        end: vi.fn(),
+        voters: vi.fn(async () => ({ voters: [], nextCursor: null })),
+        onPollUpdated: () => () => {},
+        onPollVoteChanged: () => () => {},
+      },
       encryption: {
         listDevices: vi.fn(async () => []),
         safetyCode: vi.fn(async () => null),

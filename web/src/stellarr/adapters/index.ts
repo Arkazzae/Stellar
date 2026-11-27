@@ -14,6 +14,7 @@ import {
   type SocialApiClient,
 } from "@/lib/api/client";
 import { encryptionCalls, type EncryptionApiClient } from "@/lib/api/calls/encryption";
+import { pollCalls, type PollApiClient } from "@/lib/api/calls/polls";
 import { scheduledCalls, type ScheduledApiClient } from "@/lib/api/calls/scheduled";
 import { isUnauthorized } from "@/lib/api/errors";
 import type { Bootstrap, RtcConfig } from "@/lib/api/types";
@@ -35,6 +36,7 @@ import { createNotificationDeliveryAdapter } from "./notificationDelivery";
 import { createNotificationAdapter } from "./notifications";
 import { createConnectionAdapter, createPresenceAdapter } from "./presence";
 import { ChannelReadStore } from "./readState";
+import { createPollsAdapter } from "./polls";
 import { createScheduledAdapter } from "./scheduled";
 import { createSoundboardAdapter } from "./soundboard";
 import { DirectoryStore } from "./store";
@@ -64,6 +66,8 @@ export interface RuntimeOptions {
   encryption?: EncryptionApiClient;
   /** The scheduled-message routes; same-origin HTTP by default. */
   scheduled?: ScheduledApiClient;
+  /** The poll routes; same-origin HTTP by default. */
+  polls?: PollApiClient;
 }
 
 /** Copies the profile fields of the signed-in account onto their directory row. */
@@ -236,6 +240,7 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
   const messageActions = createMessageActionsAdapter(api, realtime, reactionStore);
   const typing = createTypingAdapter(realtime);
   const scheduled = createScheduledAdapter(options.scheduled ?? scheduledCalls(), realtime);
+  const polls = createPollsAdapter(options.polls ?? pollCalls(), realtime);
   const chat = createChatAdapter(api, realtime, reactionStore, readStore);
   const admin = createServerAdminAdapter(
     api,
@@ -356,6 +361,7 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
     notifications: createNotificationAdapter(api, realtime),
     soundboard,
     scheduled,
+    polls,
     voiceSettings: createVoiceSettingsAdapter(voiceSettingsStore),
     createVoice,
   };

@@ -20,6 +20,7 @@ import type {
   NotificationTone,
 } from "@/ports/notifications";
 
+import { readPoll } from "./calls/polls";
 import { TIMELINE_LINE_KINDS } from "./types";
 import type {
   Attachment,
@@ -175,6 +176,7 @@ export function parseMessage(value: unknown, path = "message"): Message {
     ...definedField("pinnedAt", optionalString(record, "pinnedAt")),
     ...(encrypted === undefined ? {} : { encrypted }),
     ...(line === undefined ? {} : { line }),
+    ...definedField("poll", readPoll(record["poll"], `${path}.poll`)),
   };
 }
 

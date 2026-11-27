@@ -1,6 +1,9 @@
 /** Wire types shared by the HTTP client, the realtime hub and the UI ports. */
 
 import type { MessageKey } from "@/i18n";
+import type { Poll } from "@/ports/polls";
+
+import type { PollBody } from "./calls/polls";
 
 export type UserId = string;
 export type ChannelId = string;
@@ -382,6 +385,8 @@ export interface Message {
   replyTo?: MessageReference;
   /** Durable aggregates, from the point of view of the signed-in reader. */
   reactions?: MessageReaction[];
+  /** A question with answers to choose from; such a message is never edited. */
+  poll?: Poll;
   /**
    * Direct messages only: the end-to-end encrypted body, with `content` empty.
    * The friends adapter decrypts it and takes this field off, so nothing above
@@ -813,6 +818,8 @@ export type IdentityLinkOutcome = "linked" | "taken" | "other" | "failed";
 export interface SendMessageInput {
   content: string;
   attachmentIds: AttachmentId[];
+  /** A poll goes out as a message of its own, with no files. */
+  poll?: PollBody;
   /** Stable across retries; the server stores it as the message id. */
   clientMessageId?: MessageId;
   /** The message being answered; a server that does not know it ignores it. */
