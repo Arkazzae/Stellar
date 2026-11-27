@@ -156,4 +156,4 @@ flowchart LR
 2. **Multi-hundred-MB asset packs:** Content-addressed external packs (excluded from `.zip` backups and cached transparently by the SDK) for large 3D games.
 3. **Private GitHub repositories:** Supporting repository tokens in Cockpit vs. public release assets or volume imports.
 4. **Persistent collaborative documents:** Retention rules beyond `emptySeconds` (`120 s`) for whiteboards and shared notes.
-5. **External bots:** Out-of-process protocol for music and automation bots outside static iframe activities.
+5. **External bots:** The [proposed bot contract](BOT-CONTRACT.md) covers external workers, per-server installation and slash commands. Voice and music remain open.

@@ -18,6 +18,7 @@
     "media.js",
     "media.d.ts",
     "CONTRACT.md",
+    "BOT-CONTRACT.md",
     "dev/",
     "host/",
     "LICENSE"
