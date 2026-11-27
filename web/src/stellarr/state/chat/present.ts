@@ -177,6 +177,7 @@ function presentBody(
     ...(message.decrypted === true ? { encrypted: true } : {}),
     ...(pinned ? { pinned: true } : {}),
     ...(reactions.length > 0 ? { reactions } : {}),
+    ...(message.poll === undefined ? {} : { poll: message.poll }),
   };
   cache?.bodies.set(message, {
     emoji: customEmoji,

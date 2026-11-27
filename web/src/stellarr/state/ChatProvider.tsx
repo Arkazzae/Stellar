@@ -19,6 +19,7 @@ import { findFirstUnreadGroup } from "@/lib/messages/unread";
 import type {
   Message,
   MessageReference,
+  PollDraft,
   ThreadSummary,
 } from "@/ports";
 
@@ -41,6 +42,7 @@ import { useChatFeed } from "./chat/useChatFeed";
 import { useMentionNotifications } from "./chat/useMentionNotifications";
 import { useMessageActions } from "./chat/useMessageActions";
 import { useMessageStore } from "./chat/useMessageStore";
+import { usePollActions, type PollActions } from "./chat/usePollActions";
 import { useMessageEdit } from "./chat/useMessageEdit";
 import { useReadMarks } from "./chat/useReadMarks";
 import { useReconnectSync } from "./chat/useReconnectSync";
@@ -141,6 +143,10 @@ export interface ChatValue {
   sendGif: (pageUrl: string) => Promise<void>;
   /** Hands the message, with its files and its answer, over to go out at `sendAt`. */
   schedule: (text: string, sendAt: Date) => Promise<void>;
+  /** Sends a poll from its sheet. Rejects with a `PollDraftRefusedError` naming what to fix. */
+  sendPoll: (draft: PollDraft, clientMessageId: string) => Promise<void>;
+  /** Votes, ends and voters of the polls on screen. */
+  polls: PollActions;
   restoringFiles: boolean;
   attach: (files: File[]) => void;
   retryChip: (chipId: string) => void;
@@ -400,6 +406,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [sections, reads.openMark, user?.id],
   );
 
+  const polls = usePollActions({ polls: ports.polls, dispatch, channelId, messages: data.messages, faces });
   const actions = useMessageActions({
     actions: ports.messageActions,
     t,
@@ -473,6 +480,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       sendVoice: composer.sendVoice,
       sendGif: composer.sendGif,
       schedule: composer.schedule,
+      sendPoll: composer.sendPoll,
+      polls,
       restoringFiles: queue.restoringFiles,
       attach: queue.attach,
       retryChip: queue.retryChip,
@@ -499,6 +508,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       saveEdit,
       startReply,
       composer,
+      polls,
       notifyTyping,
       runAction,
       revealMessage,

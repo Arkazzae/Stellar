@@ -190,10 +190,12 @@ export function messageReference(
   const content = message.content.replace(/\s+/g, " ").trim();
   const hasAttachment = message.attachments.length > 0;
 
-  let preview = content;
-  if (content.length > PREVIEW_CHARS) {
-    preview = `${content.slice(0, PREVIEW_CHARS - 1)}…`;
-  } else if (content.length === 0 && hasAttachment) {
+  // A poll with no text of its own is quoted by its question, as the server quotes it.
+  const quoted = content.length === 0 && message.poll !== undefined ? message.poll.question : content;
+  let preview = quoted;
+  if (quoted.length > PREVIEW_CHARS) {
+    preview = `${quoted.slice(0, PREVIEW_CHARS - 1)}…`;
+  } else if (quoted.length === 0 && hasAttachment) {
     preview = translateMessage(locale, "format.attachmentPreview");
   }
 

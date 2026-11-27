@@ -3,6 +3,7 @@ import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { banPerson, kickPerson, personSubject } from "@/components/confirmations";
 import { useConfirm, usePrompt } from "@/components/primitives/confirmContext";
 import { draftScope } from "@/lib/platform/drafts";
+import { PollSheet } from "@/components/room/poll/PollSheet";
 import {
   Composer,
   type ComposerCommandHost,
@@ -93,6 +94,9 @@ export function RoomComposer({ channelName, threadRootId }: RoomComposerProps) {
   const waiting = useWaitingHere(place);
   const [listOpen, setListOpen] = useState(false);
   const [listNow, setListNow] = useState(() => new Date());
+  // A new poll's sheet, with the id its message goes out under: asking again
+  // after an answer that was lost posts it once.
+  const [pollSheet, setPollSheet] = useState<{ question: string; clientMessageId: string } | null>(null);
   const scheduling: ComposerScheduling | undefined =
     place === null
       ? undefined
@@ -151,43 +155,58 @@ export function RoomComposer({ channelName, threadRootId }: RoomComposerProps) {
 
   return (
     <>
-    <Composer
-      key={scope}
-      draftScope={scope}
-      channelName={channelName}
-      recordingScope={
-        inThread ? `${chat.channelId ?? "no-channel"}:thread:${threadRootId}` : chat.channelId
-      }
-      restoringFiles={chat.restoringFiles}
-      chips={chat.chips}
-      onSubmit={chat.send}
-      openVoiceMessageMicrophone={openVoiceMessageMicrophone}
-      onSendVoice={chat.sendVoice}
-      onAttach={chat.attach}
-      onRemoveChip={chat.removeChip}
-      onRetryChip={chat.retryChip}
-      onReorderChips={chat.reorderChips}
-      onTyping={chat.notifyTyping}
-      customEmoji={customEmoji}
-      mentionCandidates={members}
-      commandHost={commandHost}
-      {...(scheduling === undefined ? {} : { scheduling })}
-      {...(gifsOffered && giphyAccess === "on" ? { onGif: chat.sendGif } : {})}
-      locale={locale}
-      t={t}
-      {...(inThread
-        ? { placeholder: t("room.threadPlaceholder"), replyingTo: null }
-        : {
-            replyingTo:
-              reply === null
-                ? null
-                : { id: reply.id, authorName: reply.authorName, preview: reply.preview },
-            onCancelReply: chat.cancelReply,
-          })}
-    />
-    {listOpen && place !== null ? (
-      <ScheduledDialogContainer place={place} now={listNow} zone={zone} onClose={() => setListOpen(false)} />
-    ) : null}
+      <Composer
+        key={scope}
+        draftScope={scope}
+        channelName={channelName}
+        recordingScope={
+          inThread ? `${chat.channelId ?? "no-channel"}:thread:${threadRootId}` : chat.channelId
+        }
+        restoringFiles={chat.restoringFiles}
+        chips={chat.chips}
+        onSubmit={chat.send}
+        openVoiceMessageMicrophone={openVoiceMessageMicrophone}
+        onSendVoice={chat.sendVoice}
+        onAttach={chat.attach}
+        onRemoveChip={chat.removeChip}
+        onRetryChip={chat.retryChip}
+        onReorderChips={chat.reorderChips}
+        onTyping={chat.notifyTyping}
+        customEmoji={customEmoji}
+        mentionCandidates={members}
+        commandHost={commandHost}
+        {...(scheduling === undefined ? {} : { scheduling })}
+        {...(gifsOffered && giphyAccess === "on" ? { onGif: chat.sendGif } : {})}
+        {...(chat.channelId === null
+          ? {}
+          : {
+              onPoll: (question: string) => setPollSheet({ question, clientMessageId: crypto.randomUUID() }),
+            })}
+        locale={locale}
+        t={t}
+        {...(inThread
+          ? { placeholder: t("room.threadPlaceholder"), replyingTo: null }
+          : {
+              replyingTo:
+                reply === null
+                  ? null
+                  : { id: reply.id, authorName: reply.authorName, preview: reply.preview },
+              onCancelReply: chat.cancelReply,
+            })}
+      />
+      {listOpen && place !== null ? (
+        <ScheduledDialogContainer place={place} now={listNow} zone={zone} onClose={() => setListOpen(false)} />
+      ) : null}
+      {pollSheet === null ? null : (
+        <PollSheet
+          initialQuestion={pollSheet.question}
+          place={t(inThread ? "composer.poll.inThread" : "composer.poll.inChannel", { channel: channelName })}
+          customEmoji={customEmoji}
+          onSend={(draft) => chat.sendPoll(draft, pollSheet.clientMessageId)}
+          onClose={() => setPollSheet(null)}
+          t={t}
+        />
+      )}
     </>
   );
 }

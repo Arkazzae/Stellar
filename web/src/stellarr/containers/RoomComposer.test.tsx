@@ -4,17 +4,25 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ConfirmProvider } from "@/components/primitives/ConfirmDialog";
 import type { ComposerProps, MentionCandidate } from "@/components/room/composer/Composer";
+import type { PollSheetProps } from "@/components/room/poll/PollSheet";
 import { readGiphyConfig } from "@/lib/giphy/giphy";
 import type * as GiphyModule from "@/lib/giphy/giphy";
 import { giphyChoice } from "@/lib/giphy/giphyChoice";
 
 import { RoomComposer } from "./RoomComposer";
 
-const seen = vi.hoisted(() => ({ props: null as ComposerProps | null }));
+const seen = vi.hoisted(() => ({ props: null as ComposerProps | null, sheet: null as PollSheetProps | null }));
 
 vi.mock("@/components/room/composer/Composer", () => ({
   Composer: (props: ComposerProps) => {
     seen.props = props;
+    return null;
+  },
+}));
+
+vi.mock("@/components/room/poll/PollSheet", () => ({
+  PollSheet: (props: PollSheetProps) => {
+    seen.sheet = props;
     return null;
   },
 }));
@@ -27,6 +35,7 @@ vi.mock("@/lib/giphy/giphy", async (importOriginal) => ({
 
 const sendGif = vi.fn();
 const schedule = vi.fn();
+const sendPoll = vi.fn(async () => {});
 const voiceSettings = {};
 const room = vi.hoisted(() => ({
   ui: {
@@ -59,6 +68,7 @@ vi.mock("@/state/hooks", () => ({
     cancelReply: vi.fn(),
     closeThread: room.closeThread,
     schedule,
+    sendPoll,
   }),
   useDirectory: () => ({
     members: [{ id: "self", username: "me", displayName: "Me" }, ADA],
@@ -85,6 +95,7 @@ async function renderComposer(threadRootId: string | null = null) {
 
 beforeEach(() => {
   seen.props = null;
+  seen.sheet = null;
   room.ui.channelPanel = null;
   room.directory = { canModerateMembers: false, canManageBans: false };
   room.admin.supported.moderation = true;
@@ -197,5 +208,28 @@ describe("RoomComposer's sending later", () => {
   it("schedules through the chat, for the channel or for the thread written in", async () => {
     expect((await renderComposer()).scheduling).toMatchObject({ onSchedule: schedule, place: "channel" });
     expect((await renderComposer("root-1")).scheduling).toMatchObject({ onSchedule: schedule, place: "thread" });
+  });
+});
+
+describe("RoomComposer's polls", () => {
+  it("opens a new poll from the command, and sends it through the chat under one id however often it is tried", async () => {
+    const composer = await renderComposer();
+    act(() => composer.onPoll?.("Kiedy gramy?"));
+
+    expect(seen.sheet).toMatchObject({ initialQuestion: "Kiedy gramy?", place: "composer.poll.inChannel" });
+    const draft = { question: "Kiedy gramy?", answers: [{ text: "Piątek" }, { text: "Sobota" }], multiple: false, duration: "1d" as const };
+    await seen.sheet?.onSend(draft);
+    await seen.sheet?.onSend(draft);
+
+    const [first, second] = sendPoll.mock.calls as unknown as [unknown, string][];
+    expect(first).toEqual([draft, expect.any(String)]);
+    expect(second?.[1]).toBe(first?.[1]);
+  });
+
+  it("names the thread as the place when it is written in one", async () => {
+    const composer = await renderComposer("root-1");
+    act(() => composer.onPoll?.(""));
+
+    expect(seen.sheet?.place).toBe("composer.poll.inThread");
   });
 });

@@ -197,6 +197,8 @@ export interface ComposerProps {
   commandHost?: ComposerCommandHost;
   /** Without it the message can only be sent now. */
   scheduling?: ComposerScheduling;
+  /** Opens a new poll with the question typed; without it no poll is offered. */
+  onPoll?(question: string): void;
   locale?: InterfaceLocale;
   t?: Translator;
 }
@@ -224,6 +226,7 @@ export function Composer({
   onSendVoice,
   commandHost,
   scheduling,
+  onPoll,
   locale = documentLocale(),
   t = translateForDocument,
 }: ComposerProps) {
@@ -411,6 +414,7 @@ export function Composer({
       attachmentsSupported && onAttach !== undefined ? () => openPicker(ANY_ATTACHMENT) : undefined,
     fileBlocked: attachmentsFull ? "composer.attachmentLimit" : undefined,
     openGifs: onGif === undefined ? undefined : (query) => gifBrowser.current?.open(query),
+    openPoll: onPoll,
     recordVoice: attachmentsSupported && !voiceUnavailable ? () => setVoiceOpen(true) : undefined,
     // Judged on the draft the command leaves: the "/voice" being typed is not
     // a message that would have to go first.

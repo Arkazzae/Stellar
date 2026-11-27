@@ -187,6 +187,7 @@ export function RoomContainer({ noticeMessage = null, onNoticeConsumed }: {
     onEditCancel: chat.cancelEdit,
     onReact: chat.react,
     onAction: chat.runAction,
+    polls: chat.polls,
     onOpenAuthor: profile.toggle,
   };
   const threadPanel = {

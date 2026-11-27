@@ -2,6 +2,7 @@ import type { IconName } from "@stellarr/icons";
 import { BAN_REASON_MAX_LENGTH } from "@/components/confirmations";
 import type { MessageKey } from "@/i18n";
 import type { MentionCandidate } from "@/lib/messages/composerMentions";
+import { POLL_LIMITS } from "@/ports/polls";
 
 import { GIF_QUERY_MAX_LENGTH } from "./GifBrowser";
 
@@ -19,6 +20,7 @@ import { GIF_QUERY_MAX_LENGTH } from "./GifBrowser";
 
 export type CommandId =
   | "file"
+  | "poll"
   | "gif"
   | "voice"
   | "schedule"
@@ -77,6 +79,8 @@ export interface CommandContext {
   openFilePicker?: () => void;
   fileBlocked?: MessageKey;
   openGifs?: (query: string) => void;
+  /** Opens a new poll with the question typed; only where polls can be sent. */
+  openPoll?: (question: string) => void;
   recordVoice?: () => void;
   voiceBlocked?: MessageKey;
   enterCode: (language: string) => void;
@@ -178,14 +182,26 @@ export const COMMANDS: readonly ComposerCommand[] = [
     run: (context) => context.openFilePicker?.(),
   },
   {
+    id: "poll",
+    group: "add",
+    alias: "poll",
+    ...copy("poll"),
+    example: "composer.command.poll.example",
+    icon: "chart",
+    sheet: { tile: 2 },
+    args: [argument("poll", "question", { kind: "text", optional: true, maxLength: POLL_LIMITS.question })],
+    available: (context) => (context.openPoll === undefined ? HIDDEN : READY),
+    run: (context, input) => context.openPoll?.(input.text("question").trim()),
+  },
+  {
     id: "gif",
     group: "add",
     alias: "gif",
     ...copy("gif"),
     example: "composer.command.gif.example",
     icon: "gif",
-    // Back among the rows once polls and events take their tiles.
-    sheet: { tile: 3 },
+    // Back among the rows once events take their tile.
+    sheet: { tile: 4 },
     args: [argument("gif", "query", { kind: "text", optional: true, maxLength: GIF_QUERY_MAX_LENGTH })],
     available: (context) => (context.openGifs === undefined ? HIDDEN : READY),
     run: (context, input) => context.openGifs?.(input.text("query")),
@@ -210,7 +226,7 @@ export const COMMANDS: readonly ComposerCommand[] = [
     ...copy("schedule"),
     example: "composer.command.schedule.example",
     icon: "clock",
-    sheet: { tile: 2 },
+    sheet: { tile: 3 },
     args: [
       argument("schedule", "when", {
         kind: "text",

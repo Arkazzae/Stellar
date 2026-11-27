@@ -11,6 +11,7 @@ import { formatFull } from "@/lib/format/format";
 import type {
   CustomEmoji,
   MessageReference,
+  Poll,
   Reaction,
   SealedReason,
   TimelineLine,
@@ -25,6 +26,7 @@ import { messageMenuEntries } from "./messageMenu";
 import type { MessageAction } from "./MessageToolbar";
 import { isJumbo, type AttachmentCallbacks, type MessagePart } from "@/lib/messages/parts";
 import { Reactions } from "./Reactions";
+import { PollCard, type PollCallbacks } from "../poll/PollCard";
 
 /** One message inside a block: its own id, and what it renders as. */
 export interface MessageBodyVM {
@@ -34,6 +36,8 @@ export interface MessageBodyVM {
   encrypted?: boolean;
   reactions?: Reaction[];
   pinned?: boolean;
+  /** A question with answers to choose from; a message with one is never edited. */
+  poll?: Poll;
 }
 
 /**
@@ -103,6 +107,8 @@ export interface MessageGroupProps extends MessageGroupVM {
   onEditCancel?(): void;
   /** The server's own emoji, offered by this block's reaction picker. */
   customEmoji?: readonly CustomEmoji[];
+  /** Votes and ends of this block's polls; without them a poll only shows. */
+  polls?: PollCallbacks;
   /** You may moderate here: the bin appears on other people's messages too. */
   canModerate?: boolean;
   /** Adds "Kopiuj identyfikator" to the right-click menu, as the preference
@@ -197,6 +203,7 @@ export function MessageGroup({
   onEditCancel,
   developerMode = false,
   customEmoji,
+  polls,
   canModerate = false,
   onOpenAuthor,
   fresh = false,
@@ -226,8 +233,14 @@ export function MessageGroup({
   };
 
   // The message as the question card shows it; called only when it asks.
-  const describe = (parts: readonly MessagePart[]) => () =>
-    messageSubject(t, { authorId, authorName, authorAvatarUrl, text: plainText(parts) });
+  const describe = (parts: readonly MessagePart[], poll?: Poll) => () =>
+    messageSubject(t, {
+      authorId,
+      authorName,
+      authorAvatarUrl,
+      // A poll with no text of its own is known by its question.
+      text: plainText(parts) || (poll?.question ?? ""),
+    });
 
   return (
     <div
@@ -245,10 +258,11 @@ export function MessageGroup({
             pinned: menuBody.pinned === true,
             pointed: menuTarget.pointed,
             own,
+            fixed: menuBody.poll !== undefined,
             canModerate,
             developerMode,
             onAction: onAction && ((action) => onAction(menuBody.id, action)),
-            describe: describe(menuBody.parts),
+            describe: describe(menuBody.parts, menuBody.poll),
             ...(attachments?.resolveOriginal === undefined ? {} : { resolveOriginal: attachments.resolveOriginal }),
             confirm,
             t,
@@ -313,11 +327,12 @@ export function MessageGroup({
               actions={{
                 onReact: onReact && ((emoji) => onReact(body.id, emoji)),
                 onAction: onAction && ((action) => onAction(body.id, action)),
-                describe: describe(body.parts),
+                describe: describe(body.parts, body.poll),
                 customEmoji,
                 // A server notice belongs to nobody and is edited by nobody;
                 // moderating one would delete the record of what the server did.
                 own: own && !system,
+                fixed: body.poll !== undefined,
                 canModerate: canModerate && !system,
                 pinned: body.pinned,
                 t,
@@ -347,6 +362,15 @@ export function MessageGroup({
                     />
                   </div>
                 ))
+              )}
+              {body.poll === undefined ? null : (
+                <PollCard
+                  messageId={body.id}
+                  poll={body.poll}
+                  canEnd={own || canModerate}
+                  {...(polls === undefined ? {} : { actions: polls })}
+                  customEmoji={customEmoji}
+                />
               )}
               {body.reactions === undefined || body.reactions.length === 0 ? null : (
                 <Reactions
