@@ -2,6 +2,15 @@
 
 Activities run inside a sandboxed origin with direct `getUserMedia` and `getDisplayMedia` disabled for privacy. Instead, Stellarr provides a built-in **Game audio** mixer plus two consented media capabilities—microphone voice levels and host-rendered camera tiles—alongside deterministic release packaging for **Cockpit → Activities**.
 
+The sandbox does allow ordinary browser downloads. To save a file such as a replay GIF, turn it into a `Blob`, give it an object URL, and click an `<a download>` link. No SDK call or manifest permission is involved:
+
+```ts
+const link = document.createElement("a");
+link.href = URL.createObjectURL(gifBlob);
+link.download = "replay.gif";
+link.click();
+```
+
 ---
 
 ## 1. Respecting the Game audio slider (`session.media.volume`)

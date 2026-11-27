@@ -1502,7 +1502,7 @@ pub(super) async fn sandbox_asset(
         &external
     };
     let policy = format!(
-        "sandbox allow-scripts allow-forms allow-presentation; default-src 'none'; \
+        "sandbox allow-scripts allow-forms allow-presentation allow-downloads; default-src 'none'; \
          script-src {files} {origin}/_stellarr/sdk/ 'unsafe-inline' 'wasm-unsafe-eval' {external}; \
          style-src {files} 'unsafe-inline' {external}; img-src {files} {origin}/assets/ data: blob: {external}; \
          media-src {files} blob: {external}; font-src {files} data: {external}; \
