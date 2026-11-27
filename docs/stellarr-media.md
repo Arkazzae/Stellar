@@ -136,6 +136,8 @@ Each receiver can request thumbnails for selected MIDs. For a larger tile the SF
 
 ### Resource limits and current boundaries
 
+The 4,096-entry subscription limit bounds a signaling message. Each receiver has a separate 48-section limit. The SFU forwards packets from memory. SQLite records application data and access changes in the API process. Adding camera viewers multiplies the SFU's outbound traffic with each copy it forwards.
+
 The [15-camera browser test](../media/smoke/README.md#shared-upload-with-15-cameras) compares gallery layouts on a shared 50 Mb/s uplink.
 
 | Limit | Value | On exceed |

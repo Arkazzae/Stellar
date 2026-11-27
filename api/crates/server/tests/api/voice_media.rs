@@ -552,7 +552,7 @@ async fn the_order_of_the_list_reaches_the_media_server_as_sent_since_it_is_the_
 
     let tiles = json!({"mids": voices_first, "thumbnailMids": ["cam-2"]});
     peer.media(rig.salon, &session, "subscriptions", &tiles.to_string()).await;
-    assert_eq!(rig.media.requests().into_iter().filter(|r| r.path == path).next_back().unwrap().json(), tiles);
+    assert_eq!(rig.media.requests().into_iter().rfind(|r| r.path == path).unwrap().json(), tiles);
 }
 
 #[tokio::test]
