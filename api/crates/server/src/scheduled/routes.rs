@@ -36,6 +36,9 @@ pub struct ChannelRequest {
     attachment_ids: Option<Vec<Id>>,
     reply_to_message_id: Option<Id>,
     send_at: Option<Timestamp>,
+    /// Read only to be refused: a poll is not scheduled, and a body that
+    /// has one must not go out as a plain message.
+    poll: Option<serde_json::Value>,
 }
 
 /// A message to a conversation has no reply: direct messages have none.
@@ -45,6 +48,7 @@ pub struct ConversationRequest {
     content: Option<String>,
     attachment_ids: Option<Vec<Id>>,
     send_at: Option<Timestamp>,
+    poll: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -91,6 +95,7 @@ pub async fn in_channel(
 ) -> ApiResult<Response> {
     let messages = *state.messages();
     let now = Timestamp::now();
+    no_poll(&messages, request.poll.as_ref())?;
     let attachments = post::attachments_of(&messages, request.attachment_ids.as_deref())?;
     let content = post::content_of(&messages, request.content.as_deref(), &attachments, false)?;
     let send_at = send_time(&messages, request.send_at, now)?;
@@ -121,6 +126,7 @@ pub async fn in_conversation(
 ) -> ApiResult<Response> {
     let messages = *state.messages();
     let now = Timestamp::now();
+    no_poll(&messages, request.poll.as_ref())?;
     let attachments = post::attachments_of(&messages, request.attachment_ids.as_deref())?;
     let content = post::content_of(&messages, request.content.as_deref(), &attachments, false)?;
     let send_at = send_time(&messages, request.send_at, now)?;
@@ -323,6 +329,15 @@ fn answer(
             json_response(status, &message)
         }
         Err(stop) => stop.into_response(messages),
+    }
+}
+
+/// Refuses a poll in a message to be scheduled: polls are posted when they
+/// start, and are not scheduled.
+fn no_poll(messages: &Messages, poll: Option<&serde_json::Value>) -> Result<(), ApiError> {
+    match poll {
+        None => Ok(()),
+        Some(_) => Err(field_problem("poll", messages, MessageKey::PollNotScheduled, &[])),
     }
 }
 
