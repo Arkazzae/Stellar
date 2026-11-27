@@ -2,7 +2,7 @@
 
 **Talk on your own server.** A self-hosted Discord alternative built for you and your friends.
 
-Private by design. (Over)Engineered for performance  ·  [Try it](#try-it) · [Inviting friends](#inviting-friends) · [Docs](https://arkazzae.github.io/Stellar/)
+Private by design. (Over)Engineered for performance  ·  [Try it](#try-it) · [Inviting friends](#inviting-friends) · [Docs](https://arkazzae.github.io/Stellarr/)
 
 ![A tour of Stellarr: friends planning game night in a text channel, translating a message right in the browser, hanging out in voice with screen sharing, switching themes, checking Cockpit, and starting the container.](website/src/images/film/stellarr.webp)
 
@@ -96,12 +96,16 @@ Local testing works right away on your machine. Before inviting friends over the
 
 ## Documentation
 
-Read the full docs at [arkazzae.github.io/Stellar](https://arkazzae.github.io/Stellar/) or browse [`docs/`](docs/README.md):
+Read the full docs at [arkazzae.github.io/Stellarr](https://arkazzae.github.io/Stellarr/) or browse [`docs/`](docs/README.md):
 
 - **Self-hosting:** [Quick start](docs/install/quick-start.md) · [Requirements](docs/install/requirements.md) · [Configuration](docs/install/configuration.md) · [Reverse proxy and TLS](docs/install/reverse-proxy-and-tls.md) · [Hosting without port forwarding](docs/install/no-port-forwarding.md) · [Unraid](docs/install/unraid.md) · [Upgrading](docs/install/upgrading.md)
 - **Administration:** [Servers and features](docs/admin/servers-and-features.md) · [Stellarr Cockpit](docs/admin/cockpit.md) · [Operator CLI](docs/admin/cli.md) · [Account security](docs/admin/account-security.md) · [Automatic backups](docs/admin/backups.md) · [Cloudflare R2](docs/admin/cloudflare-r2.md) · [Notifications](docs/admin/notifications.md)
 - **Reference:** [Architecture](docs/architecture.md) · [Themes and appearance](docs/themes.md) · [RTC and ports](docs/rtc-and-ports.md) · [Voice and RTC protocol](docs/rtc-protocol.md) · [Stellarr Media SFU](docs/stellarr-media.md) · [Localization](docs/localization.md)
 - **Development:** [Local setup](docs/development/local-setup.md) · [Codebase and testing](docs/development/codebase-and-testing.md)
+
+## About the name
+
+Stellarr is its own project. It is not part of the Servarr (*arr) family of media apps and does not need any of them.
 
 ## License
 
