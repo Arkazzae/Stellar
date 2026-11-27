@@ -379,6 +379,39 @@
     .vc-mobile-menu .sb-grid{--sb-pad:44px;max-height:none}
   }
 
+  /* Inside an activity the side columns fill first: the way out loses its
+     word and the activity its second line. */
+  @container room-view (max-width:1100px){
+    .vc-bar[data-activity] .act-id-text span,
+    .vc-bar[data-activity] .act-leave-btn > span{display:none}
+    .vc-bar[data-activity] .act-leave-btn{padding:0 12px}
+  }
+  /* Inside an activity a narrow bar takes two rows: the activity and its way
+     out above, the call under it. The view's other controls are in More. */
+  @container room-view (max-width:920px){
+    .vc-bar[data-activity]{grid-template-columns:minmax(0, 1fr) auto;row-gap:8px}
+    .vc-bar[data-activity] .vc-activity{grid-column:1;grid-row:1}
+    .vc-bar[data-activity] .vc-side{display:flex;grid-column:2;grid-row:1}
+    .vc-bar[data-activity] .vc-side > :not(.vc-activity-end){display:none}
+    .vc-bar[data-activity] .vc-center{grid-column:1 / -1;grid-row:2}
+    .vc-bar[data-activity] .act-sep{display:none}
+    .vc-bar[data-activity] .act-id-text span,
+    .vc-bar[data-activity] .act-leave-btn > span{display:inline}
+    .vc-bar[data-activity] .act-leave-btn{padding:0 10px 0 14px}
+    /* The settings hang from the whole bar, inside the screen. */
+    .vc-bar[data-activity] .act-set{position:static}
+    .vc-bar[data-activity] .act-set > .dock-pop.act-settings{left:12px;right:12px;width:auto;bottom:calc(100% + 2px)}
+  }
+  @container room-view (max-width:560px){
+    .vc-bar[data-activity] .act-id-text span,
+    .vc-bar[data-activity] .act-leave-btn > span{display:none}
+    .vc-bar[data-activity] .act-leave-btn{padding:0 12px}
+  }
+  @container room-view (max-width:400px){
+    .vc-bar[data-activity] .act-id-text{display:none}
+    .vc-bar[data-activity] .act-id{padding:0 7px}
+  }
+
   @container room-view (max-width:400px){
     .vc-bar{padding-inline:6px}
     .vc-center{gap:4px}

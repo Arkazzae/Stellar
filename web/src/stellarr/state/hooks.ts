@@ -19,6 +19,7 @@ export {
 } from "./AccountProvider";
 export {
   useActivitiesContext as useActivities,
+  useActivityBar,
   useActivitySlot,
   type ActivitiesValue,
   type ActivitySession,

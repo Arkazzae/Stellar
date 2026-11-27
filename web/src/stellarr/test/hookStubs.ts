@@ -90,6 +90,8 @@ function defaults(): HookStubs {
       lose: vi.fn(),
       slots: { voice: null, personal: null },
       publishSlot: { voice: vi.fn(), personal: vi.fn() },
+      bars: { start: null, end: null },
+      publishBar: { start: vi.fn(), end: vi.fn() },
     }),
     chat: stub<ChatValue>({
       thread: null,
@@ -328,6 +330,7 @@ export const hooksModule = {
   useAccount: () => stubs.account,
   useActivities: () => stubs.activities,
   useActivitySlot: (slot: "voice" | "personal") => stubs.activities.publishSlot[slot],
+  useActivityBar: () => stubs.activities.publishBar,
   useChat: () => stubs.chat,
   // Each slice of the chat is a part of its whole value.
   useChatRail: () => stubs.chat,

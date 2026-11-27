@@ -7,6 +7,7 @@ import { isFull } from "@/lib/activities/api";
 import { TALK_ACTION } from "@/lib/keybinds/keybinds";
 import {
   useActivities,
+  useActivityBar,
   useActivitySlot,
   useDirectory,
   useKeybinds,
@@ -37,6 +38,7 @@ export function CallStage({ fullscreenTarget }: CallStageProps) {
   const voice = useVoice();
   const activities = useActivities();
   const voiceSlot = useActivitySlot("voice");
+  const activityBar = useActivityBar();
   const { t } = useLanguage();
   const ui = useUi();
   const profile = useProfile();
@@ -153,6 +155,8 @@ export function CallStage({ fullscreenTarget }: CallStageProps) {
         onSelectMicrophone={openDeviceSettings}
         onSelectCamera={openDeviceSettings}
         activity={activity}
+        activityStart={inside ? activityBar.start : undefined}
+        activityEnd={inside ? activityBar.end : undefined}
         onToggleShare={voice.toggleShare}
         onPlaySound={voice.playSound}
         onInvite={canManageServer ? () => ui.openModal("invite") : undefined}

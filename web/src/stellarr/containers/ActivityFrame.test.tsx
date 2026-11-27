@@ -2,7 +2,7 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { FakeRealtimeClient } from "@/test/fakes";
-import { ActivityFrame } from "./ActivityFrame";
+import { ActivityFrame, type FrameParts } from "./ActivityFrame";
 
 let locale = "pl";
 vi.mock("@/state/LanguageProvider", () => ({
@@ -186,4 +186,39 @@ it("routes installed session traffic to the hub and forwards events only to thei
   port.postMessage.mockClear();
   realtime.push("ActivityRoomUpdate", update);
   expect(port.postMessage).not.toHaveBeenCalled();
+});
+
+it("hands the bar each device the activity opens, stops one from there, and passes the page's volume on", async () => {
+  const capture = vi.fn(() => new Promise<MediaStream>(() => {}));
+  const mediaDevices = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
+  Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: capture } });
+  const transport = { publish: vi.fn(), dispose: vi.fn(), watch: () => () => {} };
+  const bar = ({ devices, stopDevice }: FrameParts) => <div>
+    {devices.map(kind => <button key={kind} type="button" onClick={() => stopDevice(kind)}>{"stop " + kind}</button>)}
+  </div>;
+  const props = { src: "https://game.test/play", title: "Charades", permissions: ["media.cameraTile"],
+    room: async () => ({}), camera: () => transport, ask: async () => true, onLost: vi.fn(), bar };
+  try {
+    const view = render(<ActivityFrame {...props} volume={0.8} />);
+    expect(screen.queryByRole("slider")).toBeNull();
+    const frame = screen.getByTitle<HTMLIFrameElement>("Charades");
+    const port = { postMessage: vi.fn(), close: vi.fn(), onmessage: null as null | ((event: unknown) => void) };
+    act(() => {
+      window.dispatchEvent(Object.assign(new Event("message"), {
+        source: frame.contentWindow, origin: "https://game.test", data: "stellarr:media:v1", ports: [port],
+      }));
+    });
+    expect(port.postMessage).toHaveBeenCalledWith({ op: "volume", value: 0.8 });
+    view.rerender(<ActivityFrame {...props} volume={0} />);
+    expect(port.postMessage).toHaveBeenLastCalledWith({ op: "volume", value: 0 });
+
+    await act(async () => { port.onmessage?.({ data: { op: "open", id: 3, kind: "cameraTile" } }); });
+    act(() => { screen.getByRole("button", { name: "stop cameraTile" }).click(); });
+
+    expect(port.postMessage).toHaveBeenCalledWith({ op: "ended", kind: "cameraTile", reason: "stopped" });
+    expect(screen.queryByRole("button", { name: "stop cameraTile" })).toBeNull();
+  } finally {
+    if (mediaDevices) Object.defineProperty(navigator, "mediaDevices", mediaDevices);
+    else Reflect.deleteProperty(navigator, "mediaDevices");
+  }
 });
