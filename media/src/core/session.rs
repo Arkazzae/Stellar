@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::Instant;
 
 use str0m::change::SdpPendingOffer;
-use str0m::media::{KeyframeRequestKind, MediaKind, Mid};
+use str0m::media::{Direction, KeyframeRequestKind, MediaKind, Mid};
 use str0m::rtp::Ssrc;
 use str0m::{IceConnectionState, Rtc};
 
@@ -15,7 +15,7 @@ use super::{
     CONNECT_TIMEOUT, DISCONNECT_TIMEOUT, Endpoint, KEYFRAME_INTERVAL, MAX_SOURCE_ADDRS,
     OFFER_TIMEOUT,
 };
-use crate::sdp_text::{self, FormatOrders, OpusParams};
+use crate::sdp_text::{self, FormatOrders, OpusParams, Restreams};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) struct SessionKey(pub u64);
@@ -145,6 +145,9 @@ pub(crate) struct OutSection {
     pub started: bool,
     pub rewrite: Rewrite,
     pub pt_cache: Option<PtCache>,
+    /// The section was taken from the idle ones for this track. If its offer
+    /// is rolled back it goes back to them: the browser still has it inactive.
+    pub recycled: bool,
 }
 
 impl OutSection {
@@ -156,6 +159,7 @@ impl OutSection {
             started: false,
             rewrite: Rewrite::default(),
             pt_cache: None,
+            recycled: false,
         }
     }
 
@@ -326,9 +330,6 @@ pub(crate) struct Session {
     pub transport: Transport,
     pub negotiation: Negotiation,
     pub published: Vec<Published>,
-    /// Counts outgoing sections by publishing account, including retired
-    /// sections. A publisher reconnecting cannot reset a receiver's budget.
-    out_publications: HashMap<String, usize>,
     pub outs: Vec<OutSection>,
     /// The mids of this receiver's sections it asked to be sent. A section
     /// that is not listed is negotiated and named in the directory, but
@@ -348,8 +349,16 @@ pub(crate) struct Session {
     /// old one still waits for its withdrawal to be answered.
     pub out_by_source: HashMap<TrackKey, usize>,
     /// Every mid the media server created in this connection, once the
-    /// browser has it. Never forgotten, because sections are not reused.
+    /// browser has it. Never forgotten, because a section keeps its mid for
+    /// the life of the connection, however many tracks it carries.
     pub server_mids: HashSet<Mid>,
+    /// Withdrawn sections the browser has confirmed inactive, free for the
+    /// next track of their kind. A track that is wanted takes one of these
+    /// before the description grows.
+    pub idle: Vec<(Mid, MediaKind)>,
+    /// The stream id a reused section names in its `a=msid`, which str0m
+    /// keeps as it was when the section was created.
+    pub restreams: Restreams,
     pub ssrc_mids: Vec<(Ssrc, Mid)>,
     /// The codec order of every section in the browser's last offer.
     pub format_orders: FormatOrders,
@@ -397,7 +406,6 @@ impl Session {
             },
             negotiation: Negotiation::default(),
             published: Vec::new(),
-            out_publications: HashMap::new(),
             outs: Vec::new(),
             subscriptions: HashSet::new(),
             subscription_order: Vec::new(),
@@ -405,6 +413,8 @@ impl Session {
             allocation_queued: false,
             out_by_source: HashMap::new(),
             server_mids: HashSet::new(),
+            idle: Vec::new(),
+            restreams: Vec::new(),
             ssrc_mids: Vec::new(),
             format_orders: Vec::new(),
             opus_params: Vec::new(),
@@ -423,10 +433,12 @@ impl Session {
     /// What the media server sends the browser for a description str0m
     /// wrote: every section in the browser's own codec order, and every
     /// section the browser publishes with the browser's own Opus parameters,
-    /// which are what its encoder follows.
+    /// which are what its encoder follows. A section that carries another
+    /// track than the one it was made for names that track's stream.
     pub fn describe(&self, sdp: &str) -> String {
         let ordered = sdp_text::order_formats(sdp, &self.format_orders);
-        sdp_text::apply_opus_params(&ordered, &self.opus_params)
+        let opus = sdp_text::apply_opus_params(&ordered, &self.opus_params);
+        sdp_text::apply_restreams(&opus, &self.restreams)
     }
 
     pub fn is_server_mid(&self, mid: &str) -> bool {
@@ -464,19 +476,35 @@ impl Session {
         candidates.into_iter().flatten().chain(keyframes).min()
     }
 
-    pub fn can_add_publications(&self, publisher: &str, count: usize) -> bool {
-        self.out_publications.get(publisher).copied().unwrap_or(0) + count
-            <= super::MAX_PUBLICATIONS
-            && self.out_publications.values().sum::<usize>() + count <= super::MAX_OUT_SECTIONS
-    }
-
-    pub fn count_publications(&mut self, publisher: &str, count: usize) {
-        if count > 0 {
-            *self
-                .out_publications
-                .entry(publisher.to_string())
-                .or_insert(0) += count;
+    /// Whether this receiver's description could take tracks of `kinds` on
+    /// top of what it has. It holds every section it was ever given: those
+    /// that carry a track or are offered, those whose track is ending, and
+    /// the idle ones. A track still waiting for a section, and each of
+    /// `kinds`, takes an idle section of its kind first and a new one only
+    /// when there is none.
+    pub fn fits(&self, kinds: impl IntoIterator<Item = MediaKind>) -> bool {
+        let held = self
+            .outs
+            .iter()
+            .filter(|o| o.state != OutState::Want)
+            .count()
+            + self.idle.len();
+        let mut free: Vec<MediaKind> = self.idle.iter().map(|(_, kind)| *kind).collect();
+        let waiting = self
+            .outs
+            .iter()
+            .filter(|o| o.state == OutState::Want)
+            .map(|o| o.kind);
+        let mut new = 0;
+        for kind in waiting.chain(kinds) {
+            match free.iter().position(|k| *k == kind) {
+                Some(at) => {
+                    free.swap_remove(at);
+                }
+                None => new += 1,
+            }
         }
+        held + new <= super::MAX_OUT_SECTIONS
     }
 
     pub fn add_out(&mut self, source: TrackKey, kind: MediaKind) -> bool {
@@ -533,37 +561,98 @@ impl Session {
         }
     }
 
-    /// Forgets the sections of an offer that will never be answered.
+    /// Gives the idle section `mid` to the track of `outs[idx]`, whose stream
+    /// it names from now on.
+    ///
+    /// Everything the receiver and its downlink knew of the section belonged
+    /// to the track it carried before: a receiver that asked for that track
+    /// has not asked for this one, so the section starts out unasked for, and
+    /// the clocks of the old track do not run for the new one.
+    ///
+    /// This is also what keeps the old owner's sinks dark. Nothing is
+    /// forwarded on the section until a list that names it arrives after
+    /// this offer, and a client sends that list only after it has taken the
+    /// offer's directory, which files the section under its new owner. So no
+    /// packet of the new track reaches a client that still files the section
+    /// under the old one.
+    pub fn take_idle(&mut self, mid: Mid, idx: usize, stream: &str) {
+        self.idle.retain(|(idle, _)| *idle != mid);
+        self.outs[idx].recycled = true;
+        self.subscriptions.remove(&*mid);
+        self.subscription_order.retain(|m| **m != *mid);
+        self.downlink.retain(|held| held != mid);
+        self.downlink.dirty = true;
+        let stream = stream.to_string();
+        match self.restreams.iter_mut().find(|(m, _)| **m == *mid) {
+            Some((_, current)) => *current = stream,
+            None => self.restreams.push((mid.to_string(), stream)),
+        }
+    }
+
+    /// Forgets the sections of an offer that will never be answered. A
+    /// section it took from the idle ones is idle again: the browser never
+    /// heard of its new track. That changes str0m's session, which is a
+    /// mutation to drain.
     pub fn roll_back_offer(&mut self) {
         self.negotiation.pending = None;
+        let mut parked = Vec::new();
         for out in &mut self.outs {
-            if let OutState::Offered(_) = out.state {
-                out.state = OutState::Want;
+            match out.state {
+                OutState::Offered(mid) => {
+                    if std::mem::take(&mut out.recycled) {
+                        parked.push((mid, out.kind));
+                    }
+                    out.state = OutState::Want;
+                }
+                OutState::OfferedWithdrawn(mid) if out.recycled => parked.push((mid, out.kind)),
+                _ => {}
             }
         }
         self.remove_outs(|o| matches!(o.state, OutState::OfferedWithdrawn(_)));
+        for (mid, kind) in parked {
+            // str0m took the section's new stream and direction when the offer
+            // was made. It must read as inactive again, as the browser has it,
+            // and must not keep a stream that nothing sends on. The changes of
+            // the direction are dropped unmade, so this offers nothing.
+            {
+                let mut api = self.rtc.direct_api();
+                if let Some(ssrc) = api.stream_tx_by_mid(mid, None).map(|t| t.ssrc()) {
+                    api.remove_stream_tx(ssrc);
+                }
+            }
+            self.rtc.sdp_api().set_direction(mid, Direction::Inactive);
+            self.idle.push((mid, kind));
+        }
     }
 
-    /// Forgets the withdrawn sections `settled` names, which the browser
-    /// now knows are inactive, and their send streams. A section is never
-    /// used again, and str0m would otherwise keep padding on the stream of
-    /// one that is inactive. Returns whether a stream had to go, which is a
+    /// Frees the withdrawn sections `settled` names, which the browser now
+    /// knows are inactive, for the next track of their kind, and forgets
+    /// their send streams: str0m would otherwise keep padding on the stream
+    /// of one that is inactive. The section gets a stream of its own again
+    /// when a track takes it. Returns whether a stream had to go, which is a
     /// mutation to drain.
     pub fn retire_ended(&mut self, settled: impl Fn(Mid) -> bool) -> bool {
-        let mids: Vec<Mid> = self
+        let ended: Vec<(Mid, MediaKind)> = self
             .outs
             .iter()
             .filter_map(|o| match o.state {
-                OutState::Ending(mid) if settled(mid) => Some(mid),
+                OutState::Ending(mid) if settled(mid) => Some((mid, o.kind)),
                 _ => None,
             })
             .collect();
-        self.remove_outs(|o| matches!(o.state, OutState::Ending(mid) if mids.contains(&mid)));
+        self.remove_outs(
+            |o| matches!(o.state, OutState::Ending(mid) if ended.iter().any(|(m, _)| *m == mid)),
+        );
         let mut removed = false;
-        for mid in mids {
-            let mut api = self.rtc.direct_api();
-            if let Some(ssrc) = api.stream_tx_by_mid(mid, None).map(|t| t.ssrc()) {
-                removed |= api.remove_stream_tx(ssrc);
+        for (mid, kind) in ended {
+            {
+                let mut api = self.rtc.direct_api();
+                if let Some(ssrc) = api.stream_tx_by_mid(mid, None).map(|t| t.ssrc()) {
+                    removed |= api.remove_stream_tx(ssrc);
+                }
+            }
+            if self.rtc.media(mid).is_some() {
+                self.idle.push((mid, kind));
             }
         }
         removed

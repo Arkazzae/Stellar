@@ -45,10 +45,11 @@ use session::{Counter, OutState, PendingOffer, PtCache, Published, RoomKey, Sess
 pub const MAX_SDP_BYTES: usize = 128 * 1024;
 /// How many tracks one session may publish at a time.
 pub const MAX_PUBLISHED: usize = 8;
-/// Cumulative publication budget, including tracks withdrawn and added again.
-const MAX_PUBLICATIONS: usize = 32;
-/// Bounds accumulated outgoing sections for a single receiver, including when
-/// publishers reconnect or a series of different publishers joins the room.
+/// The most sections the media server gives one session to receive on:
+/// those that carry a track or are offered with one, those whose track is
+/// ending, and the idle ones the next track of their kind takes. A withdrawn
+/// section is reused, so this bounds the tracks a session receives at once,
+/// not all it ever received.
 const MAX_OUT_SECTIONS: usize = 48;
 /// How long a new session has to connect.
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -803,15 +804,17 @@ impl Core {
 
         // The new session receives everything the room already publishes.
         let room_sessions = self.rooms[&room].sessions.clone();
+        let kinds = room_sessions
+            .iter()
+            .filter_map(|other| self.sessions.get(other))
+            .flat_map(|publisher| publisher.published.iter().map(|t| t.kind));
+        if !session.fits(kinds) {
+            return Err(ApiError::LimitExceeded(
+                "The room has too many published tracks.".into(),
+            ));
+        }
         for other in &room_sessions {
             if let Some(publisher) = self.sessions.get(other) {
-                let count = publisher.published.len();
-                if !session.can_add_publications(&publisher.user_id, count) {
-                    return Err(ApiError::LimitExceeded(
-                        "The room has too many published tracks.".into(),
-                    ));
-                }
-                session.count_publications(&publisher.user_id, count);
                 for track in &publisher.published {
                     session.add_out(
                         TrackKey {
@@ -1323,12 +1326,18 @@ impl Core {
 
         // The media server is the polite side of a collision: its own offer
         // is rolled back, the browser's is answered, and it offers again.
-        if s.negotiation.pending.is_some() {
+        // Taking a reused section back changes the `Rtc`, so it is guarded
+        // like the rest, and a panic there closes the session.
+        let rolled_back = if s.negotiation.pending.is_some() {
             debug!(session = %s.id, "offer collision: rolling back");
-            s.roll_back_offer();
-        }
-
-        let accepted = guard(|| s.rtc.sdp_api().accept_offer(offer));
+            guard(|| s.roll_back_offer())
+        } else {
+            Ok(())
+        };
+        let accepted = match rolled_back {
+            Ok(()) => guard(|| s.rtc.sdp_api().accept_offer(offer)),
+            Err(()) => Err(()),
+        };
         let (mut ctx, sessions) = self.ctx();
         let s = sessions
             .get_mut(&key)
@@ -1465,7 +1474,6 @@ impl Core {
             }
         }
         s.published.retain(|t| !withdrawn.contains(&t.mid));
-        let publisher = s.user_id.clone();
         let room = s.room;
         let others = self
             .rooms
@@ -1474,9 +1482,10 @@ impl Core {
         let receiver_at_limit = !added.is_empty()
             && others.iter().any(|other| {
                 *other != key
-                    && self.sessions.get(other).is_some_and(|receiver| {
-                        !receiver.can_add_publications(&publisher, added.len())
-                    })
+                    && self
+                        .sessions
+                        .get(other)
+                        .is_some_and(|receiver| !receiver.fits(added.iter().map(|(_, kind)| *kind)))
             });
         let s = &self.sessions[&key];
         if receiver_at_limit {
@@ -1485,7 +1494,7 @@ impl Core {
                 reason: CloseReason::Error,
             });
             return Err(ApiError::LimitExceeded(
-                "The room's track publication budget was exceeded.".into(),
+                "The room has too many published tracks.".into(),
             ));
         }
         info!(
@@ -1512,7 +1521,6 @@ impl Core {
             let Some(o) = self.sessions.get_mut(&other) else {
                 continue;
             };
-            o.count_publications(&publisher, added.len());
             let mut changed = false;
             for (mid, kind) in &added {
                 changed |= o.add_out(
@@ -1594,9 +1602,9 @@ impl Core {
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
                 warn!(session = %s.id, error = %e, "refused a browser answer");
-                s.roll_back_offer();
+                let rolled_back = guard(|| s.roll_back_offer());
                 ctx.drain(s, now);
-                if !s.rtc.is_alive() {
+                if rolled_back.is_err() || !s.rtc.is_alive() {
                     ctx.work.push_back(Work::Close {
                         key,
                         reason: CloseReason::Error,
@@ -1663,9 +1671,13 @@ impl Core {
             return false;
         }
 
-        // A new section carries the publisher's current stream id in its
-        // msid, which keeps the picture and sound of one share in step.
-        let wants: Vec<(usize, MediaKind, String)> = s
+        // A section carries the publisher's current stream id in its msid,
+        // which keeps the picture and sound of one share in step. A track
+        // takes an idle section of its kind when there is one, so what the
+        // browser has to describe grows with the tracks it receives at once,
+        // not with all it ever received.
+        let mut idle = s.idle.clone();
+        let wants: Vec<(usize, MediaKind, String, Option<Mid>)> = s
             .outs
             .iter()
             .enumerate()
@@ -1678,7 +1690,8 @@ impl Core {
                     .map(|t| t.stream_id.clone())
                     .filter(|id| !id.is_empty())
                     .unwrap_or_else(|| "-".into());
-                (i, o.kind, stream)
+                let free = idle.iter().position(|(_, kind)| *kind == o.kind);
+                (i, o.kind, stream, free.map(|at| idle.remove(at).0))
             })
             .collect();
         let endings: Vec<(Mid, bool)> = s
@@ -1701,11 +1714,43 @@ impl Core {
             .get_mut(&key)
             .expect("the session was looked up above");
         let applied = guard(|| {
+            // An idle section sends with a stream of its own again, under a
+            // new SSRC. The browser has no receive stream left on it, so the
+            // new track starts as cleanly as on a new section, and the
+            // numbering of the old track means nothing to it.
+            for (_, kind, _, free) in &wants {
+                let Some(mid) = free else { continue };
+                let mut direct = s.rtc.direct_api();
+                if let Some(old) = direct.stream_tx_by_mid(*mid, None).map(|t| t.ssrc()) {
+                    direct.remove_stream_tx(old);
+                }
+                let ssrc = direct.new_ssrc();
+                let rtx = (*kind == MediaKind::Video).then(|| {
+                    loop {
+                        let rtx = direct.new_ssrc();
+                        if rtx != ssrc {
+                            break rtx;
+                        }
+                    }
+                });
+                direct.declare_stream_tx(ssrc, rtx, *mid, None);
+            }
             let mut api = s.rtc.sdp_api();
             let mids: Vec<Mid> = wants
                 .iter()
-                .map(|(_, kind, stream)| {
-                    api.add_media(*kind, Direction::SendOnly, Some(stream.clone()), None, None)
+                .map(|(_, kind, stream, free)| match free {
+                    Some(mid) => {
+                        // After a rolled back offer the section is already
+                        // sending inside str0m, and sending again would be
+                        // no change at all. Going through inactive makes it
+                        // one the offer carries.
+                        api.set_direction(*mid, Direction::Inactive);
+                        api.set_direction(*mid, Direction::SendOnly);
+                        *mid
+                    }
+                    None => {
+                        api.add_media(*kind, Direction::SendOnly, Some(stream.clone()), None, None)
+                    }
                 })
                 .collect();
             for (mid, inactive) in &endings {
@@ -1745,8 +1790,11 @@ impl Core {
             }
         };
 
-        for ((idx, _, _), mid) in wants.iter().zip(mids) {
+        for ((idx, _, stream, free), mid) in wants.iter().zip(mids) {
             s.outs[*idx].state = OutState::Offered(mid);
+            if free.is_some() {
+                s.take_idle(mid, *idx, stream);
+            }
         }
         // The `Rtc` has made the offer, so a panic here ends the session.
         let described = read(Untrusted::ServerOffer, || {
@@ -2034,7 +2082,11 @@ impl Core {
             .as_ref()
             .is_some_and(|p| now >= p.sent_at + OFFER_TIMEOUT)
         {
-            s.roll_back_offer();
+            if guard(|| s.roll_back_offer()).is_err() {
+                self.close(now, key, Some(CloseReason::Error), true);
+                return;
+            }
+            ctx.drain(s, now);
             s.negotiation.unanswered += 1;
             info!(session = %s.id, unanswered = s.negotiation.unanswered, "an offer went unanswered");
             if s.negotiation.unanswered >= MAX_UNANSWERED {

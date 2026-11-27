@@ -390,6 +390,106 @@ pub fn apply_opus_params(sdp: &str, params: &OpusParams) -> String {
     join(out)
 }
 
+/// The stream ids some sections name in their `a=msid`, by mid.
+pub type Restreams = Vec<(String, String)>;
+
+/// What str0m keeps of a stream id when it writes one: the token characters
+/// of RFC 8830, at most 64 of them. A section rewritten here has to read like
+/// one str0m wrote.
+fn msid_token(stream_id: &str) -> String {
+    stream_id
+        .chars()
+        .filter(|c| {
+            matches!(c, '!' | '#'..='\'' | '*' | '+' | '-' | '.' | '0'..='9' | 'A'..='Z' | '^'..='}')
+        })
+        .take(64)
+        .collect()
+}
+
+/// What follows the first word of an attribute value, separator included.
+fn after_first_word(value: &str) -> &str {
+    value
+        .find(char::is_whitespace)
+        .map_or("", |at| &value[at..])
+}
+
+/// Names another stream in some sections of a description.
+///
+/// str0m cannot change the msid of a section once it exists. A section the
+/// media server reuses for the track of another publisher has to name that
+/// publisher's stream, as a new section does: the stream is how a browser
+/// keeps the picture and the sound of one share in step. The stream is
+/// changed in the section's own `a=msid`, in the same pair on its SSRC lines
+/// and in the list of streams of the whole description.
+pub fn apply_restreams(sdp: &str, streams: &Restreams) -> String {
+    if streams.is_empty() {
+        return sdp.to_string();
+    }
+    let parsed = split(sdp);
+    let mut changed = false;
+    let mut sections: Vec<Vec<String>> = Vec::new();
+
+    for lines in &parsed.sections {
+        let wanted = mid_of(lines).and_then(|mid| {
+            streams
+                .iter()
+                .find(|(m, _)| *m == mid)
+                .map(|(_, stream)| msid_token(stream))
+                .filter(|stream| !stream.is_empty())
+        });
+        let rewritten = lines
+            .iter()
+            .map(|line| {
+                let Some(stream) = wanted.as_deref() else {
+                    return line.to_string();
+                };
+                if let Some(rest) = line.strip_prefix("a=msid:") {
+                    changed = true;
+                    return format!("a=msid:{stream}{}", after_first_word(rest));
+                }
+                if let Some(rest) = line.strip_prefix("a=ssrc:")
+                    && let Some((ssrc, attribute)) = rest.split_once(' ')
+                    && let Some(pair) = attribute.strip_prefix("msid:")
+                {
+                    changed = true;
+                    return format!("a=ssrc:{ssrc} msid:{stream}{}", after_first_word(pair));
+                }
+                line.to_string()
+            })
+            .collect();
+        sections.push(rewritten);
+    }
+
+    let mut out: Vec<String> = Vec::new();
+    for line in &parsed.session {
+        if changed && let Some(rest) = line.strip_prefix("a=msid-semantic:") {
+            let mut ids: Vec<String> = Vec::new();
+            for lines in &sections {
+                let id = lines
+                    .iter()
+                    .find_map(|l| l.strip_prefix("a=msid:"))
+                    .and_then(|value| value.split_whitespace().next());
+                if let Some(id) = id
+                    && !ids.iter().any(|known| known == id)
+                {
+                    ids.push(id.to_string());
+                }
+            }
+            let semantic = rest.split_whitespace().next().unwrap_or("WMS");
+            let mut list = format!("a=msid-semantic: {semantic}");
+            for id in ids {
+                list.push(' ');
+                list.push_str(&id);
+            }
+            out.push(list);
+        } else {
+            out.push(line.to_string());
+        }
+    }
+    out.extend(sections.into_iter().flatten());
+    join(out)
+}
+
 /// Whether the description carries a DTLS fingerprint anywhere. str0m tears
 /// the whole connection down when the first remote description lacks one, so
 /// such an offer is refused before it reaches str0m.
