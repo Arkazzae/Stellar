@@ -1,7 +1,8 @@
-import { fireEvent, screen, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { forgetQuickReactionOrder } from "@/lib/emoji/quickReactions";
 import { answerConfirm, renderWithConfirm } from "@/test/confirm";
 
 import { MessageEntry, type MessageEntryProps } from "./MessageEntry";
@@ -10,6 +11,9 @@ const desktopWidth = window.innerWidth;
 
 afterEach(() => {
   window.innerWidth = desktopWidth;
+  // A pick in the picker is a recent, and recents fill the quick row.
+  localStorage.clear();
+  forgetQuickReactionOrder();
 });
 
 /** One message with its actions, as a block draws it. */
@@ -156,7 +160,6 @@ describe("MessageToolbar", () => {
     renderMessage({ onReact, onAction: vi.fn() });
     await user.hover(screen.getByText("wiadomość"));
 
-    expect(screen.queryByRole("button", { name: /^Zareaguj / })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Wybierz reakcję" }));
     await user.type(screen.getByRole("textbox", { name: "Szukaj emoji" }), "zaba");
     await user.click(screen.getByRole("option", { name: ":zaba:" }));
@@ -179,5 +182,107 @@ describe("MessageToolbar", () => {
     fireEvent.pointerDown(dialog);
 
     expect(screen.queryByRole("dialog", { name: "Wybierz reakcję" })).toBeNull();
+  });
+});
+
+describe("MessageToolbar quick reactions", () => {
+  const quickButtons = () =>
+    within(screen.getByRole("toolbar")).queryAllByRole("button", { name: /^Zareaguj: / });
+
+  it("offers the most recent emoji before the picker, filled up with the usual three", () => {
+    localStorage.setItem("stellarr.emoji.recent", JSON.stringify(["zaba", "kciuk_w_gore"]));
+    renderMessage({ onReact: vi.fn(), onAction: vi.fn() });
+    pointAtMessage();
+
+    const buttons = within(screen.getByRole("toolbar")).getAllByRole("button");
+    expect(buttons.slice(0, 4).map((button) => button.getAttribute("aria-label"))).toEqual([
+      "Zareaguj: 🐸",
+      "Zareaguj: 👍",
+      "Zareaguj: ❤️",
+      "Wybierz reakcję",
+    ]);
+    // Named on hover as the other buttons are, and plain buttons for the keyboard.
+    expect(buttons[0]).toHaveAttribute("title", "Zareaguj: 🐸");
+    expect(buttons[0]).toHaveAttribute("type", "button");
+    expect(buttons[0]).toHaveClass("tb", "emo");
+  });
+
+  it("reacts in one press, as the chip does, and marks the ones already yours", async () => {
+    const user = userEvent.setup();
+    const onReact = vi.fn();
+    renderMessage({
+      onReact,
+      onAction: vi.fn(),
+      reactions: [
+        { emoji: "👍", count: 2, mine: true },
+        { emoji: "❤️", count: 1, mine: false },
+      ],
+    });
+    await user.hover(screen.getByText("wiadomość"));
+
+    const thumbs = screen.getByRole("button", { name: "Zareaguj: 👍" });
+    expect(thumbs).toHaveAttribute("aria-pressed", "true");
+    expect(thumbs).toHaveClass("on");
+    expect(screen.getByRole("button", { name: "Zareaguj: ❤️" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+
+    // The same toggle either way; the handler reads off the message which.
+    await user.click(thumbs);
+    await user.click(screen.getByRole("button", { name: "Zareaguj: 😂" }));
+    expect(onReact.mock.calls).toEqual([["👍"], ["😂"]]);
+  });
+
+  it("offers a recent server emoji while the server still has it", async () => {
+    localStorage.setItem("stellarr.emoji.recent", JSON.stringify(["mushris"]));
+    const user = userEvent.setup();
+    const onReact = vi.fn();
+    const { unmount } = renderMessage({
+      customEmoji: [{ id: "e-1", shortcode: ":mushris:", glyph: "https://cdn.example/m.png" }],
+      onReact,
+      onAction: vi.fn(),
+    });
+    await user.hover(screen.getByText("wiadomość"));
+
+    const mushris = screen.getByRole("button", { name: "Zareaguj: :mushris:" });
+    expect(mushris.querySelector("img")).toHaveAttribute("src", "https://cdn.example/m.png");
+    await user.click(mushris);
+    expect(onReact).toHaveBeenCalledExactlyOnceWith(":mushris:");
+    unmount();
+
+    // Deleted from the server since: the usual three stand in.
+    renderMessage({ onReact: vi.fn(), onAction: vi.fn() });
+    pointAtMessage();
+    expect(quickButtons().map((button) => button.getAttribute("aria-label"))).toEqual([
+      "Zareaguj: 👍",
+      "Zareaguj: ❤️",
+      "Zareaguj: 😂",
+    ]);
+  });
+
+  it("lets the toolbar go when the pointer leaves after a press", async () => {
+    const user = userEvent.setup();
+    renderMessage({ onReact: vi.fn(), onAction: vi.fn() });
+    await user.hover(screen.getByText("wiadomość"));
+
+    const thumbs = screen.getByRole("button", { name: "Zareaguj: 👍" });
+    await user.click(thumbs);
+    fireEvent.mouseOut(thumbs, { relatedTarget: document.body });
+
+    await waitFor(() => expect(screen.queryByRole("toolbar")).toBeNull());
+  });
+
+  it("leaves them out where you cannot react, keeping the picker as it was", () => {
+    const { unmount } = renderMessage({ onAction: vi.fn() });
+    pointAtMessage();
+    expect(quickButtons()).toEqual([]);
+    expect(screen.getByRole("button", { name: "Wybierz reakcję" })).toBeInTheDocument();
+    unmount();
+
+    renderMessage({ canAddReactions: false, onReact: vi.fn(), onAction: vi.fn() });
+    pointAtMessage();
+    expect(quickButtons()).toEqual([]);
+    expect(screen.getByRole("button", { name: "Wybierz reakcję" })).toBeInTheDocument();
   });
 });

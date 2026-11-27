@@ -497,6 +497,7 @@
     "message.action.copyText": "Text kopieren",
     "message.action.copyId": "ID kopieren",
     "message.action.chooseReaction": "Reaktion auswählen",
+    "message.action.reactWith": "Reagieren: {emoji}",
     "message.goTo": "Zur Nachricht gehen",
     "message.pinned": "Angeheftet",
     "message.unread": "Neue Nachrichten",

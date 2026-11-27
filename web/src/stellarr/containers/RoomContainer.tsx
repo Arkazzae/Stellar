@@ -119,7 +119,8 @@ export function RoomContainer({ noticeMessage = null, onNoticeConsumed }: {
   noticeMessage?: Message | null;
   onNoticeConsumed?: (value: null) => void;
 } = {}) {
-  const { server, channels, textChannels, channelName, canManageMessages } = useDirectory();
+  const { server, channels, textChannels, channelName, canManageMessages, canAddReactions } =
+    useDirectory();
   const ui = useUi();
   const voice = useVoice();
   const chat = useChatRoom();
@@ -185,6 +186,7 @@ export function RoomContainer({ noticeMessage = null, onNoticeConsumed }: {
     // Moderation is separate from channel administration; the server enforces
     // the same effective permission on deletion.
     canModerate: canManageMessages,
+    canAddReactions,
     developerMode: preferences.developerMode,
     editing: chat.editing,
     onEditSave: chat.saveEdit,

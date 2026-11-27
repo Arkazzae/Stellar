@@ -5,7 +5,8 @@ import { Icon, type IconName } from "@stellarr/icons";
 import { useConfirm, type ConfirmSubject } from "@/components/primitives/ConfirmDialog";
 import { type MessageKey, type Translator } from "@/i18n";
 import { translateForDocument } from "@/i18n/defaultLocale";
-import type { CustomEmoji } from "@/ports";
+import { useQuickReactions } from "@/lib/emoji/quickReactions";
+import type { CustomEmoji, Reaction } from "@/ports";
 
 import { MessageActionSheet, type SheetItem } from "./MessageActionSheet";
 import {
@@ -83,6 +84,13 @@ export interface MessageToolbarProps {
   describe?(): ConfirmSubject;
   /** The server's own emoji, offered first in the picker. */
   customEmoji?: readonly CustomEmoji[];
+  /** The reactions on the message, which say which quick ones are already yours. */
+  reactions?: readonly Reaction[];
+  /**
+   * You may add a reaction here. Without it, or without `onReact`, the quick
+   * reactions are left out.
+   */
+  canAddReactions?: boolean;
   /** This message is yours: yours to edit, and yours to delete. */
   own?: boolean;
   /** Not to be rewritten even by its author: a poll goes out as it is. */
@@ -99,6 +107,47 @@ interface OpenPicker {
   autoFocus: boolean;
 }
 
+interface QuickReactionsProps {
+  customEmoji: readonly CustomEmoji[];
+  reactions: readonly Reaction[];
+  labelOf(reaction: string): string;
+  onReact(reaction: string): void;
+}
+
+/**
+ * The recent emoji, one press each. A press is the same as pressing that
+ * reaction's chip under the message: it adds yours, or takes it back when it
+ * is already there, which the tint and `aria-pressed` say.
+ */
+function QuickReactions({ customEmoji, reactions, labelOf, onReact }: QuickReactionsProps) {
+  const quick = useQuickReactions(customEmoji);
+  return quick.map(({ reaction, imageUrl }) => {
+    const mine = reactions.some((item) => item.emoji === reaction && item.mine);
+    const label = labelOf(reaction);
+    return (
+      <button
+        key={reaction}
+        type="button"
+        className={mine ? "tb emo on" : "tb emo"}
+        aria-label={label}
+        title={label}
+        aria-pressed={mine}
+        // A mouse press leaves focus where it was. Focus on the button would
+        // keep the toolbar hanging after the pointer left, and a reaction is
+        // pressed far more often than anything else here. Tab still reaches it.
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => onReact(reaction)}
+      >
+        {imageUrl === undefined ? (
+          reaction
+        ) : (
+          <img className="reaction-emoji" src={imageUrl} alt="" width={16} height={16} />
+        )}
+      </button>
+    );
+  });
+}
+
 interface ToolbarButtonsProps {
   actions: readonly ActionSpec[];
   labelOf(spec: ActionSpec): string;
@@ -107,11 +156,14 @@ interface ToolbarButtonsProps {
   chooseReactionLabel: string;
   onPicker(): void;
   onRun(spec: ActionSpec): void;
+  /** Absent where you may not react, which leaves the quick reactions out. */
+  quick?: QuickReactionsProps;
 }
 
 /**
  * What the hover toolbar holds. It is drawn apart from the transcript, so it
- * reads no context: everything it shows comes in here.
+ * reads no context: everything it shows comes in here, except the recent
+ * emoji, which live in storage rather than in React.
  */
 function ToolbarButtons({
   actions,
@@ -121,9 +173,11 @@ function ToolbarButtons({
   chooseReactionLabel,
   onPicker,
   onRun,
+  quick,
 }: ToolbarButtonsProps) {
   return (
     <>
+      {quick === undefined ? null : <QuickReactions {...quick} />}
       <button
         type="button"
         className={pickerOpen ? "tb emo-more on" : "tb emo-more"}
@@ -165,6 +219,9 @@ function ToolbarButtons({
   );
 }
 
+const NO_CUSTOM_EMOJI: readonly CustomEmoji[] = [];
+const NO_REACTIONS: readonly Reaction[] = [];
+
 /** The picker's own button, in whichever toolbar hangs in the message's corner. */
 function pickerButtonOf(
   presence: RefObject<ToolbarPresence | null>,
@@ -191,7 +248,9 @@ export function MessageToolbar({
   onReact,
   onAction,
   describe,
-  customEmoji = [],
+  customEmoji = NO_CUSTOM_EMOJI,
+  reactions = NO_REACTIONS,
+  canAddReactions = true,
   own = false,
   fixed = false,
   canModerate = false,
@@ -285,6 +344,16 @@ export function MessageToolbar({
       chooseReactionLabel={t("message.action.chooseReaction")}
       onPicker={() => (picker === null ? openPicker() : closePicker(false))}
       onRun={run}
+      quick={
+        onReact === undefined || !canAddReactions
+          ? undefined
+          : {
+              customEmoji,
+              reactions,
+              labelOf: (emoji) => t("message.action.reactWith", { emoji }),
+              onReact,
+            }
+      }
     />
   );
   const label = t("message.actions");

@@ -274,6 +274,7 @@ describe("DirectoryProvider permission flags", () => {
     server: directory.canManageServer,
     channels: directory.canManageChannels,
     messages: directory.canManageMessages,
+    reactions: directory.canAddReactions,
     moderate: directory.canModerateMembers,
     bans: directory.canManageBans,
   });
@@ -282,6 +283,7 @@ describe("DirectoryProvider permission flags", () => {
     server: false,
     channels: false,
     messages: false,
+    reactions: false,
     moderate: false,
     bans: false,
   };
@@ -325,7 +327,8 @@ describe("DirectoryProvider permission flags", () => {
       permissions: ["viewChannel", "sendMessages", "attachFiles", "addReactions", "connect", "createInvite"],
     });
 
-    expect(result()).toEqual(none);
+    // Reacting is one of them, and lights only its own flag.
+    expect(result()).toEqual({ ...none, reactions: true });
   });
 });
 

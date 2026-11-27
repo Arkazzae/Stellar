@@ -507,6 +507,7 @@
     "message.action.copyText": "Copy text",
     "message.action.copyId": "Copy ID",
     "message.action.chooseReaction": "Choose a reaction",
+    "message.action.reactWith": "React: {emoji}",
     "message.goTo": "Go to message",
     "message.pinned": "Pinned",
     "message.unread": "New messages",

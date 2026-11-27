@@ -153,9 +153,13 @@ function deviceStorage(): Storage | null {
 
 /** Shortcodes, most recent first. The caller drops codes it no longer knows. */
 export function readRecentEmoji(): string[] {
+  return parseRecentEmoji(recentEmojiSnapshot());
+}
+
+/** The list a `recentEmojiSnapshot` holds; anything unreadable is no list. */
+export function parseRecentEmoji(raw: string): string[] {
+  if (!raw) return [];
   try {
-    const raw = deviceStorage()?.getItem(RECENT_KEY);
-    if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
     return Array.isArray(parsed)
       ? parsed.filter((code): code is string => typeof code === "string")
@@ -163,6 +167,35 @@ export function readRecentEmoji(): string[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * The recents as stored, unparsed. Two equal strings are the same list, so a
+ * component that keeps this as its snapshot draws again only when the list
+ * really changed.
+ */
+export function recentEmojiSnapshot(): string {
+  try {
+    return deviceStorage()?.getItem(RECENT_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+const recentListeners = new Set<() => void>();
+
+/** Calls `listener` whenever the recents change, in this tab or in another. */
+export function subscribeRecentEmoji(listener: () => void): () => void {
+  const fromAnotherTab = (event: StorageEvent) => {
+    // A null key is the whole storage cleared.
+    if (event.key === RECENT_KEY || event.key === null) listener();
+  };
+  recentListeners.add(listener);
+  window.addEventListener("storage", fromAnotherTab);
+  return () => {
+    recentListeners.delete(listener);
+    window.removeEventListener("storage", fromAnotherTab);
+  };
 }
 
 /** Moves a shortcode to the front and returns the new list. */
@@ -176,5 +209,6 @@ export function pushRecentEmoji(shortcode: string): string[] {
   } catch {
     // Quota or private mode: the list still holds for this session.
   }
+  for (const listener of [...recentListeners]) listener();
   return next;
 }

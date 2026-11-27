@@ -26,6 +26,7 @@ import { MessageEntry } from "./MessageEntry";
 import { messageMenuEntries } from "./messageMenu";
 import type { MessageAction } from "./MessageToolbar";
 import { isJumbo, type AttachmentCallbacks, type MessagePart } from "@/lib/messages/parts";
+import { rememberReaction } from "@/lib/emoji/quickReactions";
 import { Reactions } from "./Reactions";
 import { PollCard, type PollCallbacks } from "../poll/PollCard";
 
@@ -116,6 +117,8 @@ export interface MessageGroupProps extends MessageGroupVM {
   renderEvent?: (event: ServerEvent) => ReactNode;
   /** You may moderate here: the bin appears on other people's messages too. */
   canModerate?: boolean;
+  /** You may add reactions here, which puts the quick ones in the toolbar. */
+  canAddReactions?: boolean;
   /** Adds "Kopiuj identyfikator" to the right-click menu, as the preference
    *  in "Zaawansowane" promises it will. */
   developerMode?: boolean;
@@ -211,6 +214,7 @@ export function MessageGroup({
   polls,
   renderEvent,
   canModerate = false,
+  canAddReactions = true,
   onOpenAuthor,
   fresh = false,
   highlight = false,
@@ -237,6 +241,16 @@ export function MessageGroup({
     menu.close();
     setMenuTarget(null);
   };
+
+  // A chip, the toolbar's quick row and its picker all toggle through here.
+  // One that adds becomes a recent, as a pick in the picker always does.
+  const toggleOn = (body: MessageBodyVM) =>
+    onReact &&
+    ((emoji: string) => {
+      const mine = body.reactions?.some((item) => item.emoji === emoji && item.mine) ?? false;
+      if (!mine) rememberReaction(emoji);
+      onReact(body.id, emoji);
+    });
 
   // The message as the question card shows it; called only when it asks.
   const describe = (parts: readonly MessagePart[], poll?: Poll) => () =>
@@ -332,10 +346,13 @@ export function MessageGroup({
                     }
               }
               actions={{
-                onReact: onReact && ((emoji) => onReact(body.id, emoji)),
+                onReact: toggleOn(body),
                 onAction: onAction && ((action) => onAction(body.id, action)),
                 describe: describe(body.parts, body.poll),
                 customEmoji,
+                reactions: body.reactions,
+                // A server notice is offered no quick reactions.
+                canAddReactions: canAddReactions && !system,
                 // A server notice belongs to nobody and is edited by nobody;
                 // moderating one would delete the record of what the server did.
                 own: own && !system,
@@ -383,7 +400,7 @@ export function MessageGroup({
               {body.reactions === undefined || body.reactions.length === 0 ? null : (
                 <Reactions
                   reactions={body.reactions}
-                  onToggle={onReact && ((emoji) => onReact(body.id, emoji))}
+                  onToggle={toggleOn(body)}
                   customEmoji={customEmoji}
                 />
               )}

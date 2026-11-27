@@ -55,6 +55,8 @@ export interface TranscriptProps {
   renderEvent?: (event: ServerEvent) => ReactNode;
   /** You may moderate this channel: the bin appears on everyone's messages. */
   canModerate?: boolean;
+  /** You may add reactions: every toolbar offers the recent emoji in one press. */
+  canAddReactions?: boolean;
   /** Adds "Kopiuj identyfikator" to every message's right-click menu. */
   developerMode?: boolean;
   /** The message being rewritten, wherever in the transcript it sits. */
@@ -137,6 +139,7 @@ interface MessageRowProps {
   polls?: PollCallbacks;
   renderEvent?: (event: ServerEvent) => ReactNode;
   canModerate?: boolean;
+  canAddReactions?: boolean;
   developerMode?: boolean;
   onEditSave?(messageId: string, text: string): Promise<void> | void;
   onEditCancel?(): void;
@@ -159,6 +162,7 @@ const MessageRow = memo(function MessageRow({
   polls,
   renderEvent,
   canModerate,
+  canAddReactions,
   developerMode,
   onEditSave,
   onEditCancel,
@@ -184,6 +188,7 @@ const MessageRow = memo(function MessageRow({
       polls={polls}
       renderEvent={renderEvent}
       canModerate={canModerate}
+      canAddReactions={canAddReactions}
       developerMode={developerMode}
       editing={editing}
       onEditSave={onEditSave}
@@ -244,6 +249,7 @@ function ReadyTranscript({
   polls,
   renderEvent,
   canModerate,
+  canAddReactions,
   developerMode,
   editing,
   onEditSave,
@@ -378,6 +384,7 @@ function ReadyTranscript({
                   polls={polls}
                   renderEvent={renderEvent}
                   canModerate={canModerate}
+                  canAddReactions={canAddReactions}
                   developerMode={developerMode}
                   onEditSave={canSaveEdit ? forwardSave : undefined}
                   onEditCancel={canCancelEdit ? forwardCancel : undefined}
@@ -394,7 +401,7 @@ function ReadyTranscript({
     [
       contentRef, rows, unreadLabel, renderNotice, hideReplyReferences, editing, freshId,
       flashId, jumpTo, translation, attachments, customEmoji, polls, renderEvent, canModerate,
-      developerMode, canSaveEdit, canCancelEdit, canReact, canAct, forwardSave,
+      canAddReactions, developerMode, canSaveEdit, canCancelEdit, canReact, canAct, forwardSave,
       forwardCancel, forwardReact, forwardAction, onOpenAuthor,
     ],
   );
