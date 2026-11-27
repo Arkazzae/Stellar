@@ -199,6 +199,8 @@ export interface ComposerProps {
   scheduling?: ComposerScheduling;
   /** Opens a new poll with the question typed; without it no poll is offered. */
   onPoll?(question: string): void;
+  /** Opens a new event; without it, as for whoever may not create one, none is offered. */
+  onEvent?(): void;
   locale?: InterfaceLocale;
   t?: Translator;
 }
@@ -227,6 +229,7 @@ export function Composer({
   commandHost,
   scheduling,
   onPoll,
+  onEvent,
   locale = documentLocale(),
   t = translateForDocument,
 }: ComposerProps) {
@@ -415,6 +418,7 @@ export function Composer({
     fileBlocked: attachmentsFull ? "composer.attachmentLimit" : undefined,
     openGifs: onGif === undefined ? undefined : (query) => gifBrowser.current?.open(query),
     openPoll: onPoll,
+    openEvent: onEvent,
     recordVoice: attachmentsSupported && !voiceUnavailable ? () => setVoiceOpen(true) : undefined,
     // Judged on the draft the command leaves: the "/voice" being typed is not
     // a message that would have to go first.
@@ -801,7 +805,8 @@ export function Composer({
   /**
    * The phone's sheet: tiles, then the commands for the message and the
    * server, each where the registry places it. Formatting is among the
-   * message's, because its button is not in the phone's row.
+   * message's, because its button is not in the phone's row, and so is
+   * whatever adds to a message without a tile of its own, as GIFs do.
    */
   const sheetContent = (base: CommandBase): { tiles: SheetEntry[]; groups: SheetGroup[] } => {
     const context = contextFor(base);
@@ -837,6 +842,7 @@ export function Composer({
       onSelect: () => setFormatOpen(true),
     };
     const [first, ...rest] = rows("message");
+    const added = rows("add");
     return {
       tiles: COMMANDS.flatMap((command) => (typeof command.sheet === "object" ? [{ command, tile: command.sheet.tile }] : []))
         .sort((left, right) => left.tile - right.tile)
@@ -845,7 +851,7 @@ export function Composer({
         {
           id: "message",
           label: t("composer.commands.group.message"),
-          entries: first === undefined ? [formatting] : [first, formatting, ...rest],
+          entries: first === undefined ? [...added, formatting] : [first, ...added, formatting, ...rest],
         },
         {
           id: "server",

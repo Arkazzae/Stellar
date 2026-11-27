@@ -27,6 +27,7 @@ import type {
   RtcSignalKind,
 } from "@/lib/rtc/protocol";
 import type { NotificationInboxChangedEvent } from "@/ports/notifications";
+import type { EventSignupChange, ServerEvent } from "@/ports/events";
 import type { PollUpdate, PollVoteChange } from "@/ports/polls";
 import type { ScheduledMessage } from "@/ports/scheduled";
 
@@ -249,6 +250,10 @@ export interface RealtimeEventMap {
   PollUpdated: PollUpdate;
   /** The reader's own vote, to their own connections only. */
   PollVoteChanged: PollVoteChange;
+  /** An event as it is now, to everyone who sees it, without the reader's own place. */
+  EventChanged: ServerEvent;
+  /** The reader's own place in an event, to their own connections only. */
+  EventSignupChanged: EventSignupChange;
 }
 
 export type RealtimeEventName = keyof RealtimeEventMap;

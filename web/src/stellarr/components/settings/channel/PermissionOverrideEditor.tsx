@@ -10,6 +10,8 @@ import { useLanguage } from "@/state/hooks";
 
 const PERMISSION_LABEL: Record<ServerPermission, MessageKey> = {
   manageServer: "settings.permission.manageServer",
+  createEvents: "settings.permission.createEvents",
+  manageEvents: "settings.permission.manageEvents",
   manageChannels: "settings.permission.manageChannels",
   manageRoles: "settings.permission.manageRoles",
   manageMembers: "settings.permission.manageMembers",
@@ -27,14 +29,16 @@ const PERMISSION_LABEL: Record<ServerPermission, MessageKey> = {
 };
 
 /**
- * Administrator is server-wide only: the server refuses it in an override, so
- * no row offers it. Viewing comes first, since denying it is what makes a
- * channel private.
+ * Administrator and the events' permissions are server-wide only: the server
+ * refuses them in an override, as an event belongs to the server, so no row
+ * offers them. Viewing comes first, since denying it is what makes a channel
+ * private.
  */
+const SERVER_WIDE: ReadonlySet<ServerPermission> = new Set(["administrator", "createEvents", "manageEvents"]);
 const OVERRIDABLE: readonly ServerPermission[] = [
   "viewChannel",
   ...SERVER_PERMISSION_VALUES.filter(
-    (permission) => permission !== "administrator" && permission !== "viewChannel",
+    (permission) => !SERVER_WIDE.has(permission) && permission !== "viewChannel",
   ),
 ];
 

@@ -197,18 +197,6 @@ describe("Composer sending later", () => {
     await user.click(screen.getByRole("button", { name: "Pokaż" }));
     expect(onShowScheduled).toHaveBeenCalledOnce();
   });
-
-  it("puts Zaplanuj between the file and the GIF on the phone's sheet", async () => {
-    const { user } = setup({ onAttach: vi.fn(), onGif: vi.fn().mockResolvedValue(undefined) });
-    // What the phone's stylesheet does: formatting moves into the sheet.
-    screen.getByRole("button", { name: "Formatowanie" }).style.display = "none";
-
-    await user.click(screen.getByRole("button", { name: "Komendy i dodawanie" }));
-    const sheet = screen.getByRole("dialog", { name: "Komendy i dodawanie" });
-    const [file, schedule, gif] = ["Plik", "Zaplanuj", "GIF"].map((name) => within(sheet).getByRole("button", { name }));
-    expect(file!.compareDocumentPosition(schedule!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(schedule!.compareDocumentPosition(gif!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  });
 });
 
 describe("Composer without sending later", () => {

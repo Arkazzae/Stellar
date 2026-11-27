@@ -92,11 +92,13 @@ describe("PermissionOverrideEditor", () => {
     });
   });
 
-  it("offers no row for Administrator, which is server-wide only", async () => {
+  it("offers no row for Administrator or the events' permissions, which are server-wide only", async () => {
     const { user } = renderEditor();
     await openRole(user, "Gość");
 
     expect(screen.queryByRole("radiogroup", { name: "Administrator" })).toBeNull();
+    expect(screen.queryByRole("radiogroup", { name: "Tworzenie wydarzeń" })).toBeNull();
+    expect(screen.queryByRole("radiogroup", { name: "Zarządzanie wydarzeniami" })).toBeNull();
     expect(screen.getByRole("radiogroup", { name: "Wysyłanie wiadomości" })).toBeInTheDocument();
   });
 

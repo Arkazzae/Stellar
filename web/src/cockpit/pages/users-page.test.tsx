@@ -35,6 +35,8 @@ const formatDateTime = (value: string) =>
 
 const allPermissions = [
   "manageServer",
+  "createEvents",
+  "manageEvents",
   "manageChannels",
   "manageRoles",
   "manageMembers",
@@ -697,7 +699,7 @@ describe("UsersPage roles", () => {
   it("lists each role with its members, permission count and kind", async () => {
     await openRoles();
 
-    expect(within(rowOf("Właściciel")).getByText("15 uprawnień")).toBeTruthy();
+    expect(within(rowOf("Właściciel")).getByText("17 uprawnień")).toBeTruthy();
     expect(within(rowOf("Właściciel")).getByText("Systemowa")).toBeTruthy();
     expect(within(rowOf("Moderator")).getByText("2 uprawnień")).toBeTruthy();
     expect(within(rowOf("Moderator")).getByText("Własna")).toBeTruthy();

@@ -51,6 +51,10 @@ export interface DirectoryView {
   canManageMessages: boolean;
   canModerateMembers: boolean;
   canManageBans: boolean;
+  /** May create the server's events. */
+  canCreateEvents: boolean;
+  /** May change and cancel anyone's events; their creators may always change their own. */
+  canManageEvents: boolean;
   /** The channel the room falls back to before anything is picked. */
   firstTextChannelId: string | null;
   channelName: (channelId: string | null) => string;
@@ -286,6 +290,8 @@ export function createDirectoryViewDeriver(): DirectoryViewDeriver {
       canManageMessages: permissions.includes("manageMessages"),
       canModerateMembers: permissions.includes("moderateMembers"),
       canManageBans: permissions.includes("manageBans"),
+      canCreateEvents: permissions.includes("createEvents"),
+      canManageEvents: permissions.includes("manageEvents") || permissions.includes("manageServer"),
       firstTextChannelId: textChannels[0]?.id ?? null,
       channelName: (channelId) =>
         channels.find((channel) => channel.id === channelId)?.name ?? "",

@@ -406,6 +406,12 @@ describe("parseInboxNotification", () => {
     expect(parsed.target).toStrictEqual({ type: "channel", channelId: "c-1" });
   });
 
+  it("reads an event's target: a reminder, a seat given or a change", () => {
+    const parsed = parseInboxNotification({ ...notification, target: { type: "event", eventId: "ev-1" } }, "/p");
+
+    expect(parsed.target).toStrictEqual({ type: "event", eventId: "ev-1" });
+  });
+
   it("treats a null read time and a null target as absent", () => {
     const parsed = parseInboxNotification({ ...notification, readAt: null, target: null }, "/p");
 

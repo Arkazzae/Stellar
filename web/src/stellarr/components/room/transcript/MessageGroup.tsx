@@ -1,5 +1,5 @@
 import { documentLocale, translateForDocument } from "@/i18n/defaultLocale";
-import { useMemo, useState, type MouseEvent } from "react";
+import { useMemo, useState, type MouseEvent, type ReactNode } from "react";
 
 import { Icon } from "@stellarr/icons";
 import { messageSubject } from "@/components/confirmations";
@@ -13,6 +13,7 @@ import type {
   MessageReference,
   Poll,
   Reaction,
+  ServerEvent,
   SealedReason,
   TimelineLine,
 } from "@/ports";
@@ -38,6 +39,8 @@ export interface MessageBodyVM {
   pinned?: boolean;
   /** A question with answers to choose from; a message with one is never edited. */
   poll?: Poll;
+  /** The event this message announces, as it was when the message was read. */
+  event?: ServerEvent;
 }
 
 /**
@@ -109,6 +112,8 @@ export interface MessageGroupProps extends MessageGroupVM {
   customEmoji?: readonly CustomEmoji[];
   /** Votes and ends of this block's polls; without them a poll only shows. */
   polls?: PollCallbacks;
+  /** Draws an announced event's card, kept current by whoever knows the events. */
+  renderEvent?: (event: ServerEvent) => ReactNode;
   /** You may moderate here: the bin appears on other people's messages too. */
   canModerate?: boolean;
   /** Adds "Kopiuj identyfikator" to the right-click menu, as the preference
@@ -204,6 +209,7 @@ export function MessageGroup({
   developerMode = false,
   customEmoji,
   polls,
+  renderEvent,
   canModerate = false,
   onOpenAuthor,
   fresh = false,
@@ -307,6 +313,7 @@ export function MessageGroup({
               {authorName}
             </button>
           )}
+          {bodies[0]?.event === undefined ? null : <span className="msg-tag">{t("event.tag")}</span>}
           <time dateTime={timestamp}>{formatFull(timestamp, locale)}</time>
         </div>
         {bodies.map((body) => {
@@ -372,6 +379,7 @@ export function MessageGroup({
                   customEmoji={customEmoji}
                 />
               )}
+              {body.event === undefined || renderEvent === undefined ? null : renderEvent(body.event)}
               {body.reactions === undefined || body.reactions.length === 0 ? null : (
                 <Reactions
                   reactions={body.reactions}

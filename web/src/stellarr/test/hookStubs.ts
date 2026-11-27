@@ -56,6 +56,8 @@ function stub<T>(members: object): T {
 const VOICE_SETTINGS = { soundboardVolume: 50, noiseSuppression: "off", opusProfile: "auto" };
 /** Nothing waits to be sent later, as one array for the same reason. */
 const NOTHING_SCHEDULED: never[] = [];
+/** No events on the server, as one array too. */
+const NO_EVENTS: never[] = [];
 
 function defaults(): HookStubs {
   return {
@@ -110,6 +112,8 @@ function defaults(): HookStubs {
       inVoice: [],
       canAccessServerSettings: false,
       canManageServer: false,
+      canCreateEvents: false,
+      canManageEvents: false,
       canManageChannels: false,
       canModerateMembers: false,
       canManageBans: false,
@@ -192,6 +196,19 @@ function defaults(): HookStubs {
       scheduled: {
         getSnapshot: () => NOTHING_SCHEDULED,
         subscribe: () => () => {},
+      },
+      events: {
+        list: () => NO_EVENTS,
+        get: () => undefined,
+        subscribe: () => () => {},
+        load: vi.fn(async () => {}),
+        remember: vi.fn(),
+        create: vi.fn(),
+        edit: vi.fn(),
+        cancel: vi.fn(),
+        signUp: vi.fn(),
+        signOut: vi.fn(),
+        people: vi.fn(async () => ({ people: [], nextCursor: null })),
       },
       polls: {
         vote: vi.fn(),

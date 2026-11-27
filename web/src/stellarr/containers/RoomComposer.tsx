@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 
 import { banPerson, kickPerson, personSubject } from "@/components/confirmations";
 import { useConfirm, usePrompt } from "@/components/primitives/confirmContext";
+import { eventWindow } from "@/lib/events/eventSheetRequest";
 import { draftScope } from "@/lib/platform/drafts";
 import { PollSheet } from "@/components/room/poll/PollSheet";
 import {
@@ -44,7 +45,7 @@ export function RoomComposer({ channelName, threadRootId }: RoomComposerProps) {
   // in their settings; either way the composer offers no GIF button.
   const gifsOffered = useGifsEnabled();
   const giphyAccess = useGiphyAccess();
-  const { members, server } = useDirectory();
+  const { members, server, canCreateEvents } = useDirectory();
   const { user } = useSession();
   const scope = user && chat.channelId ? draftScope(user.id, server.id, chat.channelId, threadRootId ?? "") : undefined;
   const { emoji: customEmoji } = useEmoji();
@@ -94,6 +95,8 @@ export function RoomComposer({ channelName, threadRootId }: RoomComposerProps) {
   const waiting = useWaitingHere(place);
   const [listOpen, setListOpen] = useState(false);
   const [listNow, setListNow] = useState(() => new Date());
+  // A new event is offered to be announced where it was asked for.
+  const announceOn = chat.channelId;
   // A new poll's sheet, with the id its message goes out under: asking again
   // after an answer that was lost posts it once.
   const [pollSheet, setPollSheet] = useState<{ question: string; clientMessageId: string } | null>(null);
@@ -182,6 +185,9 @@ export function RoomComposer({ channelName, threadRootId }: RoomComposerProps) {
           : {
               onPoll: (question: string) => setPollSheet({ question, clientMessageId: crypto.randomUUID() }),
             })}
+        {...(canCreateEvents && announceOn !== null
+          ? { onEvent: () => eventWindow.open({ kind: "create", announceOn }) }
+          : {})}
         locale={locale}
         t={t}
         {...(inThread

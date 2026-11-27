@@ -178,6 +178,7 @@ function presentBody(
     ...(pinned ? { pinned: true } : {}),
     ...(reactions.length > 0 ? { reactions } : {}),
     ...(message.poll === undefined ? {} : { poll: message.poll }),
+    ...(message.event === undefined ? {} : { event: message.event }),
   };
   cache?.bodies.set(message, {
     emoji: customEmoji,

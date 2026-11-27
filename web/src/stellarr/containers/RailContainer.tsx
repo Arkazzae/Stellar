@@ -15,6 +15,7 @@ import {
   useUi,
 } from "@/state/hooks";
 
+import { EventsRailContainer } from "./EventsRailContainer";
 import { RailAccount, RailVoiceDock } from "./RailFooter";
 import { useMemberMenu } from "./useMemberMenu";
 
@@ -213,6 +214,7 @@ export const RailContainer = memo(function RailContainer() {
           }
         : {})}
       voiceDock={<RailVoiceDock />}
+      events={<EventsRailContainer />}
       account={<RailAccount />}
       hidden={railIsDrawer && !ui.railOpen}
     />

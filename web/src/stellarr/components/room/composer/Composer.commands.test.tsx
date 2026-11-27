@@ -327,15 +327,15 @@ describe("Composer command sheet", () => {
     const sheet = screen.getByRole("dialog", { name: "Komendy i dodawanie" });
     const rows = (name: string) =>
       within(within(sheet).getByRole("group", { name })).getAllByRole("button").map((b) => b.textContent);
+    // GIFs among the message's rows; the voice message keeps its button in the row.
     expect(rows("Wiadomość")).toEqual([
       " Kod /kod",
+      "GIF GIF /gif",
       " Formatowanie pogrubienie, kursywa, spoiler",
       " Spoiler /spoiler",
     ]);
     expect(rows("Serwer")).toEqual([" Przypięte /przypięte", " Status /status"]);
-    // Files and GIFs as tiles; the voice message keeps its button in the row.
     expect(within(sheet).getByRole("button", { name: "Plik" })).toBeInTheDocument();
-    expect(within(sheet).getByRole("button", { name: "GIF" })).toBeInTheDocument();
 
     await user.click(within(sheet).getByRole("button", { name: "Formatowanie pogrubienie, kursywa, spoiler" }));
     expect(screen.queryByRole("dialog", { name: "Komendy i dodawanie" })).toBeNull();

@@ -21,6 +21,7 @@ import { GIF_QUERY_MAX_LENGTH } from "./GifBrowser";
 export type CommandId =
   | "file"
   | "poll"
+  | "event"
   | "gif"
   | "voice"
   | "schedule"
@@ -81,6 +82,8 @@ export interface CommandContext {
   openGifs?: (query: string) => void;
   /** Opens a new poll with the question typed; only where polls can be sent. */
   openPoll?: (question: string) => void;
+  /** Opens a new event; only for whoever may create events on the server. */
+  openEvent?: () => void;
   recordVoice?: () => void;
   voiceBlocked?: MessageKey;
   enterCode: (language: string) => void;
@@ -194,14 +197,25 @@ export const COMMANDS: readonly ComposerCommand[] = [
     run: (context, input) => context.openPoll?.(input.text("question").trim()),
   },
   {
+    id: "event",
+    group: "add",
+    alias: "event",
+    ...copy("event"),
+    icon: "calendar",
+    sheet: { tile: 3 },
+    args: [],
+    available: (context) => (context.openEvent === undefined ? HIDDEN : READY),
+    run: (context) => context.openEvent?.(),
+  },
+  {
     id: "gif",
     group: "add",
     alias: "gif",
     ...copy("gif"),
     example: "composer.command.gif.example",
     icon: "gif",
-    // Back among the rows once events take their tile.
-    sheet: { tile: 4 },
+    // Among the message's rows on the phone, now that the tiles are taken.
+    sheet: "row",
     args: [argument("gif", "query", { kind: "text", optional: true, maxLength: GIF_QUERY_MAX_LENGTH })],
     available: (context) => (context.openGifs === undefined ? HIDDEN : READY),
     run: (context, input) => context.openGifs?.(input.text("query")),
@@ -226,7 +240,7 @@ export const COMMANDS: readonly ComposerCommand[] = [
     ...copy("schedule"),
     example: "composer.command.schedule.example",
     icon: "clock",
-    sheet: { tile: 3 },
+    sheet: { tile: 4 },
     args: [
       argument("schedule", "when", {
         kind: "text",

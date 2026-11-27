@@ -4,7 +4,7 @@ import { memo, useCallback, useLayoutEffect, useMemo, useRef, type ReactNode } f
 import { Icon } from "@stellarr/icons";
 import { avatarImageUrl } from "@/components/primitives/Avatar";
 import type { OpenProfile } from "@/components/view-models";
-import type { CustomEmoji } from "@/ports";
+import type { CustomEmoji, ServerEvent } from "@/ports";
 
 import { MessageGroup, type MessageGroupVM, type TranscriptNotice } from "./MessageGroup";
 import type { MessageAction } from "./MessageToolbar";
@@ -51,6 +51,8 @@ export interface TranscriptProps {
   customEmoji?: readonly CustomEmoji[];
   /** Votes and ends of the polls in it; one object for the transcript's life. */
   polls?: PollCallbacks;
+  /** Draws an announced event's card; one function for the transcript's life. */
+  renderEvent?: (event: ServerEvent) => ReactNode;
   /** You may moderate this channel: the bin appears on everyone's messages. */
   canModerate?: boolean;
   /** Adds "Kopiuj identyfikator" to every message's right-click menu. */
@@ -133,6 +135,7 @@ interface MessageRowProps {
   attachments?: AttachmentCallbacks;
   customEmoji?: readonly CustomEmoji[];
   polls?: PollCallbacks;
+  renderEvent?: (event: ServerEvent) => ReactNode;
   canModerate?: boolean;
   developerMode?: boolean;
   onEditSave?(messageId: string, text: string): Promise<void> | void;
@@ -154,6 +157,7 @@ const MessageRow = memo(function MessageRow({
   attachments,
   customEmoji,
   polls,
+  renderEvent,
   canModerate,
   developerMode,
   onEditSave,
@@ -178,6 +182,7 @@ const MessageRow = memo(function MessageRow({
       attachments={attachments}
       customEmoji={customEmoji}
       polls={polls}
+      renderEvent={renderEvent}
       canModerate={canModerate}
       developerMode={developerMode}
       editing={editing}
@@ -237,6 +242,7 @@ function ReadyTranscript({
   attachments,
   customEmoji,
   polls,
+  renderEvent,
   canModerate,
   developerMode,
   editing,
@@ -370,6 +376,7 @@ function ReadyTranscript({
                   attachments={attachments}
                   customEmoji={customEmoji}
                   polls={polls}
+                  renderEvent={renderEvent}
                   canModerate={canModerate}
                   developerMode={developerMode}
                   onEditSave={canSaveEdit ? forwardSave : undefined}
@@ -386,7 +393,7 @@ function ReadyTranscript({
     },
     [
       contentRef, rows, unreadLabel, renderNotice, hideReplyReferences, editing, freshId,
-      flashId, jumpTo, translation, attachments, customEmoji, polls, canModerate,
+      flashId, jumpTo, translation, attachments, customEmoji, polls, renderEvent, canModerate,
       developerMode, canSaveEdit, canCancelEdit, canReact, canAct, forwardSave,
       forwardCancel, forwardReact, forwardAction, onOpenAuthor,
     ],

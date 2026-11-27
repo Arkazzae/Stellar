@@ -14,6 +14,7 @@ import {
   type SocialApiClient,
 } from "@/lib/api/client";
 import { encryptionCalls, type EncryptionApiClient } from "@/lib/api/calls/encryption";
+import { eventCalls, type EventApiClient } from "@/lib/api/calls/events";
 import { pollCalls, type PollApiClient } from "@/lib/api/calls/polls";
 import { scheduledCalls, type ScheduledApiClient } from "@/lib/api/calls/scheduled";
 import { isUnauthorized } from "@/lib/api/errors";
@@ -36,6 +37,7 @@ import { createNotificationDeliveryAdapter } from "./notificationDelivery";
 import { createNotificationAdapter } from "./notifications";
 import { createConnectionAdapter, createPresenceAdapter } from "./presence";
 import { ChannelReadStore } from "./readState";
+import { createEventsAdapter } from "./events";
 import { createPollsAdapter } from "./polls";
 import { createScheduledAdapter } from "./scheduled";
 import { createSoundboardAdapter } from "./soundboard";
@@ -68,6 +70,8 @@ export interface RuntimeOptions {
   scheduled?: ScheduledApiClient;
   /** The poll routes; same-origin HTTP by default. */
   polls?: PollApiClient;
+  /** The event routes; same-origin HTTP by default. */
+  events?: EventApiClient;
 }
 
 /** Copies the profile fields of the signed-in account onto their directory row. */
@@ -241,6 +245,7 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
   const typing = createTypingAdapter(realtime);
   const scheduled = createScheduledAdapter(options.scheduled ?? scheduledCalls(), realtime);
   const polls = createPollsAdapter(options.polls ?? pollCalls(), realtime);
+  const events = createEventsAdapter(options.events ?? eventCalls(), realtime);
   const chat = createChatAdapter(api, realtime, reactionStore, readStore);
   const admin = createServerAdminAdapter(
     api,
@@ -362,6 +367,7 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
     soundboard,
     scheduled,
     polls,
+    events,
     voiceSettings: createVoiceSettingsAdapter(voiceSettingsStore),
     createVoice,
   };
@@ -394,6 +400,7 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
       friends.dispose?.();
       soundboard.dispose();
       scheduled.dispose();
+      events.dispose();
       messageActions.dispose?.();
       typing.dispose?.();
       chat.dispose?.();

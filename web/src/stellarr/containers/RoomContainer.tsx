@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useSyncExternalStore, type ComponentProps } from "react";
 
-import type { Message } from "@/ports";
+import type { Message, ServerEvent } from "@/ports";
 import { DropOverlay } from "@/components/room/DropOverlay";
 import { MediaViewer } from "@/components/room/attachments/MediaViewer";
 import { ThreadPanel } from "@/components/room/panels/ThreadPanel";
@@ -27,6 +27,8 @@ import {
 import { useJoinFromPopoutLink } from "./callPopout";
 import { CallStage } from "./CallStage";
 import { ChannelPanelContainer } from "./ChannelPanelContainer";
+import { EventCardContainer } from "./EventCardContainer";
+import { EventWindowHost } from "./EventWindowHost";
 import { NotificationInboxButton } from "./NotificationInboxContainer";
 import { RoomComposer } from "./RoomComposer";
 import { useAttachmentViewer } from "./useAttachmentViewer";
@@ -144,6 +146,8 @@ export function RoomContainer({ noticeMessage = null, onNoticeConsumed }: {
     jump.current = jumpTo;
   }, []);
   const jumpToMessage = useCallback((messageId: string) => jump.current?.(messageId), []);
+  // An announced event's card, current wherever it is shown.
+  const renderEvent = useCallback((event: ServerEvent) => <EventCardContainer snapshot={event} />, []);
 
   const activeText = textChannels.find((channel) => channel.id === ui.activeTextChannelId);
   const textName = activeText?.name ?? "";
@@ -188,6 +192,7 @@ export function RoomContainer({ noticeMessage = null, onNoticeConsumed }: {
     onReact: chat.react,
     onAction: chat.runAction,
     polls: chat.polls,
+    renderEvent,
     onOpenAuthor: profile.toggle,
   };
   const threadPanel = {
@@ -274,6 +279,7 @@ export function RoomContainer({ noticeMessage = null, onNoticeConsumed }: {
         onDropFiles={chat.attach}
       />
       <MediaViewer target={viewer.target} onClose={viewer.close} resolveOriginal={viewer.attachments.resolveOriginal} />
+      <EventWindowHost />
     </main>
   );
 }
