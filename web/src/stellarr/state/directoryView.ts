@@ -49,6 +49,11 @@ export interface DirectoryView {
   canManageServer: boolean;
   canManageChannels: boolean;
   canManageMessages: boolean;
+  /**
+   * May add reactions, server-wide. The server decides per channel, where an
+   * override can say otherwise, and taking one's own reaction back needs nothing.
+   */
+  canAddReactions: boolean;
   canModerateMembers: boolean;
   canManageBans: boolean;
   /** May create the server's events. */
@@ -288,6 +293,7 @@ export function createDirectoryViewDeriver(): DirectoryViewDeriver {
       canManageServer: permissions.includes("manageServer"),
       canManageChannels: permissions.includes("manageChannels"),
       canManageMessages: permissions.includes("manageMessages"),
+      canAddReactions: permissions.includes("addReactions"),
       canModerateMembers: permissions.includes("moderateMembers"),
       canManageBans: permissions.includes("manageBans"),
       canCreateEvents: permissions.includes("createEvents"),

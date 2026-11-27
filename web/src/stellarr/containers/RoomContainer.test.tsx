@@ -208,7 +208,7 @@ describe("RoomContainer text room", () => {
   });
 
   it("hands the transcript the moderation and display settings", () => {
-    mocks.directory = fakeDirectory({ canManageMessages: true });
+    mocks.directory = fakeDirectory({ canManageMessages: true, canAddReactions: false });
     mocks.preferences = { developerMode: true };
     mocks.chat = fakeChat({ hasOlder: true, firstUnreadGroupId: "g-9", ownSendToken: 4 });
 
@@ -216,6 +216,7 @@ describe("RoomContainer text room", () => {
 
     expect(seenTranscript()).toMatchObject({
       canModerate: true,
+      canAddReactions: false,
       developerMode: true,
       hasOlder: true,
       firstUnreadGroupId: "g-9",

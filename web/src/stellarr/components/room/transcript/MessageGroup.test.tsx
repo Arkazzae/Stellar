@@ -1,7 +1,11 @@
 import { fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { readRecentEmoji } from "@/lib/emoji/emoji";
+import { forgetQuickReactionOrder } from "@/lib/emoji/quickReactions";
+import type { Reaction } from "@/ports";
 import { answerConfirm, renderWithConfirm } from "@/test/confirm";
 
 import { MessageGroup, type MessageGroupProps } from "./MessageGroup";
@@ -298,5 +302,103 @@ describe("MessageGroup server notices", () => {
     );
     expect(screen.queryByRole("button", { name: "Profil: Orbit" })).toBeNull();
     expect(onOpenAuthor).not.toHaveBeenCalled();
+  });
+});
+
+describe("MessageGroup quick reactions", () => {
+  // A chip pressed in an earlier test is a recent too.
+  beforeEach(() => {
+    localStorage.clear();
+    forgetQuickReactionOrder();
+  });
+
+  const quickLabels = () =>
+    within(screen.getByRole("toolbar"))
+      .queryAllByRole("button", { name: /^Zareaguj: / })
+      .map((button) => button.getAttribute("aria-label"));
+
+  /** One message whose reactions follow the toggles, as the chat state makes them. */
+  function ReactingMessage({ onReact }: { onReact(messageId: string, emoji: string): void }) {
+    const [reactions, setReactions] = useState<Reaction[]>([]);
+    return (
+      <MessageGroup
+        id="m-1"
+        authorId="u-2"
+        authorName="Ola"
+        timestamp="2026-08-13T10:00:00Z"
+        bodies={[{ ...body("m-1", "pierwsza"), reactions }]}
+        onReact={(messageId, emoji) => {
+          onReact(messageId, emoji);
+          setReactions((current) =>
+            current.some((item) => item.emoji === emoji)
+              ? current.filter((item) => item.emoji !== emoji)
+              : [...current, { emoji, count: 1, mine: true }],
+          );
+        }}
+      />
+    );
+  }
+
+  it("takes back with a second press what the first one added, nothing moving between", async () => {
+    const user = userEvent.setup();
+    const onReact = vi.fn();
+    renderWithConfirm(<ReactingMessage onReact={onReact} />);
+    await user.hover(screen.getByText("pierwsza"));
+    expect(quickLabels()).toEqual(["Zareaguj: 👍", "Zareaguj: ❤️", "Zareaguj: 😂"]);
+
+    await user.click(screen.getByRole("button", { name: "Zareaguj: 😂" }));
+    // A recent now, and still in the place that was pressed.
+    expect(readRecentEmoji()).toEqual(["lzy_smiechu"]);
+    expect(quickLabels()).toEqual(["Zareaguj: 👍", "Zareaguj: ❤️", "Zareaguj: 😂"]);
+    expect(screen.getByRole("button", { name: "Zareaguj: 😂" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await user.click(within(screen.getByRole("toolbar")).getAllByRole("button")[2] as HTMLElement);
+    expect(onReact.mock.calls).toEqual([
+      ["m-1", "😂"],
+      ["m-1", "😂"],
+    ]);
+    expect(screen.getByRole("button", { name: "Zareaguj: 😂" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
+  it("counts a reaction added from a chip as a recent, and not one taken back", async () => {
+    const user = userEvent.setup();
+    setup({
+      onReact: vi.fn(),
+      bodies: [
+        {
+          ...body("m-1", "pierwsza"),
+          reactions: [
+            { emoji: "🔥", count: 1, mine: false },
+            { emoji: "🎉", count: 1, mine: true },
+          ],
+        },
+      ],
+    });
+
+    await user.click(screen.getByRole("button", { name: "🔥, liczba reakcji: 1" }));
+    await user.click(screen.getByRole("button", { name: "🎉, liczba reakcji: 1" }));
+
+    expect(readRecentEmoji()).toEqual(["ogien"]);
+  });
+
+  it("offers none on a server notice, keeping the picker", () => {
+    setup({ system: true, authorId: "system", authorName: "Orbit", onReact: vi.fn() });
+    fireEvent.mouseOver(screen.getByText("pierwsza"));
+    expect(quickLabels()).toEqual([]);
+    expect(
+      within(screen.getByRole("toolbar")).getByRole("button", { name: "Wybierz reakcję" }),
+    ).toBeInTheDocument();
+  });
+
+  it("offers none to somebody who may not add reactions here", () => {
+    setup({ canAddReactions: false, onReact: vi.fn() });
+    fireEvent.mouseOver(screen.getByText("pierwsza"));
+    expect(quickLabels()).toEqual([]);
   });
 });

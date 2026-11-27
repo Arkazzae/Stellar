@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { forgetQuickReactionOrder } from "@/lib/emoji/quickReactions";
 import { answerConfirm, renderWithConfirm } from "@/test/confirm";
 
 import { MessageEntry, type MessageEntryProps } from "./MessageEntry";
@@ -15,6 +16,9 @@ afterEach(() => {
   vi.restoreAllMocks();
   document.body.style.overflow = "";
   window.innerWidth = desktopWidth;
+  // A pick in the picker is a recent, and recents fill the quick row.
+  localStorage.clear();
+  forgetQuickReactionOrder();
 });
 
 /** One message with its actions, as a block draws it. */
@@ -252,17 +256,23 @@ describe("MessageToolbar keyboard", () => {
     screen.getByRole("button", { name: "przed" }).focus();
 
     const forward = [focusedStop()];
-    for (let stop = 0; stop < 9; stop += 1) {
+    for (let stop = 0; stop < 15; stop += 1) {
       await user.tab();
       forward.push(focusedStop());
     }
     expect(forward).toEqual([
       "przed",
+      "1:Zareaguj: 👍",
+      "1:Zareaguj: ❤️",
+      "1:Zareaguj: 😂",
       "1:Wybierz reakcję",
       "1:Odpowiedz",
       "1:Otwórz wątek",
       "1:Edytuj",
       "1:Usuń",
+      "2:Zareaguj: 👍",
+      "2:Zareaguj: ❤️",
+      "2:Zareaguj: 😂",
       "2:Wybierz reakcję",
       "2:Odpowiedz",
       "2:Otwórz wątek",
@@ -275,7 +285,7 @@ describe("MessageToolbar keyboard", () => {
     renderTwo();
     screen.getByRole("button", { name: "po" }).focus();
     const backward = [focusedStop()];
-    for (let stop = 0; stop < 9; stop += 1) {
+    for (let stop = 0; stop < 15; stop += 1) {
       await user.tab({ shift: true });
       backward.push(focusedStop());
     }

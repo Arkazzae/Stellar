@@ -413,3 +413,21 @@ describe("Transcript catch-up button", () => {
     expect(catchUpButton()).toBeNull();
   });
 });
+
+describe("Transcript quick reactions", () => {
+  it("offers them on its messages only while you may add reactions", () => {
+    localStorage.clear();
+    fakeTranscriptLayout();
+    const sections = section("m1");
+    const quick = () => screen.queryAllByRole("button", { name: /^Zareaguj: / });
+    const { rerender } = show(<Transcript sections={sections} label="Wiadomości" onReact={vi.fn()} />);
+    fireEvent.mouseOver(document.querySelector(".msg-entry") as HTMLElement);
+    expect(quick()).toHaveLength(3);
+
+    // The same rows: only the permission changed.
+    rerender(
+      <Transcript sections={sections} label="Wiadomości" onReact={vi.fn()} canAddReactions={false} />,
+    );
+    expect(quick()).toEqual([]);
+  });
+});
