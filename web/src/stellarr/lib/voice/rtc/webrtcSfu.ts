@@ -2,6 +2,7 @@ import type { Translator } from "@/i18n";
 import type { ChannelId, UserId, VoiceOccupant } from "@/lib/api/types";
 import type {
   MediaSessionClosedEvent,
+  OpenedMediaSession,
   MediaSignal,
   RealtimeClient,
 } from "@/lib/realtime/types";
@@ -350,8 +351,8 @@ export class Sfu implements CallTopology {
 
   setReceivePreferences(preferences: VoiceReceivePreferences): void {
     this.receivePreferences = {
+      ...preferences,
       screen: preferences.screen === null ? null : { ...preferences.screen },
-      cameras: preferences.cameras,
     };
     this.deps.remoteAudio.setWatchedScreen(this.receivePreferences.screen);
     this.refreshReceivePreferences();
@@ -442,9 +443,9 @@ export class Sfu implements CallTopology {
     this.closeSession();
     this.deps.transportChanged();
 
-    let sessionId: string;
+    let opened: OpenedMediaSession;
     try {
-      sessionId = await this.deps.realtime.openMediaSession(channelId);
+      opened = await this.deps.realtime.openMediaSession(channelId);
     } catch {
       // The media server could not be reached, or the seat moved on.
       if (generation === this.generation) this.replace();
@@ -454,7 +455,7 @@ export class Sfu implements CallTopology {
 
     let session: MediaSessionLink;
     try {
-      session = this.build(sessionId, channelId);
+      session = this.build(opened, channelId);
     } catch {
       // The browser would not even make the connection; another attempt is
       // all there is to try.
@@ -465,8 +466,10 @@ export class Sfu implements CallTopology {
     await this.requestOffer(session);
   }
 
-  private build(id: string, channelId: ChannelId): MediaSessionLink {
+  private build(opened: OpenedMediaSession, channelId: ChannelId): MediaSessionLink {
+    const id = opened.sessionId;
     const link = createLink({
+      cameraSimulcast: opened.cameraSimulcast,
       // Read now, not at join: a replacement late in a long call must not
       // reach for credentials that have expired.
       iceServers: this.deps.ice.current(),
@@ -778,11 +781,14 @@ export class Sfu implements CallTopology {
    * last or not. An empty list has nothing to forget.
    */
   private syncSubscriptions(session: MediaSessionLink, again = false): void {
-    const mids = session.directory.subscribedMids(this.receivePreferences, (person) => this.held(person));
+    const { mids, thumbnailMids } = session.directory.subscriptions(
+      this.receivePreferences,
+      (person) => this.held(person),
+    );
     session.directory.applySubscriptions(mids);
     let payload: string;
     try {
-      payload = encodeMediaSubscriptions(mids);
+      payload = encodeMediaSubscriptions(mids, session.link.cameraSimulcast ? thumbnailMids : []);
     } catch {
       // Only a directory the media server never makes could name such a section.
       this.lose(session);

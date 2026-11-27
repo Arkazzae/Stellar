@@ -110,6 +110,11 @@ export interface MediaSignal<K extends MediaSignalKind = MediaSignalKind> {
   payload: string;
 }
 
+export interface OpenedMediaSession {
+  sessionId: string;
+  cameraSimulcast: boolean;
+}
+
 /** The media plane ended a session that the seat still needs. */
 export interface MediaSessionClosedEvent {
   channelId: ChannelId;
@@ -290,9 +295,9 @@ export interface RealtimeClient {
   sendVoiceSignal(signal: VoiceSignal): Promise<void>;
   /**
    * Creates the media session of this connection's seat in `channelId`, which
-   * must already be held, and resolves to its id.
+   * must already be held, and reports the connected SFU's capabilities.
    */
-  openMediaSession(channelId: ChannelId): Promise<string>;
+  openMediaSession(channelId: ChannelId): Promise<OpenedMediaSession>;
   sendMediaSignal(signal: MediaSignal<BrowserMediaSignalKind>): Promise<void>;
   playSoundboard(channelId: ChannelId, soundId: SoundboardSound["id"]): Promise<void>;
   getRtcClock(): Promise<number>;

@@ -215,6 +215,8 @@ export interface VoiceReceivePreferences {
   screen: { userId: UserId; streamId: string } | null;
   /** Select individual publishers, or use a boolean for all or no cameras. */
   cameras: boolean | ReadonlySet<UserId>;
+  /** When supplied, all other visible cameras request their thumbnail encoding. */
+  largeCameras?: ReadonlySet<UserId>;
 }
 
 /**

@@ -359,9 +359,9 @@ export class FakeRealtimeClient implements RealtimeClient {
   async sendVoiceSignal(_signal: VoiceSignal): Promise<void> {}
 
   /** A fresh id per call, as the hub hands out after closing the previous one. */
-  async openMediaSession(_channelId: string): Promise<string> {
+  async openMediaSession(_channelId: string) {
     this.mediaSessions += 1;
-    return `media-session-${this.mediaSessions}`;
+    return { sessionId: `media-session-${this.mediaSessions}`, cameraSimulcast: true };
   }
 
   async sendMediaSignal(_signal: MediaSignal<BrowserMediaSignalKind>): Promise<void> {}

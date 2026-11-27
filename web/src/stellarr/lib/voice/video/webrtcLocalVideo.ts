@@ -1,6 +1,7 @@
 import type { Translator } from "@/i18n";
 import {
   cameraEncoding,
+  thumbnailEncoding,
   captureCamera,
   CameraCaptureError,
   type CameraCapture,
@@ -138,7 +139,11 @@ export class LocalCamera {
     const capture = this.capture;
     if (!capture || link.cameraSender) return;
     try {
-      link.cameraSender = addSender(link, capture.video, this.env.voiceStream());
+      const quality = this.env.settings().cameraQuality;
+      link.cameraSender = addSender(link, capture.video, this.env.voiceStream(), [
+        { rid: "thumb", ...thumbnailEncoding(capture.video, quality) },
+        { rid: "main", ...cameraEncoding(quality), scaleResolutionDownBy: 1 },
+      ]);
       void tuneCameraSender(link.cameraSender, this.env.settings().cameraQuality);
     } catch {
       // A closing connection cannot take it; the rebuilt one will.
@@ -514,7 +519,14 @@ async function tuneCameraSender(sender: RTCRtpSender, quality: CameraQualityId):
   try {
     const parameters = sender.getParameters();
     const encodings = sendEncodings(parameters);
-    for (const encoding of encodings) Object.assign(encoding, cameraEncoding(quality));
+    for (const encoding of encodings) {
+      if (encoding.rid === "thumb" && encodings.length > 1 && sender.track) {
+        Object.assign(encoding, thumbnailEncoding(sender.track, quality));
+      } else {
+        Object.assign(encoding, cameraEncoding(quality));
+        if (encoding.rid === "thumb") encoding.scaleResolutionDownBy = 1;
+      }
+    }
     await sender.setParameters({
       ...parameters,
       encodings,

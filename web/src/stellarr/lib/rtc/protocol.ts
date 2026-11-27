@@ -273,6 +273,7 @@ export function decodeMediaCandidate(payload: string): RTCIceCandidateInit | nul
 /** Every receiving section the media server is to forward, and only those: an empty list stops them all. */
 export interface MediaSubscriptions {
   mids: string[];
+  thumbnailMids?: string[];
 }
 
 export const MAX_MEDIA_SUBSCRIPTIONS = 4096;
@@ -282,8 +283,11 @@ function isSubscriptionMid(value: unknown): value is string {
   return typeof value === "string" && /^[\x21-\x7e]{1,16}$/.test(value);
 }
 
-export function encodeMediaSubscriptions(mids: readonly string[]): string {
-  const payload = JSON.stringify({ mids });
+export function encodeMediaSubscriptions(
+  mids: readonly string[],
+  thumbnailMids: readonly string[] = [],
+): string {
+  const payload = JSON.stringify(thumbnailMids.length ? { mids, thumbnailMids } : { mids });
   if (decodeMediaSubscriptions(payload) === null) throw new TypeError("Invalid media subscriptions.");
   return payload;
 }
@@ -293,7 +297,11 @@ export function decodeMediaSubscriptions(payload: string): MediaSubscriptions | 
   const mids = record?.mids;
   if (!Array.isArray(mids) || mids.length > MAX_MEDIA_SUBSCRIPTIONS) return null;
   if (!mids.every(isSubscriptionMid) || new Set(mids).size !== mids.length) return null;
-  return { mids };
+  const thumbnails = record?.thumbnailMids;
+  if (thumbnails === undefined) return { mids };
+  const allowed = new Set(mids);
+  if (!Array.isArray(thumbnails) || !thumbnails.every(mid => allowed.delete(mid))) return null;
+  return { mids, thumbnailMids: thumbnails };
 }
 
 /** The whole directory of the session, never a delta: `{ tracks: [Track] }`. */

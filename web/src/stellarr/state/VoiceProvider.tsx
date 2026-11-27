@@ -180,7 +180,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   const { preferences } = useAccountContext();
   const { channelName, occupantsOf } = useDirectoryContext();
 
-  const { cameras, observe } = useCameraTiles();
+  const { cameras, largeCameras, observe } = useCameraTiles();
   const [holder] = useState(() => new VoiceHolder());
   // A join asked for before the client exists is honoured, not lost. It is a
   // ref because nothing renders it: it is read back once, when a client appears.
@@ -351,12 +351,13 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     holder.getClient()?.setReceivePreferences({
       cameras,
+      ...(cameras.size ? { largeCameras } : {}),
       screen:
         watchedScreenUserId !== null && watchedScreenStreamId !== null
           ? { userId: watchedScreenUserId, streamId: watchedScreenStreamId }
           : null,
     });
-  }, [holder, ports, userId, cameras, watchedScreenUserId, watchedScreenStreamId]);
+  }, [holder, ports, userId, cameras, largeCameras, watchedScreenUserId, watchedScreenStreamId]);
 
   useVoiceFx({
     soundboard: ports.soundboard,

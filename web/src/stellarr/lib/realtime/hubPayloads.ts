@@ -32,6 +32,7 @@ import {
 } from "@/lib/rtc/protocol";
 import type {
   MediaSessionClosedEvent,
+  OpenedMediaSession,
   MediaSignal,
   RealtimeEventMap,
   RealtimeEventName,
@@ -224,11 +225,10 @@ export function parseMediaSessionClosed(payload: unknown): MediaSessionClosedEve
   return isMediaSessionCloseReason(reason) ? { channelId, sessionId, reason } : null;
 }
 
-/** The result of `OpenMediaSession`, `{ sessionId }`, or null when it is not one. */
-export function parseMediaSessionOpened(result: unknown): string | null {
-  if (!isRecord(result)) return null;
-  const { sessionId } = result;
-  return isSessionId(sessionId) ? sessionId : null;
+/** Older media deployments return only the id and accept a single camera encoding. */
+export function parseMediaSessionOpened(result: unknown): OpenedMediaSession | null {
+  if (!isRecord(result) || !isSessionId(result.sessionId)) return null;
+  return { sessionId: result.sessionId, cameraSimulcast: result.cameraSimulcast === true };
 }
 
 export function parseSoundboardPlayed(

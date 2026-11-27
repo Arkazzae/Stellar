@@ -135,10 +135,10 @@ export function DmCallView({
         {share !== null ? (
           screenTile(share, true)
         ) : them.stream ? (
-          <ParticipantTile {...them} className="dm-call-frame" />
+          <ParticipantTile {...them} largeCamera className="dm-call-frame" />
         ) : (
           <div className="dm-call-who">
-            <ParticipantTile {...them} className={ringing ? "dm-call-face ringing" : "dm-call-face"} />
+            <ParticipantTile {...them} largeCamera className={ringing ? "dm-call-face ringing" : "dm-call-face"} />
             {/* How long, then how the call is protected, behind a dot. */}
             {meta === null && !encrypted ? null : (
               <p className="dm-call-meta">

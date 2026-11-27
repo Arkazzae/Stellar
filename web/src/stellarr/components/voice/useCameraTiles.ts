@@ -1,13 +1,13 @@
 import { createContext, useCallback, useMemo, useState } from "react";
 
-type ObserveTile = (tile: HTMLElement, userId: string) => () => void;
+type ObserveTile = (tile: HTMLElement, userId: string, large: boolean) => () => void;
 
 export const CameraTileContext = createContext<ObserveTile | null>(null);
 
 /** A person may have more than one mounted tile. Keep receiving while any is visible. */
 export function useCameraTiles() {
-  const [visible, setVisible] = useState<ReadonlyMap<HTMLElement, string>>(() => new Map());
-  const observe = useCallback<ObserveTile>((tile, userId) => {
+  const [visible, setVisible] = useState<ReadonlyMap<HTMLElement, { userId: string; large: boolean }>>(() => new Map());
+  const observe = useCallback<ObserveTile>((tile, userId, large) => {
     const doc = tile.ownerDocument;
     const Observer = doc.defaultView?.IntersectionObserver;
     let intersects = !Observer;
@@ -17,7 +17,7 @@ export function useCameraTiles() {
       setVisible((previous) => {
         if (previous.has(tile) === wanted) return previous;
         const next = new Map(previous);
-        if (wanted) next.set(tile, userId);
+        if (wanted) next.set(tile, { userId, large });
         else next.delete(tile);
         return next;
       });
@@ -38,6 +38,13 @@ export function useCameraTiles() {
       update();
     };
   }, []);
-  const cameras = useMemo(() => new Set(visible.values()), [visible]);
-  return { cameras, observe };
+  return useMemo(() => {
+    const cameras = new Set<string>();
+    const largeCameras = new Set<string>();
+    for (const { userId, large } of visible.values()) {
+      cameras.add(userId);
+      if (large) largeCameras.add(userId);
+    }
+    return { cameras, largeCameras, observe };
+  }, [visible, observe]);
 }
