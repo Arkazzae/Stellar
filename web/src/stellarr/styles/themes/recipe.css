@@ -202,6 +202,9 @@
   --surface-stage: oklch(0.9 calc(0.006 * var(--c-neutral)) var(--h-neutral));
   --surface-pop: oklch(0.985 calc(0.004 * var(--c-neutral)) var(--h-neutral));
   --surface-hover: oklch(0.955 calc(0.006 * var(--c-neutral)) var(--h-neutral));
+  /* A pressed or chosen face, and the filled secondary button. Without its own
+     value the light scheme took the dark palette's graphite, under dark text. */
+  --surface-active: oklch(0.9 calc(0.01 * var(--c-neutral)) var(--h-neutral));
 
   --hang: oklch(0.55 0.19 25);
   --hang-hover: oklch(0.48 0.2 25);
