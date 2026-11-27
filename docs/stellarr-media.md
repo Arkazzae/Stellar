@@ -135,6 +135,8 @@ Each receiver runs independent GoogCC bandwidth estimation (`str0m`) from its TW
 | Published tracks / ICE candidates / remote sockets | `8` / `64` / `64` per session | `422 limit-exceeded` / ignored / dropped |
 | Connect / disconnect / unanswered-offer timeouts | `30 s` / `30 s` / `3 × 10 s` | Closed with `transport-timeout` / `error` |
 
+A panic while reading a datagram, candidate or description costs only that input (dropped, or refused like a malformed one), or the one session whose connection already took it (closed with `error`), never the process. Panics are logged through `tracing`: one that ends the process always in full, caught ones in full five times a minute and only counted past that.
+
 **Not implemented:** per-receiver simulcast/SVC layer dropping (tracks forward whole or pause via `heldBack`), SDP m-line recycling (long sessions hitting `128 KiB` auto-replace), active-speaker switching, session survival across hub reconnects, and IPv6 media sockets.
 
 > [!WARNING]

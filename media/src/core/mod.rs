@@ -8,6 +8,8 @@
 //! deterministically and faster than real time.
 
 mod downlink;
+#[cfg(test)]
+mod fault;
 mod session;
 
 use std::cmp::Reverse;
@@ -321,6 +323,49 @@ fn guard<T>(f: impl FnOnce() -> T) -> Result<T, ()> {
     // the process.
     let _guarded = crate::panic_report::enter();
     catch_unwind(AssertUnwindSafe(f)).map_err(|_| ())
+}
+
+/// Where the core reads input that anybody may have chosen, outside the work
+/// on a session's `Rtc` that [`guard`] already covers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Untrusted {
+    /// A datagram or TCP frame, before it belongs to a session.
+    Datagram,
+    /// The USERNAME of a connectivity check, which routes it.
+    Ufrag,
+    /// Whether a session's `Rtc` takes a datagram.
+    Accepts,
+    /// The integrity of the first check on a TCP socket.
+    TcpCheck,
+    Candidate,
+    /// A browser's description, before its `Rtc` has seen it.
+    BrowserOffer,
+    BrowserAnswer,
+    /// The media server's own descriptions, rewritten with the codec order
+    /// and Opus parameters a browser chose.
+    ServerAnswer,
+    ServerOffer,
+}
+
+/// Runs one read of untrusted input under [`guard`]. A panic in a parser
+/// becomes `None`, and the caller decides what it costs: the datagram, the
+/// request, or the session whose `Rtc` already took the input.
+// Only the tests make a read panic on purpose, by its name.
+#[cfg_attr(not(test), allow(unused_variables))]
+fn read<T>(what: Untrusted, f: impl FnOnce() -> T) -> Option<T> {
+    guard(|| {
+        #[cfg(test)]
+        fault::trip(what);
+        f()
+    })
+    .ok()
+}
+
+/// Whether the session's `Rtc` takes the datagram. For a connectivity check
+/// this verifies its integrity, on bytes any sender chose. It only reads the
+/// `Rtc`, so after a panic the datagram is simply not the session's.
+fn accepts(s: &Session, input: &Input) -> bool {
+    read(Untrusted::Accepts, || s.rtc.accepts(input)).unwrap_or(false)
 }
 
 pub(crate) fn random_id() -> String {
@@ -1006,12 +1051,25 @@ impl Core {
                 "candidate must be null or an object with a candidate string.".into(),
             ));
         };
-        // Some browsers end their candidates with an empty one.
-        if line.trim().is_empty() || is_unusable_candidate(line, self.tcp) {
-            return Ok(());
-        }
-        let candidate: Candidate = serde_json::from_value(value.clone())
-            .map_err(|e| ApiError::InvalidCandidate(format!("{e}")))?;
+        // Reading the text touches no session, so a panic in it refuses the
+        // candidate like a malformed one.
+        let parsed = read(Untrusted::Candidate, || {
+            // Some browsers end their candidates with an empty one.
+            if line.trim().is_empty() || is_unusable_candidate(line, self.tcp) {
+                return Ok(None);
+            }
+            serde_json::from_value::<Candidate>(value.clone()).map(Some)
+        });
+        let Some(parsed) = parsed else {
+            return Err(ApiError::InvalidCandidate(
+                "The candidate could not be read.".into(),
+            ));
+        };
+        let candidate = match parsed {
+            Ok(Some(candidate)) => candidate,
+            Ok(None) => return Ok(()),
+            Err(e) => return Err(ApiError::InvalidCandidate(format!("{e}"))),
+        };
 
         let (mut ctx, sessions) = self.ctx();
         if let Some(s) = sessions.get_mut(&key) {
@@ -1171,29 +1229,43 @@ impl Core {
                 "The description is larger than 128 KiB.".into(),
             ));
         }
-        SdpOffer::from_sdp_string(sdp).map_err(|e| ApiError::InvalidSdp(format!("{e}")))?;
-        // str0m tears the connection down when the first description it
-        // gets has no fingerprint; refusing it here keeps the session usable.
-        if !sdp_text::has_fingerprint(sdp) {
-            return Err(ApiError::InvalidSdp(
-                "The description has no a=fingerprint.".into(),
-            ));
-        }
-
         let s = self
             .sessions
             .get_mut(&key)
             .ok_or(ApiError::UnknownSession)?;
-        let sections = sdp_text::sections(sdp);
-        let published = sdp_text::count_published(&sections, |mid| s.is_server_mid(mid));
-        if published > MAX_PUBLISHED {
-            return Err(ApiError::LimitExceeded(format!(
-                "The description publishes {published} tracks; at most {MAX_PUBLISHED} are allowed."
-            )));
-        }
-        let narrowed = sdp_text::narrow_offer_directions(sdp, |mid| s.is_server_mid(mid));
-        let offer = SdpOffer::from_sdp_string(&narrowed)
-            .map_err(|e| ApiError::InvalidSdp(format!("{e}")))?;
+        // Everything that reads the text runs under one guard. None of it
+        // touches the `Rtc`, so a panic refuses the offer and leaves the
+        // session as it was.
+        let parsed = read(Untrusted::BrowserOffer, || -> Result<_, ApiError> {
+            SdpOffer::from_sdp_string(sdp).map_err(|e| ApiError::InvalidSdp(format!("{e}")))?;
+            // str0m tears the connection down when the first description it
+            // gets has no fingerprint; refusing it here keeps the session usable.
+            if !sdp_text::has_fingerprint(sdp) {
+                return Err(ApiError::InvalidSdp(
+                    "The description has no a=fingerprint.".into(),
+                ));
+            }
+
+            let sections = sdp_text::sections(sdp);
+            let published = sdp_text::count_published(&sections, |mid| s.is_server_mid(mid));
+            if published > MAX_PUBLISHED {
+                return Err(ApiError::LimitExceeded(format!(
+                    "The description publishes {published} tracks; at most {MAX_PUBLISHED} are allowed."
+                )));
+            }
+            let narrowed = sdp_text::narrow_offer_directions(sdp, |mid| s.is_server_mid(mid));
+            let offer = SdpOffer::from_sdp_string(&narrowed)
+                .map_err(|e| ApiError::InvalidSdp(format!("{e}")))?;
+            let format_orders = sdp_text::format_orders(&narrowed);
+            let opus_params = sdp_text::opus_params(&narrowed, |mid| !s.is_server_mid(mid));
+            Ok((sections, offer, format_orders, opus_params))
+        });
+        let Some(parsed) = parsed else {
+            return Err(ApiError::InvalidSdp(
+                "The description could not be read.".into(),
+            ));
+        };
+        let (sections, offer, format_orders, opus_params) = parsed?;
 
         // The media server is the polite side of a collision: its own offer
         // is rolled back, the browser's is answered, and it offers again.
@@ -1234,10 +1306,21 @@ impl Core {
             }
         };
 
-        s.format_orders = sdp_text::format_orders(&narrowed);
-        let opus_params = sdp_text::opus_params(&narrowed, |mid| !s.is_server_mid(mid));
+        s.format_orders = format_orders;
         s.opus_params = opus_params;
-        let answer_sdp = s.describe(&answer.to_sdp_string());
+        // The `Rtc` has taken the offer, so a panic here ends the session.
+        let described = read(Untrusted::ServerAnswer, || {
+            s.describe(&answer.to_sdp_string())
+        });
+        let Some(answer_sdp) = described else {
+            ctx.work.push_back(Work::Close {
+                key,
+                reason: CloseReason::Error,
+            });
+            return Err(ApiError::InvalidSdp(
+                "The description could not be applied.".into(),
+            ));
+        };
 
         // A browser that restarts ICE gets new credentials from str0m, and
         // its first checks after that are routed by them.
@@ -1435,9 +1518,14 @@ impl Core {
             ));
         }
         // Parsed before the pending offer is spent, so a malformed answer
-        // leaves the offer waiting for a good one.
-        let answer =
-            SdpAnswer::from_sdp_string(sdp).map_err(|e| ApiError::InvalidSdp(format!("{e}")))?;
+        // leaves the offer waiting for a good one, and so does a panic.
+        let parsed = read(Untrusted::BrowserAnswer, || SdpAnswer::from_sdp_string(sdp));
+        let Some(parsed) = parsed else {
+            return Err(ApiError::InvalidSdp(
+                "The description could not be read.".into(),
+            ));
+        };
+        let answer = parsed.map_err(|e| ApiError::InvalidSdp(format!("{e}")))?;
 
         let pending = s.negotiation.pending.take().expect("checked above");
         let inactive = pending.inactive;
@@ -1605,7 +1693,18 @@ impl Core {
         for ((idx, _, _), mid) in wants.iter().zip(mids) {
             s.outs[*idx].state = OutState::Offered(mid);
         }
-        let sdp = s.describe(&offer.to_sdp_string());
+        // The `Rtc` has made the offer, so a panic here ends the session.
+        let described = read(Untrusted::ServerOffer, || {
+            s.describe(&offer.to_sdp_string())
+        });
+        let Some(sdp) = described else {
+            drop(pending);
+            ctx.work.push_back(Work::Close {
+                key,
+                reason: CloseReason::Error,
+            });
+            return false;
+        };
         if sdp.len() > MAX_SDP_BYTES {
             warn!(session = %s.id, "the media server's offer would exceed 128 KiB");
             drop(pending);
@@ -1678,7 +1777,13 @@ impl Core {
         if buf.is_empty() || buf.len() > MAX_DATAGRAM || !endpoint.remote.is_ipv4() {
             return None;
         }
-        let receive = Receive::new(endpoint.protocol, endpoint.remote, endpoint.local, buf).ok()?;
+        // This parses what anybody on the Internet sends, before the packet
+        // belongs to a session, so a panic here drops the packet.
+        let Some(Ok(receive)) = read(Untrusted::Datagram, || {
+            Receive::new(endpoint.protocol, endpoint.remote, endpoint.local, buf)
+        }) else {
+            return None;
+        };
         let input = Input::Receive(now, receive);
         let key = self.route(endpoint, buf, &input, owner)?;
 
@@ -1721,35 +1826,38 @@ impl Core {
         // does not depend on the bounded cache of recent UDP endpoints.
         if let Some(owner) = owner {
             let session = self.sessions.get(&owner)?;
-            return (stun::local_ufrag(buf).is_none_or(|ufrag| ufrag == session.ufrag)
-                && session.rtc.accepts(input))
-            .then_some(owner);
+            let ufrag = read(Untrusted::Ufrag, || stun::local_ufrag(buf))?;
+            return (ufrag.is_none_or(|local| local == session.ufrag) && accepts(session, input))
+                .then_some(owner);
         }
         if !tcp
             && let Some(&key) = self.by_addr.get(&endpoint)
-            && self
-                .sessions
-                .get(&key)
-                .is_some_and(|s| s.rtc.accepts(input))
+            && self.sessions.get(&key).is_some_and(|s| accepts(s, input))
         {
             return Some(key);
         }
 
-        let ufrag = stun::local_ufrag(buf)?;
+        let ufrag = read(Untrusted::Ufrag, || stun::local_ufrag(buf)).flatten()?;
         let key = *self.by_ufrag.get(ufrag)?;
         let s = self.sessions.get_mut(&key)?;
-        if !s.rtc.accepts(input) {
+        if !accepts(s, input) {
             return None;
         }
         if tcp {
             // Rtc::accepts also has an address-only fast path for the
             // nominated pair, which cannot authenticate a new TCP socket.
-            let request = StunMessage::parse(buf).ok()?;
+            // Nobody has authenticated this socket yet, so a panic in
+            // reading its frame authorises nothing.
             let creds = s.rtc.direct_api().local_ice_credentials();
             let hmac = self.crypto.sha1_hmac_provider;
-            if !request.is_binding_request()
-                || !request.verify(creds.pass.as_bytes(), |key, data| hmac.sha1_hmac(key, data))
-            {
+            let verified = read(Untrusted::TcpCheck, || {
+                let Ok(request) = StunMessage::parse(buf) else {
+                    return false;
+                };
+                request.is_binding_request()
+                    && request.verify(creds.pass.as_bytes(), |key, data| hmac.sha1_hmac(key, data))
+            });
+            if verified != Some(true) {
                 return None;
             }
         }
