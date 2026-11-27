@@ -58,6 +58,8 @@ enum LaunchMode {
 fn default_launch_modes() -> Vec<LaunchMode> {
     vec![LaunchMode::Voice]
 }
+/// What a manifest may ask for; `sdk/dev/files.js` accepts the same.
+const PERMISSIONS: [&str; 3] = ["media.microphoneLevel", "media.cameraTile", "media.gifs"];
 
 #[derive(Clone, Deserialize, Serialize)]
 struct Manifest {
@@ -101,7 +103,7 @@ impl Manifest {
         if let Some(name) = self
             .permissions
             .iter()
-            .find(|p| !matches!(p.as_str(), "media.microphoneLevel" | "media.cameraTile"))
+            .find(|p| !PERMISSIONS.contains(&p.as_str()))
         {
             return Err(invalid(format!("Unsupported permission: {name}")));
         }

@@ -612,6 +612,9 @@ mod tests {
         assert!(unpack(data, &entry).is_err());
         let (data, entry) = archive("unknown", "art/board.png");
         assert!(unpack(data, &entry).is_err());
+        let (data, entry) = archive("media.gifs", "art/board.png");
+        let package = unpack(data, &entry).unwrap();
+        assert_eq!(package.manifest.permissions, ["media.gifs"]);
     }
     #[test]
     fn accepts_repository_and_published_tag_links_only() {
