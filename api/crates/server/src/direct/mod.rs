@@ -15,7 +15,7 @@
 mod encryption;
 mod history;
 mod open;
-mod post;
+pub(crate) mod post;
 mod read;
 
 use rusqlite::{Connection, OptionalExtension, params};
