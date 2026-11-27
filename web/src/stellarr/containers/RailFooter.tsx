@@ -46,7 +46,7 @@ export const RailVoiceDock = memo(function RailVoiceDock() {
 
   // The call's own view is on screen, with its bar: a channel's stage, or the
   // conversation whose call this is.
-  const callViewOpen = (ui.space === "server" && ui.roomView === "voice") || ui.inConversationCall;
+  const callViewOpen = (!ui.activityOpen && ui.space === "server" && ui.roomView === "voice") || ui.inConversationCall;
 
   return (
     <VoiceDock

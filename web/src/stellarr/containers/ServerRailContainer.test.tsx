@@ -59,6 +59,18 @@ describe("ServerRailContainer", () => {
     expect(stubs.ui.setRailOpen).toHaveBeenCalledWith(false);
   });
 
+  it.each([["server", 1024], ["dm", 500]] as const)("opens solo activities from the %s rail", async (space, width) => {
+    window.innerWidth = width;
+    setStubs({ ui: { space, railOpen: true } });
+    const user = userEvent.setup();
+    render(<ServerRailContainer />);
+    await user.click(screen.getByRole("button", { name: "Dodaj serwer i więcej" }));
+    await user.click(screen.getByRole("button", { name: "Aktywności solo" }));
+    expect(stubs.activities.openPicker).toHaveBeenCalledWith({ scope: "personal" });
+    expect(stubs.ui.openFriends).not.toHaveBeenCalled();
+    if (width < 768) expect(stubs.ui.setRailOpen).toHaveBeenCalledWith(false);
+  });
+
   it("opens the installation, creation and discovery dialogs", async () => {
     const user = userEvent.setup();
     render(<ServerRailContainer />);

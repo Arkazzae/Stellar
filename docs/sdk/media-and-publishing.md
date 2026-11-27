@@ -205,7 +205,7 @@ Place `stellarr.json` beside `index.html` at the root of your published folder (
   "icon": "icon.webp",
   "cover": "cover.webp",
   "devices": ["desktop", "tablet", "phone"],
-  "launchModes": ["voice", "personal"],
+  "launchModes": ["voice"],
   "authority": "host",
   "seats": 25,
   "permissions": [],

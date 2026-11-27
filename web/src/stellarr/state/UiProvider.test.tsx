@@ -173,6 +173,23 @@ describe("UiProvider navigation", () => {
     expect(result.current.space).toBe("server");
   });
 
+  it("returns to the same channel or DM when a solo activity closes", () => {
+    const { result } = mountUi();
+    act(() => result.current.selectTextChannel("ch-random"));
+    act(() => result.current.openActivity());
+    expect(result.current).toMatchObject({ space: "server", activityOpen: true, activeChannelId: null });
+    act(() => result.current.closeActivity());
+    expect(result.current.activeChannelId).toBe("ch-random");
+    act(() => result.current.openDm("dm-1"));
+    act(() => result.current.openActivity());
+    expect(result.current.activeDmId).toBeNull();
+    act(() => result.current.closeActivity());
+    expect(result.current.activeDmId).toBe("dm-1");
+    act(() => result.current.openActivity());
+    act(() => result.current.openServer());
+    expect(result.current.activityOpen).toBe(false);
+  });
+
   it("starts a conversation on everyone, with the search asked for until the view takes it", () => {
     const { result } = mountUi();
     act(() => result.current.openDm("dm-1"));

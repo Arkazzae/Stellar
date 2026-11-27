@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
+import { PERSONAL } from "@/lib/activities/api";
 import type { Message } from "@/ports";
 import { AppBadge } from "./AppBadge";
 import { ShareTarget } from "./ShareTarget";
@@ -14,7 +15,7 @@ import { EncryptionProvider } from "@/state/EncryptionProvider";
 import { FriendsProvider } from "@/state/FriendsProvider";
 import { KeybindProvider } from "@/state/KeybindProvider";
 import { NotificationProvider } from "@/state/NotificationProvider";
-import { useFriends, useUi } from "@/state/hooks";
+import { useActivities, useActivitySlot, useFriends, useLanguage, useUi } from "@/state/hooks";
 import { ProfileProvider } from "@/state/ProfileProvider";
 import { UiProvider } from "@/state/UiProvider";
 import { VoiceProvider } from "@/state/VoiceProvider";
@@ -94,15 +95,39 @@ export function AppContainer(props: LaunchProps = {}) {
   );
 }
 
+function PersonalActivityRoom({ title }: { title: string }) {
+  const slot = useActivitySlot("personal");
+  return (
+    <main className="room activity-room" aria-label={title}>
+      <div className="act-slot" ref={slot} />
+    </main>
+  );
+}
+
 function Shell({ entry, onEntryHandled }: LaunchProps) {
   const [noticeMessage, setNoticeMessage] = useState<Message | null>(null);
   const ui = useUi();
   const { active } = useFriends();
+  const { personal, ended } = useActivities();
+  const { t } = useLanguage();
+  const foreground = ui.activityOpen ? personal : null;
   const dm = ui.space === "dm";
-  // The roster's column, beside a conversation, holds the other person's
-  // profile, or during its call the chat; one at a time. The Friends view
-  // lists people itself, so there it stays shut.
-  const conversation = dm && active !== null;
+  let room: ReactNode;
+  let roster: ReactNode = null;
+  let rosterOpen = false;
+  if (foreground !== null) {
+    room = <PersonalActivityRoom title={foreground.title} />;
+  } else if (dm) {
+    room = <FriendsRoomContainer />;
+    if (active !== null) {
+      roster = <><DmProfileContainer /><DmCallChatContainer /></>;
+      rosterOpen = ui.profilePanelOpen || ui.callChatOpen;
+    }
+  } else {
+    room = <RoomContainer noticeMessage={noticeMessage} onNoticeConsumed={setNoticeMessage} />;
+    roster = <RosterContainer />;
+    rosterOpen = ui.rosterOpen;
+  }
 
   return (
     <>
@@ -117,25 +142,12 @@ function Shell({ entry, onEntryHandled }: LaunchProps) {
         // showing rather than hidden: the DM rail holds a search field and the
         // channel rail a drag state, and neither should survive a switch.
         rail={dm ? <DmRailContainer /> : <RailContainer />}
-        room={dm ? <FriendsRoomContainer /> : <RoomContainer noticeMessage={noticeMessage} onNoticeConsumed={setNoticeMessage} />}
-        roster={
-          dm ? (
-            conversation ? (
-              <>
-                <DmProfileContainer />
-                <DmCallChatContainer />
-              </>
-            ) : null
-          ) : (
-            <RosterContainer />
-          )
-        }
-        dmSpace={dm}
+        room={room}
+        roster={roster}
+        dmSpace={dm || foreground !== null}
         railOpen={ui.railOpen}
         onRailOpenChange={ui.setRailOpen}
-        rosterOpen={
-          dm ? conversation && (ui.profilePanelOpen || ui.callChatOpen) : ui.rosterOpen
-        }
+        rosterOpen={rosterOpen}
         onRosterOpenChange={
           dm ? (ui.callChatOpen ? ui.setCallChatOpen : ui.setProfilePanelOpen) : ui.setRosterOpen
         }
@@ -146,6 +158,9 @@ function Shell({ entry, onEntryHandled }: LaunchProps) {
           elsewhere hides a frame instead of unloading it, and laid over the
           place the open view keeps for it. */}
       <ActivityHost />
+      {ended?.place === PERSONAL && (
+        <p className="act-personal-ended" role="status">{t("activities.ended", { name: ended.name })}</p>
+      )}
       {/* Outside the grid: the dialogs are fixed overlays, and mounting them
           inside `.app` would put them under the shell's stacking context. */}
       <ModalsContainer />

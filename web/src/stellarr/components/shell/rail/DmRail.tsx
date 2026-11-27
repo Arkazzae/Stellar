@@ -1,7 +1,6 @@
 import { useId, useState, type ReactNode } from "react";
 
 import { Icon } from "@stellarr/icons";
-import { ActivityIcon } from "@/components/activities/ActivityIcon";
 import { Avatar } from "@/components/primitives/Avatar";
 import type { DmConversationVM } from "@/components/view-models";
 import { PRESENCE_LABEL } from "@/ports";
@@ -19,14 +18,6 @@ export interface DmRailProps {
   onOpenFriends: () => void;
   /** Incoming friend requests waiting for an answer; the count on the Friends row. */
   pending: number;
-  /** Opens the activities you can run for yourself. Absent hides the row. */
-  onOpenActivities?: () => void;
-  /** The activity you run for yourself, as its row under Activities shows it. */
-  personalActivity?: PersonalActivityVM | null;
-  onShowActivity?: () => void;
-  onCloseActivity?: () => void;
-  /** Said for a moment where your activity's row was, when it ended under you. */
-  activityNotice?: string | null;
   conversations: DmConversationVM[];
   activeDmId: string | null;
   onSelect: (id: string) => void;
@@ -42,15 +33,6 @@ export interface DmRailProps {
    * way the roster handles it.
    */
   hidden?: boolean;
-}
-
-/** The activity you run for yourself, in the rail. */
-export interface PersonalActivityVM {
-  install: string;
-  name: string;
-  icon: string | null;
-  /** It has the room right now, rather than running in the background. */
-  shown: boolean;
 }
 
 interface ConversationRowProps {
@@ -137,11 +119,6 @@ export function DmRail({
   friendsActive,
   onOpenFriends,
   pending,
-  onOpenActivities,
-  personalActivity = null,
-  onShowActivity,
-  onCloseActivity,
-  activityNotice = null,
   conversations,
   activeDmId,
   onSelect,
@@ -223,54 +200,6 @@ export function DmRail({
             ) : null}
           </button>
         </div>
-
-        {onOpenActivities === undefined ? null : (
-          <div className="channel">
-            <button type="button" className="channel-main" aria-haspopup="dialog" onClick={onOpenActivities}>
-              <span className="glyph" aria-hidden="true">
-                <Icon name="game" size={16} />
-              </span>
-              <span className="name">{t("activities.title")}</span>
-            </button>
-          </div>
-        )}
-
-        {/* Your own activity is a place, like Friends: open, or in the
-            background with a word saying so, and closed from its row. */}
-        {personalActivity === null ? null : (
-          <div className={personalActivity.shown ? "channel active dm-act" : "channel dm-act"}>
-            <button
-              type="button"
-              className="channel-main"
-              aria-current={personalActivity.shown ? "page" : undefined}
-              onClick={onShowActivity}
-            >
-              <ActivityIcon
-                install={personalActivity.install}
-                name={personalActivity.name}
-                icon={personalActivity.icon}
-                size={16}
-              />
-              <span className="name">{personalActivity.name}</span>
-              {personalActivity.shown ? null : <span className="dm-act-state">{t("activities.background")}</span>}
-            </button>
-            <button
-              type="button"
-              className="dm-act-close"
-              aria-label={t("activities.closeNamed", { name: personalActivity.name })}
-              title={t("activities.closeNamed", { name: personalActivity.name })}
-              onClick={onCloseActivity}
-            >
-              <Icon name="x" size={14} />
-            </button>
-          </div>
-        )}
-
-        {activityNotice === null ? null : (
-          <p className="dm-act-ended" role="status">
-            {activityNotice}
-          </p>
-        )}
 
         <h2 className="group-caption">{t("shell.privateMessages")}</h2>
 

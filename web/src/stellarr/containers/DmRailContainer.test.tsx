@@ -108,41 +108,8 @@ describe("DmRailContainer", () => {
     expect(stubs.ui.newConversation).toHaveBeenCalledOnce();
   });
 
-  it("starts an activity for yourself, keeps it in the background, and closes it from its row", async () => {
-    setStubs({
-      activities: {
-        personal: {
-          place: "personal",
-          install: "synctube",
-          access: "lease-one",
-          src: "https://synctube.games.test/",
-          title: "SyncTube",
-          icon: null,
-          permissions: [],
-          embedHosts: [],
-        },
-      },
-    });
-    const user = userEvent.setup();
+  it("keeps the activity launcher out of Friends", () => {
     render(<DmRailContainer />);
-
-    await user.click(screen.getByRole("button", { name: "Aktywności" }));
-    expect(stubs.activities.openPicker).toHaveBeenCalledWith({ scope: "personal" });
-
-    const row = screen.getByRole("button", { name: /^SyncTube/ });
-    expect(row).toHaveTextContent("w tle");
-    expect(screen.getByRole("button", { name: "Znajomi" })).toHaveAttribute("aria-current", "page");
-    await user.click(row);
-    expect(stubs.ui.openActivity).toHaveBeenCalledOnce();
-
-    await user.click(screen.getByRole("button", { name: "Zamknij SyncTube" }));
-    expect(stubs.activities.leave).toHaveBeenCalledWith("personal");
-  });
-
-  it("says so when your activity ends under you", () => {
-    setStubs({ activities: { personal: null, ended: { place: "personal", name: "SyncTube" } } });
-    render(<DmRailContainer />);
-
-    expect(screen.getByText("Aktywność SyncTube się zakończyła.")).toHaveAttribute("role", "status");
+    expect(screen.queryByRole("button", { name: /Aktywności/ })).toBeNull();
   });
 });

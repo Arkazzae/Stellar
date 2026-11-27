@@ -34,8 +34,7 @@ const CLOSE_DELAY_MS = 140;
  * The tile at the foot of the server column and the card of actions that
  * rises out of it.
  *
- * These actions concern the server list as a whole (make a server, find one,
- * install the app), so they live under the list rather than in it. Hovering
+ * App-wide actions live at the foot of the server list. Hovering
  * the tile opens the card, but hover is never the only way in: focus opens it
  * too, Escape closes it, and its rows are ordinary buttons in the tab order.
  */

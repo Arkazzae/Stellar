@@ -6,8 +6,7 @@ import type { DmConversationVM } from "@/components/view-models";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { formatShortAgo, initials } from "@/lib/format/format";
 import type { DmConversation } from "@/ports";
-import { PERSONAL } from "@/lib/activities/api";
-import { useActivities, useFriends, useLanguage, useSession, useUi } from "@/state/hooks";
+import { useFriends, useLanguage, useSession, useUi } from "@/state/hooks";
 
 import { RailAccount, RailVoiceDock } from "./RailFooter";
 
@@ -66,8 +65,6 @@ function previewOf(
 export function DmRailContainer() {
   const ui = useUi();
   const friends = useFriends();
-  const { personal, openPicker, leave, ended } = useActivities();
-  const activityShown = ui.activityOpen && personal !== null;
   const { t, locale } = useLanguage();
   const { user } = useSession();
   const selfId = user?.id ?? "";
@@ -106,18 +103,9 @@ export function DmRailContainer() {
 
   return (
     <DmRail
-      friendsActive={ui.activeDmId === null && !activityShown}
+      friendsActive={ui.activeDmId === null && !ui.activityOpen}
       onOpenFriends={ui.openFriends}
       pending={friends.incoming}
-      onOpenActivities={() => openPicker({ scope: "personal" })}
-      personalActivity={
-        personal === null
-          ? null
-          : { install: personal.install, name: personal.title, icon: personal.icon, shown: activityShown }
-      }
-      onShowActivity={ui.openActivity}
-      onCloseActivity={() => leave("personal")}
-      activityNotice={ended?.place === PERSONAL ? t("activities.ended", { name: ended.name }) : null}
       conversations={conversations}
       activeDmId={ui.activeDmId}
       onSelect={ui.openDm}

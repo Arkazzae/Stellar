@@ -152,12 +152,11 @@ export interface UiValue extends PanelsValue, DialogsValue {
   takeFriendsSearch: () => void;
   openDm: (id: string) => void;
   /**
-   * The activity you run for yourself has the room, on the messages side, in
-   * place of Friends or a conversation. Going to either hides it again; it
-   * keeps running in the background.
+   * A personal activity occupies the room until you close it or navigate away.
    */
   activityOpen: boolean;
   openActivity: () => void;
+  closeActivity: () => void;
   /** Back to the server rail and whatever channel it was last on. */
   openServer: () => void;
   /** The text channel the room returns to when a call ends. */
@@ -492,7 +491,9 @@ export function UiProvider({ children }: { children: ReactNode }) {
   const voiceChannelId = voice.channelId;
 
   const [space, setSpace] = useState<Space>("server");
-  const [activeDmId, setActiveDmId] = useState<string | null>(null);
+  const [activityOpen, setActivityOpen] = useState(false);
+  const [selectedDmId, setSelectedDmId] = useState<string | null>(null);
+  const activeDmId = activityOpen ? null : selectedDmId;
   // A conversation's call is its own room, named by the conversation's id.
   const callRoom =
     space === "dm" && activeDmId !== null && activeDmId === voiceChannelId ? activeDmId : null;
@@ -506,8 +507,6 @@ export function UiProvider({ children }: { children: ReactNode }) {
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [friendsTab, setFriendsTab] = useState<FriendsTab>("online");
   const [friendsSearchRequested, setFriendsSearchRequested] = useState(false);
-  const [activityChosen, setActivityChosen] = useState(false);
-  const activityOpen = activityChosen && space === "dm" && activeDmId === null;
   /*
    * Cinema belongs to the call it was turned on in, so it ends with that call
    * however the call ends: the other person declining a private call, a lost
@@ -517,7 +516,7 @@ export function UiProvider({ children }: { children: ReactNode }) {
    */
   const [cinemaRoom, setCinemaRoom] = useState<string | null>(null);
   if (cinemaRoom !== null && cinemaRoom !== voiceChannelId) setCinemaRoom(null);
-  const cinema = cinemaRoom !== null && cinemaRoom === voiceChannelId;
+  const cinema = !activityOpen && cinemaRoom !== null && cinemaRoom === voiceChannelId;
 
   /*
    * A picked channel that leaves the list, because it was deleted or because
@@ -545,6 +544,7 @@ export function UiProvider({ children }: { children: ReactNode }) {
       setSelectedTextId(channelId);
       setRoomView("text");
       // The rail that raised this is the server's, so the room follows it there.
+      setActivityOpen(false);
       setSpace("server");
       closeDrawers();
     },
@@ -553,17 +553,17 @@ export function UiProvider({ children }: { children: ReactNode }) {
 
   const openFriends = useCallback(() => {
     setSpace("dm");
-    setActiveDmId(null);
-    setActivityChosen(false);
+    setSelectedDmId(null);
+    setActivityOpen(false);
     closeDrawers();
   }, [closeDrawers]);
 
   const openActivity = useCallback(() => {
-    setSpace("dm");
-    setActiveDmId(null);
-    setActivityChosen(true);
+    setActivityOpen(true);
     closeDrawers();
   }, [closeDrawers]);
+
+  const closeActivity = useCallback(() => setActivityOpen(false), []);
 
   const newConversation = useCallback(() => {
     setFriendsTab("all");
@@ -576,14 +576,15 @@ export function UiProvider({ children }: { children: ReactNode }) {
   const openDm = useCallback(
     (id: string) => {
       setSpace("dm");
-      setActiveDmId(id);
-      setActivityChosen(false);
+      setSelectedDmId(id);
+      setActivityOpen(false);
       closeDrawers();
     },
     [closeDrawers],
   );
 
   const openServer = useCallback(() => {
+    setActivityOpen(false);
     setSpace("server");
     closeDrawers();
   }, [closeDrawers]);
@@ -595,6 +596,7 @@ export function UiProvider({ children }: { children: ReactNode }) {
       // a join that fails leaves the stage up and says why.
       voiceRef.current.join(channelId);
       setRoomView("voice");
+      setActivityOpen(false);
       setSpace("server");
       closeDrawers();
     },
@@ -610,6 +612,7 @@ export function UiProvider({ children }: { children: ReactNode }) {
   // The dock shows in a conversation too, but the stage only exists on the
   // server side.
   const returnToChannel = useCallback(() => {
+    setActivityOpen(false);
     setSpace("server");
     setRoomView("voice");
   }, []);
@@ -647,9 +650,10 @@ export function UiProvider({ children }: { children: ReactNode }) {
       openDm,
       activityOpen,
       openActivity,
+      closeActivity,
       openServer,
-      activeTextChannelId,
-      activeChannelId: roomView === "voice" ? voiceChannelId : activeTextChannelId,
+      activeTextChannelId: activityOpen ? null : activeTextChannelId,
+      activeChannelId: activityOpen ? null : roomView === "voice" ? voiceChannelId : activeTextChannelId,
       cinema,
       setCinema,
       toggleCinema,
@@ -673,6 +677,7 @@ export function UiProvider({ children }: { children: ReactNode }) {
       openDm,
       activityOpen,
       openActivity,
+      closeActivity,
       openServer,
       activeTextChannelId,
       voiceChannelId,

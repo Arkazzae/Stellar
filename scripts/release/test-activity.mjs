@@ -17,10 +17,10 @@ try {
   }).then(r => r.status)`);
   assert.equal(status, 200, "voice smoke test owner login");
   await page.goto(origin);
-  const friends = 'document.querySelector(\'button[aria-label="Friends and direct messages"]\')';
-  const activities = '[...document.querySelectorAll(\'[role="tab"]\')].find(tab => tab.textContent.trim() === "Activities")';
-  const start = 'document.querySelector(\'button[aria-label="Release check · Launch for myself"]\')';
-  for (const selector of [friends, activities]) {
+  const launcher = `document.querySelector('[aria-label="Add a server and more"]')`;
+  const activities = `document.querySelector('.srv-menu:not([hidden]) button[aria-label="Solo activities"]')`;
+  const start = '[...document.querySelectorAll(".act-card")].find(card => card.querySelector(".act-card-name")?.textContent === "Release check")';
+  for (const selector of [launcher, activities]) {
     await page.waitFor(selector);
     await page.eval(selector + ".click()");
   }
