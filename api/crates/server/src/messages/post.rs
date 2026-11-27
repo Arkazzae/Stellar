@@ -20,6 +20,7 @@ use crate::permissions::authorization::{Held, held_in_channel};
 use crate::permissions::membership::ActiveServer;
 use crate::permissions::privileges::{ATTACH_FILES, MANAGE_CHANNELS, SEND_MESSAGES};
 use crate::permissions::visibility::{self, ChannelKind, ChannelPlace};
+use crate::scheduled::Claim;
 use crate::state::AppState;
 use crate::values::{Id, Timestamp};
 
@@ -43,6 +44,8 @@ pub struct Submission {
     pub attachments: Vec<Id>,
     pub reply_to: Option<Id>,
     pub client_id: Option<Id>,
+    /// The scheduled message this is, which leaves the queue with it.
+    pub scheduled: Option<Claim>,
 }
 
 /// How a post ended.
@@ -82,11 +85,25 @@ pub fn post(
     // be refused for the attachments it already used, so it is recognised
     // first.
     if let Some(replay) = replay(db, messages, submission)? {
+        // A scheduled message that went out before leaves the queue with
+        // this retry.
+        if let (Ok(_), Some(claim)) = (&replay, submission.scheduled) {
+            claim.settle(db)?;
+        }
         return replay;
     }
 
     let now = Timestamp::now();
     let attachments = admit(db, messages, &place, held, submission, now)?;
+
+    // A scheduled message leaves the queue in the transaction that posts it,
+    // so that a restart cannot post it twice; one edited or deleted since it
+    // was read is not posted at all.
+    if let Some(claim) = submission.scheduled
+        && !claim.take(db)?
+    {
+        return Err(Stop::refused(Reason::Withdrawn, ApiError::conflict()));
+    }
 
     let id = submission.client_id.unwrap_or_else(Id::random);
     db.prepare_cached(
@@ -109,9 +126,13 @@ pub fn post(
         .execute(params![id, attachment])?;
     }
 
-    // Whoever sent a message has read everything before it, and nobody is told
-    // about a message that was not stored.
-    let read = Some(advance_read(db, channel, author, now)?);
+    // Whoever sent a message has read everything before it, unless it was sent
+    // from the queue while they were away; and nobody is told about a message
+    // that was not stored.
+    let read = match submission.scheduled {
+        None => Some(advance_read(db, channel, author, now)?),
+        Some(_) => None,
+    };
     let author_name: String = crate::instance::users::User::display_name(db, author)?;
     let mentioned = mentions::notify(
         db,
@@ -485,6 +506,7 @@ pub async fn create(
         attachments,
         reply_to: request.reply_to_message_id,
         client_id: request.client_message_id,
+        scheduled: None,
     };
 
     let outcome = state

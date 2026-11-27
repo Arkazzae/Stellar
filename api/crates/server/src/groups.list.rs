@@ -27,6 +27,7 @@ groups! {
     uploads,
     moderation,
     roles,
+    scheduled,
     second_step,
     theme_sources,
     voice,

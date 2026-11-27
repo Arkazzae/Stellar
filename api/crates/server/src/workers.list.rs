@@ -6,5 +6,6 @@ workers! {
     delivery,
     mail::security_alerts,
     realtime::watcher,
+    scheduled,
     voice,
 }

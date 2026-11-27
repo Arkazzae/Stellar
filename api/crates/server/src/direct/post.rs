@@ -16,6 +16,7 @@ use crate::http::{ApiError, ApiResult, Json, Path, json_response};
 use crate::delivery::outbox;
 use crate::messages::{MAX_CODE_CONTENT_UNITS, Reason, Stop, content_limit, field_problem, trimmed, units};
 use crate::social::conversations::{self, DirectMessage};
+use crate::scheduled::Claim;
 use crate::social::is_blocked;
 use crate::state::AppState;
 use crate::values::{Id, Timestamp};
@@ -43,6 +44,32 @@ pub(crate) struct Submission {
     encrypted: bool,
     client_id: Option<Id>,
     payload: Option<Payload>,
+    /// The scheduled message this is, which leaves the queue with it.
+    scheduled: Option<Claim>,
+}
+
+impl Submission {
+    /// A message in plain text whose limits were checked already, as a
+    /// scheduled message is.
+    pub(crate) fn plain(
+        conversation: Id,
+        author: Id,
+        content: String,
+        attachments: Vec<Id>,
+        client_id: Option<Id>,
+        scheduled: Option<Claim>,
+    ) -> Submission {
+        Submission {
+            conversation,
+            author,
+            content,
+            attachments,
+            encrypted: false,
+            client_id,
+            payload: None,
+            scheduled,
+        }
+    }
 }
 
 /// What the request said, read.
@@ -168,7 +195,14 @@ pub(crate) fn store(
     // peer's settings.
     if let Some(id) = submission.client_id {
         match produced(tx, submission, id)? {
-            Some(true) => return Ok(Posted::Replayed(load(tx, id)?)),
+            Some(true) => {
+                // A scheduled message that went out before leaves the queue
+                // with this retry.
+                if let Some(claim) = submission.scheduled {
+                    claim.settle(tx)?;
+                }
+                return Ok(Posted::Replayed(load(tx, id)?));
+            }
             Some(false) => return Err(ApiError::conflict().into()),
             None => {}
         }
@@ -187,6 +221,15 @@ pub(crate) fn store(
             (_, error) => Stop::Answer(error),
         },
     )?;
+
+    // A scheduled message leaves the queue in the transaction that posts it,
+    // so that a restart cannot post it twice; one edited or deleted since it
+    // was read is not posted at all.
+    if let Some(claim) = submission.scheduled
+        && !claim.take(tx)?
+    {
+        return Err(Stop::refused(Reason::Withdrawn, ApiError::conflict()));
+    }
 
     let id = submission.client_id.unwrap_or_else(Id::random);
     let payload = submission.payload.as_ref();
@@ -211,10 +254,13 @@ pub(crate) fn store(
             params![id, attachment],
         )?;
     }
-    // Whoever sent a message has read everything before it. Only the
-    // peer is a recipient of its deliveries, which commit with the
-    // message; a retry never reaches this point.
-    set_read(tx, submission.conversation, submission.author, now)?;
+    // Whoever sent a message has read everything before it, unless it was
+    // sent from the queue while they were away. Only the peer is a
+    // recipient of its deliveries, which commit with the message; a retry
+    // never reaches this point.
+    if submission.scheduled.is_none() {
+        set_read(tx, submission.conversation, submission.author, now)?;
+    }
     outbox::enqueue_direct_message(tx, id, peer, now)?;
     Ok(Posted::Stored { message: load(tx, id)?, peer })
 }
@@ -267,6 +313,7 @@ pub async fn create(
                 encrypted,
                 client_id: request.client_id,
                 payload: None,
+                scheduled: None,
             };
             if let Some(sent) = &request.encrypted {
                 // The text is in the ciphertext, which the server cannot check

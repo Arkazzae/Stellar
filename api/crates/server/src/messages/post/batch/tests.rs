@@ -18,6 +18,7 @@ async fn post_three(world: &World) -> ([bool; 3], Vec<String>) {
                     attachments: Vec::new(),
                     reply_to: None,
                     client_id: Some(Id::random()),
+                    scheduled: None,
                 },
                 reply,
             })
