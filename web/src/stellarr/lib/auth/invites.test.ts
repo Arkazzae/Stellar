@@ -4,6 +4,7 @@ import {
   PENDING_INVITE_STORAGE_KEY,
   inviteCodeFrom,
   inviteExpiry,
+  localInviteCode,
   pendingInvite,
   rememberPendingInvite,
   takePendingInvite,
@@ -90,4 +91,13 @@ describe("inviteExpiry", () => {
     expect(inviteExpiry("not a date", now)).toEqual({ state: "never" });
     expect(inviteExpiry("2026-11-13T11:59:00Z", now)).toEqual({ state: "expired" });
   });
+});
+
+it("shares a code for loopback addresses and keeps LAN and public links intact", () => {
+  for (const host of ["localhost.", "chat.localhost", "127.15.3.2", "[::1]", "[::ffff:127.0.0.1]"]) {
+    expect(localInviteCode(`https://${host}:8443/invite/Ab_7`)).toBe("Ab_7");
+  }
+  for (const host of ["chat.example.com", "localhost.example.com", "192.168.1.5"]) {
+    expect(localInviteCode(`https://${host}:8443/invite/Ab_7`)).toBeNull();
+  }
 });

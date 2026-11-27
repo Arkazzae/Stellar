@@ -73,7 +73,7 @@ describe("SetupPage", () => {
     expect(history.navigations).toEqual([{ kind: "replace", href: "/" }]);
   });
 
-  it("makes the owner and the server in one registration, then offers a link to invite people", async () => {
+  it("makes the owner and the server in one registration, then offers the invite code for a loopback address", async () => {
     const user = userEvent.setup();
     mocks.ports.session.register.mockResolvedValue({ kind: "signed-in", user: {} });
     await renderSetup();
@@ -100,7 +100,9 @@ describe("SetupPage", () => {
     });
     expect(mocks.setup.markSetUp).toHaveBeenCalledOnce();
     expect(mocks.ports.admin.createInvite).toHaveBeenCalledOnce();
-    expect(await screen.findByText("https://127.0.0.1:8443/invite/k7qm2xwp")).toBeVisible();
+    expect(await screen.findByRole("status", { name: t("auth.invite.codeLabel") })).toHaveTextContent("k7qm2xwp");
+    await user.click(screen.getByRole("button", { name: t("auth.setup.copy") }));
+    expect(await navigator.clipboard.readText()).toBe("k7qm2xwp");
     expect(screen.getByText(t("auth.setup.localInvite"))).toBeVisible();
     expect(screen.getByRole("link", { name: t("auth.setup.configureAccess") })).toHaveAttribute("rel", "noreferrer");
     // Set up and anonymous to the provider, the page still shows its last step.
