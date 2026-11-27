@@ -1,4 +1,4 @@
-import { useEffect, useId, useImperativeHandle, useRef, useState, type Ref } from "react";
+import { useEffect, useId, useImperativeHandle, useRef, useState, type Ref, type RefObject } from "react";
 
 import { useLayer } from "@stellarr/ui/behavior";
 import { Icon } from "@stellarr/icons";
@@ -18,6 +18,10 @@ export const GIF_QUERY_MAX_LENGTH = 50;
 /** A blank query is the trending list and loads at once; typing waits for a pause. */
 const TYPING_PAUSE_MS = 280;
 const SKELETON_TILES = 12;
+/** One row of placeholders under the results while the next page comes. */
+const MORE_SKELETON_TILES = 3;
+/** How far below what is visible the next page already starts loading. */
+const LOAD_AHEAD_PX = 320;
 
 // GIPHY's official horizontal mark. It is inline so the attribution needs no
 // request of its own.
@@ -87,6 +91,7 @@ function useGifResults(locale: SupportedLocale, query: string, active: boolean) 
     if (loadingMore || items.length >= total) return;
     const current = run.current;
     setLoadingMore(true);
+    setFailed(false);
     try {
       const key = await resolveGiphyApiKey();
       const page = await fetchGiphyPage({
@@ -120,6 +125,41 @@ function useGifResults(locale: SupportedLocale, query: string, active: boolean) 
   };
 }
 
+/**
+ * Loads the next page as the end of the results comes near, so scrolling down
+ * is all it takes. It is armed again whenever the list grows: an observer
+ * only speaks on a change, and a page too short to push the end out of view
+ * must still lead to the next one. The caller disarms it after a failed page,
+ * so a dead connection is not asked again until the person says so.
+ */
+function useLoadOnReach(
+  root: RefObject<HTMLElement | null>,
+  end: RefObject<HTMLElement | null>,
+  armed: boolean,
+  shown: number,
+  load: () => void,
+) {
+  // The observer outlives renders; it must call this render's loader, which
+  // knows how many GIFs are already shown.
+  const latest = useRef(load);
+  useEffect(() => {
+    latest.current = load;
+  });
+
+  useEffect(() => {
+    const target = end.current;
+    if (!armed || target === null || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) latest.current();
+      },
+      { root: root.current, rootMargin: `0px 0px ${LOAD_AHEAD_PX}px 0px` },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [armed, shown, root, end]);
+}
+
 /** Opens the panel from elsewhere, such as the composer's /gif, with the words to look for. */
 export interface GifBrowserHandle {
   open(query: string): void;
@@ -149,6 +189,8 @@ export function GifBrowser({ onSelect, ref }: GifBrowserProps) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const endRef = useRef<HTMLDivElement>(null);
   // GIPHY wants one view event per GIF, however often it scrolls into view.
   const viewed = useRef(new Set<string>());
 
@@ -215,6 +257,15 @@ export function GifBrowser({ onSelect, ref }: GifBrowserProps) {
   const { items, loading, loadingMore, failed } = results;
   const term = query.trim();
   const busy = sendingId !== null;
+  // Without an observer (an old browser) the next page waits for the button.
+  const autoLoads = typeof IntersectionObserver !== "undefined";
+  useLoadOnReach(
+    resultsRef,
+    endRef,
+    open && autoLoads && !loading && !loadingMore && !failed && results.hasMore,
+    items.length,
+    () => void results.loadMore(),
+  );
 
   return (
     <>
@@ -266,7 +317,7 @@ export function GifBrowser({ onSelect, ref }: GifBrowserProps) {
           <span>{t("gif.sendImmediately")}</span>
         </div>
 
-        <div className="gif-results" aria-busy={loading || loadingMore}>
+        <div ref={resultsRef} className="gif-results" aria-busy={loading || loadingMore}>
           {loading && (
             <div className="gif-grid" aria-label={t("gif.loading")}>
               {Array.from({ length: SKELETON_TILES }, (_, index) => (
@@ -319,15 +370,23 @@ export function GifBrowser({ onSelect, ref }: GifBrowserProps) {
                     {sendingId === gif.id && <span className="gif-sending">{t("gif.sending")}</span>}
                   </button>
                 ))}
+                {loadingMore &&
+                  Array.from({ length: MORE_SKELETON_TILES }, (_, index) => (
+                    <span className="gif-skeleton" key={`more-${index}`} aria-hidden="true" />
+                  ))}
               </div>
-              {results.hasMore && (
+              {results.hasMore && autoLoads && !failed && (
+                // Where the next page is asked for, once it comes near.
+                <div ref={endRef} className="gif-end" aria-hidden="true" />
+              )}
+              {results.hasMore && (!autoLoads || failed) && (
                 <button
                   type="button"
                   className="gif-more"
                   disabled={loadingMore || busy}
                   onClick={() => void results.loadMore()}
                 >
-                  {loadingMore ? t("gif.loadingMore") : t("gif.showMore")}
+                  {loadingMore ? t("gif.loadingMore") : failed ? t("gif.retry") : t("gif.showMore")}
                 </button>
               )}
             </>
