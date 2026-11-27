@@ -19,6 +19,7 @@ use super::privileges::{
 };
 use super::roles::{Member, Role};
 use super::snapshot::{Snapshot, Subject, Target, Targets};
+use super::visibility::ChannelPlace;
 use crate::http::{ApiError, Problem};
 use crate::values::Id;
 
@@ -140,11 +141,35 @@ pub fn effective(db: &Connection, user: Id, scope: &Scope) -> rusqlite::Result<O
     let Some(place) = place_of(db, scope)? else {
         return Ok(None);
     };
-    let snapshot = Snapshot::load(db, scope.server, Some(&[user]), place.targets())?;
-    match snapshot.subject(user) {
-        Some(subject) => place.evaluate(&snapshot, subject).map(Some),
-        None => Ok(None),
+    effective_at(db, user, scope.server, place.section, place.channel)
+}
+
+fn effective_at(
+    db: &Connection,
+    user: Id,
+    server: Id,
+    section: Option<Id>,
+    channel: Option<Id>,
+) -> rusqlite::Result<Option<i64>> {
+    let snapshot = Snapshot::load(db, server, Some(&[user]), Targets::at(section, channel))?;
+    snapshot
+        .subject(user)
+        .map(|subject| snapshot.evaluate(subject, section, channel))
+        .transpose()
+}
+
+/// Checks a channel already located in the same transaction.
+pub(crate) fn held_in_channel(
+    db: &Connection,
+    user: Id,
+    channel: &ChannelPlace,
+) -> rusqlite::Result<Held> {
+    if channel.server == NIL || channel.id == NIL {
+        return Ok(Held(NONE));
     }
+    Ok(Held(
+        effective_at(db, user, channel.server, channel.section, Some(channel.id))?.unwrap_or(NONE),
+    ))
 }
 
 /// What the person holds at the scope, nothing where there is no such place

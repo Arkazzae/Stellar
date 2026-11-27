@@ -145,63 +145,45 @@ impl Snapshot {
         };
 
         let mut sql = String::from(
-            "SELECT m.\"UserId\", r.\"Id\", r.\"ServerId\", r.\"Position\", r.\"IsSystem\", r.\"IsOwner\", r.\"Permissions\"
-             FROM \"ServerMembers\" m JOIN \"Users\" u ON u.\"Id\" = m.\"UserId\" JOIN \"ServerRoles\" r ON r.\"Id\" = m.\"RoleId\"
-             WHERE m.\"ServerId\" = ?1 AND u.\"IsDisabled\" = 0",
+            "SELECT m.UserId, r.Id, r.ServerId, r.Position, r.IsSystem, r.IsOwner, r.Permissions, h.RoleId
+             FROM ServerMembers m JOIN Users u ON u.Id = m.UserId JOIN ServerRoles r ON r.Id = m.RoleId
+             LEFT JOIN ServerMemberRoles h ON h.ServerId = m.ServerId AND h.UserId = m.UserId
+             WHERE m.ServerId = ?1 AND u.IsDisabled = 0",
         );
         if let Some(users) = in_sql {
             sql.push_str(&format!(
-                " AND m.\"UserId\" IN ({})",
+                " AND m.UserId IN ({})",
                 placeholders(2, users.len())
             ));
         }
-        let parameters: Vec<Id> = std::iter::once(server)
-            .chain(in_sql.into_iter().flatten().copied())
-            .collect();
-        let mut tops: Vec<(Id, Role)> = Vec::new();
-        {
-            let mut statement = db.prepare(&sql)?;
-            for row in statement.query_map(params_from_iter(&parameters), |row| {
-                Ok((row.get::<_, Id>(0)?, Role::read(row, 1)?))
-            })? {
-                let (user, top) = row?;
-                if wanted.as_ref().is_none_or(|wanted| wanted.contains(&user)) {
-                    tops.push((user, top));
-                }
+        let parameters = std::iter::once(&server).chain(in_sql.into_iter().flatten());
+        let mut assignments: HashMap<Id, (Role, Vec<Id>)> = HashMap::new();
+        let mut statement = db.prepare_cached(&sql)?;
+        let mut rows = statement.query(params_from_iter(parameters))?;
+        while let Some(row) = rows.next()? {
+            let user = row.get(0)?;
+            if wanted
+                .as_ref()
+                .is_some_and(|wanted| !wanted.contains(&user))
+            {
+                continue;
             }
-        }
-
-        let mut sql = String::from(
-            "SELECT \"UserId\", \"RoleId\" FROM \"ServerMemberRoles\" WHERE \"ServerId\" = ?1",
-        );
-        if let Some(users) = in_sql {
-            sql.push_str(&format!(
-                " AND \"UserId\" IN ({})",
-                placeholders(2, users.len())
-            ));
-        }
-        let mut stored: HashMap<Id, Vec<Id>> = HashMap::new();
-        {
-            let mut statement = db.prepare(&sql)?;
-            for row in statement.query_map(params_from_iter(&parameters), |row| {
-                Ok((row.get::<_, Id>(0)?, row.get::<_, Id>(1)?))
-            })? {
-                let (user, role) = row?;
-                stored.entry(user).or_default().push(role);
+            let (_, stored) = match assignments.entry(user) {
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert((Role::read(row, 1)?, Vec::new()))
+                }
+                std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+            };
+            if let Some(role) = row.get::<_, Option<Id>>(7)? {
+                stored.push(role);
             }
         }
 
         let base_id = base.map(|role| role.id);
-        let subjects = tops
+        let subjects = assignments
             .into_iter()
-            .map(|(user, top)| {
-                let held = roles::held_by(
-                    server,
-                    top.id,
-                    stored.get(&user).map_or(&[], Vec::as_slice),
-                    &by_id,
-                    base_id,
-                );
+            .map(|(user, (top, stored))| {
+                let held = roles::held_by(server, top.id, &stored, &by_id, base_id);
                 (
                     user,
                     Subject {
@@ -417,10 +399,17 @@ fn load_overrides(
         }
         sql.push_str(&format!(" AND ({})", places.join(" OR ")));
     }
+    if let Some(users) = only.filter(|users| parameters.len() + users.len() <= PARAMETERS) {
+        sql.push_str(&format!(
+            " AND {owner_column} IN ({})",
+            placeholders(parameters.len() + 1, users.len())
+        ));
+        parameters.extend(users);
+    }
     let section_set: HashSet<Id> = targets.sections.iter().copied().collect();
     let channel_set: HashSet<Id> = targets.channels.iter().copied().collect();
     let mut found = HashMap::new();
-    let mut statement = db.prepare(&sql)?;
+    let mut statement = db.prepare_cached(&sql)?;
     for row in statement.query_map(params_from_iter(&parameters), |row| {
         Ok((
             row.get::<_, i64>(0)?,

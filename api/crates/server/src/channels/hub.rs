@@ -12,7 +12,7 @@ use serde_json::Value;
 use stellarr_hub::{HubError, Outbound};
 
 use crate::database::DbError;
-use crate::permissions::authorization::{Scope, held_at};
+use crate::permissions::authorization::held_in_channel;
 use crate::permissions::privileges::SEND_MESSAGES;
 use crate::permissions::visibility::{self, ChannelKind};
 use crate::realtime::names::{follower_group, server_group};
@@ -51,11 +51,7 @@ async fn join_channel(cx: Context, arguments: Vec<Value>) -> Result<Value, HubEr
         .state()
         .database()
         .read(move |db| -> Result<bool, DbError> {
-            let Some(place) = visibility::place(db, channel, None, Some(ChannelKind::Text), Some(user))?
-            else {
-                return Ok(false);
-            };
-            Ok(visibility::find(db, user, place.server, channel, Some(ChannelKind::Text))?.is_some())
+            Ok(visibility::find(db, user, None, channel, Some(ChannelKind::Text))?.is_some())
         })
         .await
         .map_err(unavailable)?;
@@ -104,29 +100,26 @@ async fn send_typing(cx: Context, arguments: Vec<Value>) -> Result<Value, HubErr
         .state()
         .database()
         .read(move |db| -> Result<Result<Notice, &'static str>, DbError> {
-            let server: Option<Id> = rusqlite::OptionalExtension::optional(db.query_row(
-                "SELECT \"ServerId\" FROM \"Channels\" WHERE \"Id\" = ?1 AND \"Kind\" = ?2",
-                rusqlite::params![channel, ChannelKind::Text],
-                |row| row.get(0),
-            ))?;
-            let held = match server {
-                Some(server) => held_at(db, user, &Scope::channel(server, channel))?,
-                None => crate::permissions::authorization::Held(0),
-            };
-            let Some(server) = server.filter(|_| held.views()) else {
+            let Some(place) =
+                visibility::place(db, channel, None, Some(ChannelKind::Text), None)?
+            else {
                 return Ok(Err("Unknown channel."));
             };
+            let held = held_in_channel(db, user, &place)?;
+            if !held.views() {
+                return Ok(Err("Unknown channel."));
+            }
             if !held.has(SEND_MESSAGES) {
                 return Ok(Err("Not allowed to send messages here."));
             }
             let display_name: String = crate::instance::users::User::display_name(db, user)?;
-            let viewers = visibility::viewers(db, server, channel)?.map(|seeing| {
+            let viewers = visibility::viewers_at(db, &place)?.map(|seeing| {
                 let mut users: Vec<Id> = seeing.into_iter().collect();
                 users.sort();
                 users
             });
             Ok(Ok(Notice {
-                server,
+                server: place.server,
                 typing: Typing {
                     channel_id: channel,
                     user_id: user,

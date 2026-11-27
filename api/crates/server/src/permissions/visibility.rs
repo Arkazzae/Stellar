@@ -130,11 +130,11 @@ pub fn server_open(db: &Connection, server: Id) -> rusqlite::Result<bool> {
 pub fn find(
     db: &Connection,
     user: Id,
-    server: Id,
+    server: impl Into<Option<Id>>,
     channel: Id,
     kind: Option<ChannelKind>,
 ) -> rusqlite::Result<Option<ChannelPlace>> {
-    let Some(found) = place(db, channel, Some(server), kind, Some(user))? else {
+    let Some(found) = place(db, channel, server.into(), kind, Some(user))? else {
         return Ok(None);
     };
     Ok(views_place(db, user, &found)?.then_some(found))
@@ -245,10 +245,22 @@ pub fn viewers(db: &Connection, server: Id, channel: Id) -> rusqlite::Result<Opt
     let Some(found) = place(db, channel, Some(server), None, None)? else {
         return Ok(Some(HashSet::new()));
     };
+    viewers_at(db, &found)
+}
+
+pub(crate) fn viewers_at(
+    db: &Connection,
+    found: &ChannelPlace,
+) -> rusqlite::Result<Option<HashSet<Id>>> {
     if found.open {
         return Ok(None);
     }
-    let snapshot = Snapshot::load(db, server, None, Targets::at(found.section, Some(found.id)))?;
+    let snapshot = Snapshot::load(
+        db,
+        found.server,
+        None,
+        Targets::at(found.section, Some(found.id)),
+    )?;
     let mut seeing = HashSet::new();
     for subject in snapshot.subjects() {
         if snapshot.views(subject, found.section, found.id)? {
