@@ -9,13 +9,30 @@ import type { EventSignupChange, ServerEvent } from "@/ports/events";
  */
 
 export function mergeEvent(known: ServerEvent | undefined, incoming: ServerEvent): ServerEvent {
-  if (known === undefined) return incoming.mine === undefined ? incoming : { ...incoming, mineRevision: incoming.revision };
-  if (incoming.revision < known.revision) return known;
-  // A read for this reader says where they stand, as of its revision.
-  if (incoming.mine !== undefined) return { ...incoming, mineRevision: Math.max(incoming.revision, known.mineRevision ?? 0) };
-  if (incoming.occurrenceId !== known.occurrenceId) return { ...incoming, mine: "none" };
+  if (known === incoming || (known !== undefined && incoming.revision < known.revision)) return known;
+  const mineRevision = incoming.mineRevision ?? incoming.revision;
+  if (known === undefined || known.occurrenceId !== incoming.occurrenceId) {
+    if (known !== undefined && incoming.revision === known.revision) return known;
+    if (incoming.mine !== undefined) return { ...incoming, mineRevision };
+    return known === undefined ? incoming : { ...incoming, mine: "none" };
+  }
+
+  // The public details and the reader's signup may arrive in either order.
+  // Keep the cached object itself when neither stream has advanced.
+  const details = incoming.revision > known.revision ? incoming : known;
+  if (incoming.mine !== undefined && mineRevision > (known.mineRevision ?? -1)) {
+    const { myPosition: _position, ...rest } = details;
+    return {
+      ...rest,
+      mine: incoming.mine,
+      mineRevision,
+      ...(incoming.myPosition === undefined ? {} : { myPosition: incoming.myPosition }),
+    };
+  }
+  if (details === known) return known;
+  const { mine: _mine, mineRevision: _revision, myPosition: _position, ...shared } = details;
   return {
-    ...incoming,
+    ...shared,
     ...(known.mine === undefined ? {} : { mine: known.mine }),
     ...(known.myPosition === undefined ? {} : { myPosition: known.myPosition }),
     ...(known.mineRevision === undefined ? {} : { mineRevision: known.mineRevision }),

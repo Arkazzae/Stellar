@@ -14,10 +14,10 @@ Deploy a local Stellarr instance, create the owner account and initial server, i
 From a directory for new installations, check out a release and pin its image in `.env`.
 
 ```bash
-git clone --depth 1 --branch server-v0.3.1 https://github.com/Arkazzae/Stellarr.git &&
+git clone --depth 1 --branch server-v0.3.2 https://github.com/Arkazzae/Stellarr.git &&
   cd Stellarr &&
   cp .env.example .env &&
-  echo 'STELLARR_VERSION=0.3.1' >> .env
+  echo 'STELLARR_VERSION=0.3.2' >> .env
 ```
 
 Review `docker-compose.yml` for the image, ports, and volume. For access from another device, set the [LAN or internet address](requirements.md#behind-nat) in `.env` before starting.

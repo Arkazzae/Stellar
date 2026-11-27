@@ -12,10 +12,8 @@
 //!   thirty seconds: it leases the rows that are due, checks again that each
 //!   is still wanted, sends it by push or mail, and records what became of it.
 //!
-//! Push is on when the operator configured a contact and a key pair
-//! (`STELLARR_PUSH_*`); a missing or wrong pair makes push unavailable and
-//! stops nothing else. The instance's key is the operator's to keep: nothing
-//! is stored in the database for it.
+//! Web Push defaults to a persistent per-instance identity, encrypted in the
+//! database. Operators can supply an existing pair or explicitly disable delivery.
 //!
 //! The address policy of [`sender`] (only public addresses) is fixed in the
 //! code: no setting changes it, and the only way a test reaches a fake push

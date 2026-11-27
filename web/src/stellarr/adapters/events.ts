@@ -92,7 +92,10 @@ export function createEventsAdapter(api: EventApiClient, realtime: RealtimeClien
       await api.cancelEvent(eventId);
       const known = events.get(eventId);
       // Cancelled at once here; the change everyone gets says the same.
-      if (known !== undefined) answered({ ...known, state: "cancelled" });
+      if (known !== undefined && known.state !== "cancelled") {
+        events.set(eventId, { ...known, state: "cancelled" });
+        changed();
+      }
     },
     signUp: async (event) => void answered(await api.signUp(event.id, event.occurrenceId)),
     signOut: async (event) => void answered(await api.signOut(event.id, event.occurrenceId)),

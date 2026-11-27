@@ -33,6 +33,45 @@ describe("the events port", () => {
     expect(names()).toEqual(["new", "ev-1", "later"]);
   });
 
+  it("reopening a stored event or reading the same announcement keeps its snapshot stable", async () => {
+    const { port } = setup();
+    await port.load("srv-1");
+    const held = port.get("ev-1")!;
+    const list = port.list("srv-1");
+    const changed = vi.fn();
+    port.subscribe(changed);
+
+    port.remember(held);
+    port.remember(serverEvent());
+    const { mine: _mine, ...announcement } = serverEvent();
+    port.remember(announcement);
+
+    expect(changed).not.toHaveBeenCalled();
+    expect(port.get("ev-1")).toBe(held);
+    expect(port.list("srv-1")).toBe(list);
+  });
+
+  it("keeps a newer personal signup when an older snapshot catches up with the public event", async () => {
+    const { port, realtime } = setup();
+    await port.load("srv-1");
+    realtime.push("EventSignupChanged", { eventId: "ev-1", occurrenceId: "occ-1", revision: 4, mine: "signed" });
+    port.remember(serverEvent({ revision: 3, signedUp: 8, mine: "waiting", myPosition: 2 }));
+    expect(port.get("ev-1")).toMatchObject({ revision: 3, signedUp: 8, mine: "signed", mineRevision: 4 });
+    expect(port.get("ev-1")).not.toHaveProperty("myPosition");
+  });
+
+  it("enriches a shared card once and keeps a cancelled event out of the rail", async () => {
+    const { port, names } = setup();
+    const { mine: _mine, ...announcement } = serverEvent();
+    port.remember(announcement);
+    port.remember(serverEvent({ mine: "waiting", myPosition: 2 }));
+    expect(port.get("ev-1")).toMatchObject({ mine: "waiting", myPosition: 2 });
+    await port.cancel("ev-1");
+    port.remember(announcement);
+    expect(names()).toEqual([]);
+    expect(port.get("ev-1")?.state).toBe("cancelled");
+  });
+
   it("signs up for the current date and shows the answer at once", async () => {
     const { api, port } = setup();
     await port.load("srv-1");

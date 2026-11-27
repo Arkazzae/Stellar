@@ -71,7 +71,7 @@ pub struct Sender {
 }
 
 impl Sender {
-    /// The sender of the running server: the operator's key pair, the system's
+    /// The sender of the running server: the instance's key pair, the system's
     /// roots, public addresses only.
     pub fn new(settings: &PushSettings) -> Sender {
         Sender {
