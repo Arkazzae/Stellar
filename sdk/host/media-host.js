@@ -2,7 +2,15 @@ import { embedUrl } from "../media.js";
 import { capture } from "./devices.js";
 
 const kinds = ["microphoneLevel", "cameraTile"];
-export function bindMediaHost({ frame, origin, nonce, embedHosts = [], title, permissions = [], controls, tile, camera, cloneLocalCamera, volume, muted = () => false, fixtures = false, language = "en", overlay, ask, labels = {} }) {
+// Per frame, because the instance's one GIPHY key also serves chat. CONTRACT.md §4 lists them.
+export const gifLimits = { searchesPerMinute: 30, loadsPerMinute: 120, concurrentLoads: 4, queuedLoads: 32,
+  bytes: { preview: 4 * 1024 * 1024, full: 8 * 1024 * 1024 }, pageSize: 24, queryLength: 50, maxOffset: 4999 };
+const gifCodes = ["permission", "unavailable", "declined", "rateLimited", "notFound", "failed"];
+// GIPHY sends GIF and WebP; the simulator's offline set is SVG.
+const gifTypes = ["image/gif", "image/webp", "image/svg+xml"];
+const gifError = (code, message) => Object.assign(new Error(message), { code });
+const pixels = value => Number.isSafeInteger(value) && value > 0 ? value : 1;
+export function bindMediaHost({ frame, origin, nonce, embedHosts = [], title, permissions = [], controls, tile, camera, cloneLocalCamera, volume, muted = () => false, fixtures = false, language = "en", overlay, ask, labels = {}, gifs }) {
   const words = (en, polish) => (typeof language === "function" ? language() : language).startsWith("pl") ? polish : en;
   const deviceName = kind => kind === "microphoneLevel" ? words("Microphone", "Mikrofon") : words("Camera", "Kamera");
   const deviceFiles = new Map(), active = new Map(), mounts = new Map();
@@ -109,6 +117,75 @@ export function bindMediaHost({ frame, origin, nonce, embedHosts = [], title, pe
     item?.image.remove();
     mounts.delete(id);
   }
+  // GIFs come from the page's provider. The budgets outlive a reconnect, so
+  // reloading the frame does not refill them.
+  const gifRequests = new Map(), gifTimes = { gifSearch: [], gifLoad: [] }, gifQueue = [];
+  let gifLoading = 0;
+  function gifBudget(op, limit) {
+    const times = gifTimes[op], now = Date.now();
+    while (times.length && now - times[0] >= 60000) times.shift();
+    if (times.length >= limit) throw gifError("rateLimited", "This activity asked for GIFs too often. Try again in a minute.");
+    times.push(now);
+  }
+  function gifSlot(signal) {
+    if (gifLoading < gifLimits.concurrentLoads) { gifLoading++; return Promise.resolve(); }
+    if (gifQueue.length >= gifLimits.queuedLoads) return Promise.reject(gifError("rateLimited", "Too many GIFs are loading."));
+    return new Promise((resolve, reject) => {
+      const entry = { resolve, reject };
+      gifQueue.push(entry);
+      signal.addEventListener("abort", () => {
+        const index = gifQueue.indexOf(entry);
+        if (index >= 0) { gifQueue.splice(index, 1); reject(gifError("failed", "GIF request cancelled.")); }
+      }, { once: true });
+    });
+  }
+  function gifSlotDone() {
+    const next = gifQueue.shift();
+    if (next) next.resolve();
+    else gifLoading--;
+  }
+  async function answerGif(data, signal) {
+    if (!permissions.includes("media.gifs")) throw gifError("permission", "Permission unavailable.");
+    if (!gifs) throw gifError("unavailable", "GIFs are unavailable here.");
+    if (data.op === "gifSearch") {
+      gifBudget("gifSearch", gifLimits.searchesPerMinute);
+      const whole = (value, low, high, fallback) => Number.isSafeInteger(value) ? Math.min(high, Math.max(low, value)) : fallback;
+      const page = await gifs.search({
+        query: typeof data.query === "string" ? data.query.trim().slice(0, gifLimits.queryLength) : "",
+        offset: whole(data.offset, 0, gifLimits.maxOffset, 0), limit: whole(data.limit, 1, gifLimits.pageSize, 12),
+      }, signal);
+      // Only these fields reach the frame, whatever else the provider knows.
+      const items = page.items.filter(item => typeof item.id === "string").map(item => ({ id: item.id,
+        ...(typeof item.alt === "string" ? { alt: item.alt } : {}), width: pixels(item.width), height: pixels(item.height) }));
+      return { value: { items, offset: Number(page.offset) || 0, total: Number(page.total) || 0 } };
+    }
+    if (typeof data.gif !== "string" || !/^[A-Za-z0-9]{1,64}$/.test(data.gif)) throw gifError("notFound", "Unknown GIF.");
+    const size = data.size === "full" ? "full" : "preview";
+    gifBudget("gifLoad", gifLimits.loadsPerMinute);
+    await gifSlot(signal);
+    try {
+      const maxBytes = gifLimits.bytes[size];
+      const image = await gifs.load({ gif: data.gif, size, maxBytes }, signal);
+      if (!(image?.bytes instanceof ArrayBuffer) || image.bytes.byteLength > maxBytes || !gifTypes.includes(image.type))
+        throw gifError("failed", "The GIF could not be used.");
+      return { value: { bytes: image.bytes, type: image.type, width: pixels(image.width), height: pixels(image.height),
+        ...(typeof image.alt === "string" ? { alt: image.alt } : {}) }, transfer: [image.bytes] };
+    } finally { gifSlotDone(); }
+  }
+  function gif(data) {
+    const requester = port;
+    if (!Number.isSafeInteger(data.id) || gifRequests.has(data.id)) return;
+    const controller = new AbortController();
+    gifRequests.set(data.id, controller);
+    answerGif(data, controller.signal).then(
+      ({ value, transfer = [] }) => [{ op: "reply", id: data.id, value }, transfer],
+      error => [{ op: "reply", id: data.id, error: typeof error?.message === "string" && error.message || "GIF request failed.",
+        code: gifCodes.includes(error?.code) ? error.code : "failed" }, []],
+    ).then(([message, transfer]) => {
+      if (gifRequests.get(data.id) === controller) gifRequests.delete(data.id);
+      if (!disposed && port === requester && !controller.signal.aborted) requester.postMessage(message, transfer);
+    });
+  }
   // Hosted media follows the activity viewport, including in fullscreen.
   function layout(node, bounds) {
     const r = frame.getBoundingClientRect();
@@ -207,6 +284,8 @@ export function bindMediaHost({ frame, origin, nonce, embedHosts = [], title, pe
   volume.addEventListener("input", volumeChanged);
   function reset() {
     for (const item of embeds.values()) item.destroy();
+    for (const controller of gifRequests.values()) controller.abort();
+    gifRequests.clear();
     prompt?.cancel();
     for (const kind of active.keys()) stop(kind, "closed");
     for (const id of mounts.keys()) removeMount(id);
@@ -239,7 +318,10 @@ export function bindMediaHost({ frame, origin, nonce, embedHosts = [], title, pe
         case "cancel":
           if (prompt?.id === data.id) prompt.cancel();
           for (const [kind, device] of active) if (device.id === data.id) stop(kind, "stopped");
+          gifRequests.get(data.id)?.abort();
           return;
+        case "gifSearch":
+        case "gifLoad": return gif(data);
         case "mount": return mount(data);
         case "unmount": return removeMount(data.id);
         case "dispose": return reset();

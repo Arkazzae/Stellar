@@ -162,7 +162,7 @@ export function manifestOf(bytes) {
   if (!Array.isArray(permissions) || permissions.some(permission => typeof permission !== "string"))
     fail(400, "Expected a list of permission names.");
   for (const permission of permissions)
-    if (!["media.microphoneLevel", "media.cameraTile"].includes(permission)) fail(400, "Unsupported permission: " + permission);
+    if (!["media.microphoneLevel", "media.cameraTile", "media.gifs"].includes(permission)) fail(400, "Unsupported permission: " + permission);
   if (new Set(permissions).size !== permissions.length) fail(400, "Permission names must be unique.");
   if (value.devices !== undefined && (!Array.isArray(value.devices) || !value.devices.length ||
       value.devices.some(device => !["desktop", "tablet", "phone"].includes(device)))) fail(400, "Invalid supported devices.");
@@ -186,7 +186,7 @@ export async function serveAsset(res, path, bytes, manifest, parent, request) {
     "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "strict-origin-when-cross-origin",
     "Content-Security-Policy": [
       "default-src 'self' " + external, "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' " + external,
-      "style-src 'self' 'unsafe-inline' " + external, "object-src 'none'", "base-uri 'self'",
+      "style-src 'self' 'unsafe-inline' " + external, "img-src 'self' data: blob: " + external, "object-src 'none'", "base-uri 'self'",
       "form-action 'self'", "frame-ancestors " + (parent || "'none'"),
     ].join("; "),
     "Permissions-Policy": "microphone=(), camera=(), display-capture=()",
