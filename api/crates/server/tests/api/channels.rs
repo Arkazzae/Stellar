@@ -1253,6 +1253,8 @@ async fn a_channel_is_joined_by_whoever_sees_it_and_only_a_text_channel() {
     let mut client = connect(&world, &maya).await;
 
     let seen = client.invoke("JoinChannel", json!([general])).await;
+    world.hide(0, &general, &maya);
+    let revoked = client.invoke("JoinChannel", json!([general])).await;
     let hidden = client.invoke("JoinChannel", json!([secret])).await;
     let call = client.invoke("JoinChannel", json!([voice])).await;
     let unknown = client.invoke("JoinChannel", json!([NOBODY])).await;
@@ -1262,7 +1264,7 @@ async fn a_channel_is_joined_by_whoever_sees_it_and_only_a_text_channel() {
 
     assert_eq!(seen["type"], "result", "{seen}");
     assert_eq!(seen["value"], Value::Null);
-    for completion in [&hidden, &call, &unknown] {
+    for completion in [&revoked, &hidden, &call, &unknown] {
         assert_eq!(
             error_text(completion),
             Some("Unknown channel.")

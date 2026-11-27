@@ -1195,10 +1195,9 @@ fn the_cost_of_a_post_in_statements_does_not_grow_with_what_the_server_holds() {
 
     let (plain, with_mentions) = measure(0);
 
-    // The check of the channel is six statements, a place, the roles, the member and the held roles and the
-    // overrides; the rest is the post: the replay look, the insert, the read marker, the author's name and the
-    // page it answers with. The numbers are the ones to beat, not a promise to keep forever.
-    assert_eq!(plain, 15, "statements for a plain post");
+    // The location, server roles, member with assignments and the two override tables
+    // account for five statements. The rest stores and returns the post.
+    assert_eq!(plain, 13, "statements for a plain post");
     assert!(with_mentions <= plain + 1, "{with_mentions} statements with a mention that names nobody");
     println!("a post costs {plain} statements, {with_mentions} when it names somebody who is not a member");
 }

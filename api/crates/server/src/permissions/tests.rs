@@ -1860,19 +1860,19 @@ fn a_check_of_a_permission_costs_a_fixed_handful_of_statements_whatever_the_serv
     visibility::audience_of(&world.db, world.server, world.projects).unwrap();
     let audience = world.statements();
 
-    // One for the roles, one for the member, one for the roles they hold.
-    assert_eq!(server_wide_check.len(), 3, "{server_wide_check:#?}");
+    // Server roles and the member with their assignments.
+    assert_eq!(server_wide_check.len(), 2, "{server_wide_check:#?}");
     // Those, with one for where the channel is, and one for each kind of override.
-    assert_eq!(channel_check.len(), 6, "{channel_check:#?}");
+    assert_eq!(channel_check.len(), 5, "{channel_check:#?}");
     // An open channel needs only the one statement that says it is open.
     assert_eq!(open_find.len(), 1, "{open_find:#?}");
     // A channel somebody is denied view at asks as a channel check does, once more for its openness.
     assert_eq!(
         find_on_a_closed_server.len(),
-        6,
+        5,
         "{find_on_a_closed_server:#?}"
     );
-    assert_eq!(audience.len(), 6, "{audience:#?}");
+    assert_eq!(audience.len(), 5, "{audience:#?}");
 }
 
 #[test]

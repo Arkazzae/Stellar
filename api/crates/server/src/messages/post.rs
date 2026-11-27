@@ -16,7 +16,7 @@ use crate::events::{Audience, Event};
 use crate::http::{ApiError, ApiResult, Json, Path, json_response};
 use crate::inbox::{self, Entry};
 use crate::link_previews::PreviewRequest;
-use crate::permissions::authorization::{self, Held, Scope};
+use crate::permissions::authorization::{Held, held_in_channel};
 use crate::permissions::membership::ActiveServer;
 use crate::permissions::privileges::{ATTACH_FILES, MANAGE_CHANNELS, SEND_MESSAGES};
 use crate::permissions::visibility::{self, ChannelKind};
@@ -81,7 +81,7 @@ pub fn post(
     // below. Without view it is nothing, and the channel is answered as one
     // that does not exist, before anything else, a retry included: a retry
     // would answer with the message as it is stored.
-    let held = authorization::held_at(db, author, &Scope::channel(server, channel))?;
+    let held = held_in_channel(db, author, &place)?;
     if !held.views() {
         return Err(Stop::not_found());
     }
