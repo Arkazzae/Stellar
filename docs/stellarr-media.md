@@ -81,6 +81,7 @@ sequenceDiagram
 
 - **Glare & timeouts:** If a browser offer collides with a pending SFU offer, the browser ignores the SFU offer while `stellarr-media` rolls back, answers the browser, and re-offers with `negotiationId + 1` (`10 s` answer timeout; `3` unanswered strikes close with `error`).
 - **Stream attribution:** Mic and camera share one `msid` (`cameraStreamId`) for lip-sync; screen video and audio share a separate `msid` (`screenStreamId`, with video listed before audio in `tracks` so receivers classify screen audio before `VoiceSignal` arrives). Unattributed tracks stay muted until present in both `tracks` and `VoiceParticipantChanged`.
+- **m-line reuse:** A withdrawn forwarded m-line goes `inactive`, and once the browser has confirmed that, the next track of the same kind for that receiver takes it (new SSRCs, `msid` rewritten to the new publisher's stream) instead of a new m-line, so a description grows with the tracks received at once. A reused `mid` starts unsubscribed, so clients send their whole `subscriptions` list again with every SFU offer, and treat a `mid` whose `userId` or `streamId` changes as one track leaving and another arriving.
 
 ### Session closure and seat lifecycle
 
@@ -133,6 +134,7 @@ Each receiver runs independent GoogCC bandwidth estimation (`str0m`) from its TW
 | --- | ---: | --- |
 | SDP size / Control API body | `128 KiB` / `256 KiB` | `422 invalid-sdp` (or close `error`) / `413 payload-too-large` |
 | Published tracks / ICE candidates / remote sockets | `8` / `64` / `64` per session | `422 limit-exceeded` / ignored / dropped |
+| Receiving m-lines per session (carrying or offered a track, ending, or idle of either kind) | `48` | Joining: `422 limit-exceeded`; publishing a track some receiver has no room for: `422 limit-exceeded` and closed `error` |
 | Connect / disconnect / unanswered-offer timeouts | `30 s` / `30 s` / `3 × 10 s` | Closed with `transport-timeout` / `error` |
 | Packets / payload of one published sound | `150/s` / `512 kbit/s`, `1 s` burst | Forwarded to nobody, left out of the track's cost; `dropped.packets` |
 | Packets / payload of one published picture | `2,000/s` / `24 Mbit/s`, `1 s` burst | As for a sound |
@@ -140,7 +142,9 @@ Each receiver runs independent GoogCC bandwidth estimation (`str0m`) from its TW
 
 A panic while reading a datagram, candidate or description costs only that input (dropped, or refused like a malformed one), or the one session whose connection already took it (closed with `error`), never the process. Panics are logged through `tracing`: one that ends the process always in full, caught ones in full five times a minute and only counted past that.
 
-**Not implemented:** per-receiver simulcast/SVC layer dropping (tracks forward whole or pause via `heldBack`), SDP m-line recycling (long sessions hitting `128 KiB` auto-replace), active-speaker switching, session survival across hub reconnects, and IPv6 media sockets.
+A sound's m-line costs about `0.9 KiB` of SDP and a picture's about `3.6 KiB`, so `128 KiB` is reached before `48` m-lines only when more than about 30 of them are pictures; with a microphone and a camera each, 24 other people fill a session.
+
+**Not implemented:** per-receiver simulcast/SVC layer dropping (tracks forward whole or pause via `heldBack`), active-speaker switching, session survival across hub reconnects, and IPv6 media sockets.
 
 > [!WARNING]
 > Standard server voice channels and unencrypted 1:1 calls use hop-by-hop DTLS-SRTP—media headers and payloads traverse `stellarr-media` memory on your host. Only 1:1 calls in E2EE conversations encrypt media frames end-to-end between browsers.
