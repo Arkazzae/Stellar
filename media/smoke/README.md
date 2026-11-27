@@ -44,7 +44,7 @@ Run `node smoke.mjs udp tcp` against a freshly built SFU to verify direct media 
 | `a` | Two-way audio forwarding without self-echo; audio-level RTP header extension delivery |
 | `b` | Immediate PLI keyframe request when a new participant joins an already-running camera stream |
 | `c` | Late third participant receives all four existing tracks attributed to the right `userId`, with directory delivered before `ontrack` |
-| `d` | Leaving participant's forwarded m-lines transition to `inactive` and are removed from the directory |
+| `d` | Leaving participant's forwarded m-lines transition to `inactive` and are removed from the directory; a later track of the same kind takes one of them, and the rest stay `inactive` |
 | `udp` | Direct UDP between each browser and the SFU with two-way audio |
 | `tcp` | Direct ICE-TCP with the advertised UDP route blocked and two-way audio and video |
 | `e` | Offer glare collision: browser ignores pending server offer, server rolls back and re-offers after answering browser |
@@ -53,7 +53,7 @@ Run `node smoke.mjs udp tcp` against a freshly built SFU to verify direct media 
 | `h` | Demonstrates why `addTrack` is disallowed (`addTrack` attaches to a server-created m-line and is answered `recvonly`/`inactive`) |
 | `i` | VP9, H.264, AV1, and VP9 temporal layers negotiate and decode across mismatched payload-type numbering |
 | `j` | Publisher Opus `a=fmtp` parameters (128 kb/s mono mic, 160 kb/s stereo screen audio) are echoed and applied by the encoder |
-| `k` | Toggling camera off/on (`removeTrack` or `transceiver.stop()`) allocates a fresh forwarded m-line |
+| `k` | Toggling camera off/on (`removeTrack` or `transceiver.stop()`) puts each new camera on the receiver's m-line that was just made `inactive`, and the SFU's offers to the receiver keep their m-line count |
 | `l` | 50-second continuous call remains connected past all internal inactivity timers |
 | `m` | Receive-only participant (`recvonly` initial offer) receives all published tracks |
 | `n` | Simulated NAT with 1-in-15 packet loss in both directions recovers via per-leg NACK and RTX |
@@ -61,6 +61,8 @@ Run `node smoke.mjs udp tcp` against a freshly built SFU to verify direct media 
 | `p` | Selective receiver subscription: subscribing only to microphone mids forwards zero screen-video or screen-audio packets until subscribed, stops forwarding immediately on unsubscription, and resumes with a fresh PLI keyframe and contiguous RTP sequence numbers without SDP renegotiation |
 | `q` | Shaped downlink (`300 ms` queue, `40 ms` delay, `15 ms` jitter, `1%` burst loss) stepped through `512`, `256`, and `128 kbit/s` and then restored: audio remains within loss and latency bounds throughout; at `512 kbit/s` only the higher-priority video mid is forwarded while the second is marked `heldBack`; at `256` and `128 kbit/s` both video mids are held back with zero forwarded video bytes and no state flapping; both video streams resume within 75 s once unthrottled |
 | `r` | Clean-link baseline: measures time-to-first-decoded-frame for five sequential late joiners subscribing to an active `1.5 Mbit/s` video stream, and measures audio packet transit time through `stellarr-media` via UDP relay timestamps |
+| `s` | A withdrawn camera's m-line carries another participant's camera: the receiver decodes the new publisher's color on it under a new SSRC, the directory names the new publisher and stream, Chromium reports the same track again in the new `msid` stream, and no m-line is added |
+| `t` | The same with audio: a withdrawn microphone's m-line carries a newcomer's tone |
 
 ### Encrypted call scenarios
 
@@ -74,3 +76,4 @@ Encrypted call scenarios run when explicitly named on the command line (`node sm
 | `xd` | Fail-closed capability guard: a browser context lacking WebRTC Encoded Transform support refuses to publish any plaintext media tracks in an encrypted call |
 | `xe` | Encryption CPU overhead benchmark (Chromium only): compares browser CPU usage and per-frame transform cost across four modes (unencrypted baseline, no-op worker pass-through, worker buffer copy, and full AES-256-GCM SFrame encryption) for bidirectional audio plus `1.2 Mbit/s` video |
 | `xf` | Encrypted Opus frame size distribution and bitrate verification with and without Opus constant bitrate (`cbr=1`) enabled |
+| `xg` | Camera toggled twice (`removeTrack`, then `transceiver.stop()`) in an encrypted call: the receiver's m-line and its one transform stay, and every new camera is decrypted and decoded in the publisher's color |

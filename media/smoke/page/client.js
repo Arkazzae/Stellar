@@ -138,15 +138,17 @@ function attachTransform(target, options) {
   e2ee.worker.postMessage({ type: "streams", readable, writable, options }, [readable, writable]);
 }
 
-/** Receivers wait for the directory to name whose frames they open. */
+/**
+ * Receivers wait for the directory to name whose frames they open, and follow
+ * it when the media server hands their section to another person's track.
+ */
 function bindReceivers() {
   const e2ee = state.e2ee;
   if (!e2ee) return;
   for (const receiver of e2ee.receivers) {
-    if (receiver.bound) continue;
     const entry = state.directory.find((t) => t.mid === receiver.mid);
-    if (!entry) continue;
-    receiver.bound = true;
+    if (!entry || entry.userId === receiver.publisher) continue;
+    receiver.publisher = entry.userId;
     e2ee.worker.postMessage({ type: "bind", label: receiver.label, sender: entry.userId });
   }
 }
@@ -343,7 +345,10 @@ async function handle(event) {
       }
       // The directory comes with the offer, so it is in hand before any
       // track of the offer arrives, and its sections are asked for before
-      // the answer that makes them live.
+      // the answer that makes them live. The media server forgets what it was
+      // asked for on a section it hands to another track, so the list goes
+      // out again with every offer, the same as the last or not.
+      if (state.subscribed !== "[]") state.subscribed = null;
       setDirectory("offer", payload.tracks);
       record("remote", "offer", payload.sdp, { negotiationId: payload.negotiationId });
       await pc.setRemoteDescription({ type: "offer", sdp: payload.sdp });
@@ -394,9 +399,11 @@ function attach(arrival) {
 function onTrack(event) {
   const mid = event.transceiver.mid;
   const entry = state.directory.find((t) => t.mid === mid);
-  if (state.e2ee) {
-    // Every receiver gets a transform, bound to the publisher the directory
-    // names; one the directory does not name yet drops what it gets.
+  // Every receiver gets one transform for as long as the connection lives,
+  // bound to the publisher the directory names; one the directory does not
+  // name yet drops what it gets. A section that starts receiving again for
+  // another track reports its receiver again, which keeps the transform it has.
+  if (state.e2ee && !state.e2ee.receivers.some((r) => r.receiver === event.receiver)) {
     const label = `rx:${mid}`;
     attachTransform(event.receiver, {
       role: "receive",
@@ -404,7 +411,12 @@ function onTrack(event) {
       label,
       ...(entry ? { sender: entry.userId } : {}),
     });
-    state.e2ee.receivers.push({ mid, label, bound: Boolean(entry) });
+    state.e2ee.receivers.push({
+      mid,
+      label,
+      receiver: event.receiver,
+      publisher: entry ? entry.userId : null,
+    });
   }
   const arrival = {
     at: performance.now(),

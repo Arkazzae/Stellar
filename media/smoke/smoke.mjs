@@ -580,6 +580,45 @@ class Scenario {
   }
 }
 
+/** How many sections the last offer of the media server to a page has. */
+async function mLinesOfOffer(client) {
+  const offer = (await client.descriptions())
+    .filter((d) => d.side === "remote" && d.type === "offer")
+    .pop();
+  return offer.sdp.split("\r\nm=").length - 1;
+}
+
+/** Waits until a page has the section `mid` inactive and out of its directory. */
+function sectionFreed(client, mid) {
+  return waitFor(`${client.name}'s section ${mid} to go inactive`, async () => {
+    const snapshot = await client.snapshot();
+    const t = snapshot.transceivers.find((x) => x.mid === mid);
+    return t?.currentDirection === "inactive" && !snapshot.directory.some((e) => e.mid === mid);
+  });
+}
+
+/**
+ * What a page shows of a section another publisher's track took over: a new
+ * SSRC, and the browser filing the track it already had under the stream the
+ * new publisher declared.
+ */
+async function checkTakenOver(client, mid, statsBefore, streamId) {
+  const statsAfter = (await client.stats()).inbound[mid];
+  check(
+    statsAfter.ssrc !== statsBefore.ssrc,
+    `${client.name}'s section ${mid} kept the SSRC ${statsBefore.ssrc}`,
+  );
+  const arrivals = (await client.snapshot()).arrivals.filter((a) => a.mid === mid);
+  check(
+    arrivals.at(-1).streams.includes(streamId),
+    `${client.name}'s last track event on ${mid} names ${arrivals.at(-1).streams}, not ${streamId}`,
+  );
+  return (
+    `SSRC ${statsBefore.ssrc} -> ${statsAfter.ssrc}, ${arrivals.length} track events ` +
+    `(${new Set(arrivals.map((a) => a.trackId)).size} tracks)`
+  );
+}
+
 /** Saves a page's descriptions before it leaves, for the dump. */
 async function leave(client) {
   client.savedDescriptions = await client.descriptions();
@@ -830,17 +869,22 @@ const SCENARIOS = {
     }
     await verifyRoom(s.env, s.clients);
 
-    // A browser offer after the leave still lists those sections; they must
-    // stay inactive and out of the directory.
+    // A browser offer after the leave still lists those sections. They stay
+    // out of the directory as B's; one is inactive until a track of its kind
+    // is forwarded, and then carries that track and nobody else's.
     await A.publish("camera", "video");
     const results = await verifyRoom(s.env, s.clients);
     for (const r of [A, C]) {
       const snapshot = await r.snapshot();
       for (const mid of bMids[r.name]) {
         const t = snapshot.transceivers.find((x) => x.mid === mid);
+        const named = snapshot.directory.find((e) => e.mid === mid);
         check(
-          t.currentDirection === "inactive",
-          `${r.name}'s section ${mid} of B is ${t.currentDirection} after A's offer`,
+          named
+            ? named.userId === A.userId && t.currentDirection === "recvonly"
+            : t.currentDirection === "inactive",
+          `${r.name}'s section ${mid} of B is ${t.currentDirection} after A's offer, ` +
+            `and the directory names ${named?.userId ?? "nobody"} on it`,
         );
       }
     }
@@ -1017,8 +1061,9 @@ const SCENARIOS = {
   /**
    * A camera turned off and on twice: once with removeTrack, which leaves an
    * inactive section, and once with transceiver.stop(), whose m-line the
-   * browser may recycle for the next camera. Every new camera gets a new
-   * section at the receiver, and the old ones stay inactive.
+   * browser may recycle for the next camera. The receiver's section of the
+   * withdrawn camera, once it is inactive, carries the next camera, and the
+   * media server's descriptions to it do not grow.
    */
   async k(s) {
     const A = await s.join("A");
@@ -1032,39 +1077,127 @@ const SCENARIOS = {
       const { mapping } = await directoryReady(B, s.clients);
       return mapping.find((m) => m.publication.kind === "video").mid;
     };
-    const inactiveAtB = (mid) =>
-      waitFor(`B's section ${mid} to go inactive`, async () => {
-        const snapshot = await B.snapshot();
-        const t = snapshot.transceivers.find((x) => x.mid === mid);
-        return t?.currentDirection === "inactive" && !snapshot.directory.some((e) => e.mid === mid);
-      });
-    const mLines = async () =>
-      (await A.descriptions())
-        .filter((d) => d.side === "local" && d.type === "offer")
+    const mLines = async (client, side) =>
+      (await client.descriptions())
+        .filter((d) => d.side === side && d.type === "offer")
         .pop()
         .sdp.split("\r\nm=").length - 1;
 
     const mids = [];
+    const offered = [];
     for (const how of ["remove", "stop", null]) {
       const camera = await A.publish("camera", "video");
       await verifyRoom(s.env, s.clients);
       const atB = await cameraMidAtB();
-      check(!mids.includes(atB), `B received the new camera on an old section ${atB}`);
+      check(
+        mids.every((mid) => mid === atB),
+        `B received the new camera on ${atB} and not on the section ${mids[0]} that was freed`,
+      );
       mids.push(atB);
-      steps.push(`camera at A ${camera.mid}, B ${atB}, A offers ${await mLines()} m-lines`);
+      offered.push(await mLines(B, "remote"));
+      steps.push(
+        `camera at A ${camera.mid}, B ${atB}, A offers ${await mLines(A, "local")} m-lines, ` +
+          `the media server ${offered.at(-1)}`,
+      );
       if (!how) break;
       await A.unpublish("camera", how);
-      await inactiveAtB(atB);
+      await sectionFreed(B, atB);
       steps.push(`${how}: B's ${atB} inactive`);
     }
+    check(
+      offered.every((n) => n === offered[0]),
+      `the media server's offers to B grew: ${offered}`,
+    );
 
     const results = await verifyRoom(s.env, s.clients);
-    const snapshot = await B.snapshot();
-    for (const mid of mids.slice(0, -1)) {
-      const t = snapshot.transceivers.find((x) => x.mid === mid);
-      check(t.currentDirection === "inactive", `B's old section ${mid} is ${t.currentDirection}`);
-    }
     return { summary: `${steps.join("; ")}; ${summarise(results)}`, results };
+  },
+
+  /**
+   * A's camera is received by B and stops, and C starts a camera. B decodes
+   * C's colour on the section that carried A's camera, which the directory
+   * now names as C's, with the stream C declared, and B's descriptions have
+   * no more sections than before.
+   */
+  async s(s) {
+    const A = await s.join("A");
+    const B = await s.join("B");
+    const C = await s.join("C");
+    // Neither camera may meet an offer of the media server to its own page,
+    // or the scenario would be the collision of e by chance.
+    await directoryReady(A, s.clients);
+    const camera = await A.publish("camera", "video");
+    await verifyRoom(s.env, s.clients);
+
+    const before = await B.snapshot();
+    const section = before.directory.find((t) => t.userId === A.userId && t.kind === "video").mid;
+    const atC = (await C.snapshot()).directory.find((t) => t.userId === A.userId && t.kind === "video").mid;
+    const sectionsBefore = await mLinesOfOffer(B);
+    const statsBefore = (await B.stats()).inbound[section];
+
+    await A.unpublish("camera", "remove");
+    await sectionFreed(B, section);
+    await sectionFreed(C, atC);
+
+    const shown = await C.publish("camera", "video");
+    const results = await verifyRoom(s.env, s.clients);
+
+    const snapshot = await B.snapshot();
+    const entry = snapshot.directory.find((t) => t.userId === C.userId && t.kind === "video");
+    check(entry?.mid === section, `C's camera is on ${entry?.mid} at B, not on the freed ${section}`);
+    check(entry.streamId === shown.streamId, `the directory names the stream ${entry.streamId}`);
+    check(
+      snapshot.directory.every((t) => t.userId !== A.userId || t.kind !== "video"),
+      "A's camera is still in B's directory",
+    );
+    const sectionsAfter = await mLinesOfOffer(B);
+    check(
+      sectionsAfter === sectionsBefore,
+      `B's description has ${sectionsAfter} sections, it had ${sectionsBefore}`,
+    );
+    const taken = await checkTakenOver(B, section, statsBefore, shown.streamId);
+    return {
+      summary:
+        `B's section ${section}: A ${camera.streamId.slice(0, 8)} -> C ${entry.streamId.slice(0, 8)}, ` +
+        `${taken}, ${sectionsAfter} sections; ${summarise(results)}`,
+      results,
+    };
+  },
+
+  /**
+   * The same with sound: A's microphone is withdrawn and C joins with its
+   * own. B hears C's tone on the section that carried A's, attributed to C.
+   */
+  async t(s) {
+    const A = await s.join("A");
+    const B = await s.join("B");
+    await verifyRoom(s.env, s.clients);
+
+    const before = await B.snapshot();
+    const section = before.directory.find((t) => t.userId === A.userId && t.kind === "audio").mid;
+    const sectionsBefore = await mLinesOfOffer(B);
+    const statsBefore = (await B.stats()).inbound[section];
+
+    await A.unpublish("mic", "remove");
+    await sectionFreed(B, section);
+
+    const C = await s.join("C");
+    const results = await verifyRoom(s.env, s.clients);
+
+    const snapshot = await B.snapshot();
+    const entry = snapshot.directory.find((t) => t.userId === C.userId);
+    check(entry?.mid === section, `C's microphone is on ${entry?.mid} at B, not on the freed ${section}`);
+    const sectionsAfter = await mLinesOfOffer(B);
+    check(
+      sectionsAfter === sectionsBefore,
+      `B's description has ${sectionsAfter} sections, it had ${sectionsBefore}`,
+    );
+    const mic = C.publications.find((p) => p.name === "mic");
+    const taken = await checkTakenOver(B, section, statsBefore, mic.streamId);
+    return {
+      summary: `B's section ${section}: A -> C, ${taken}, ${sectionsAfter} sections; ${summarise(results)}`,
+      results,
+    };
   },
 
   /**
@@ -2047,6 +2180,38 @@ const SCENARIOS = {
         .join("; "),
       rows,
     };
+  },
+
+  /**
+   * A camera turned off and on again in an encrypted private call: the
+   * receiver's section is the same, its receiver keeps the transform it has,
+   * and every new picture is opened and decoded in the publisher's colour.
+   */
+  async xg(s) {
+    const A = await s.join("A", { e2ee: {} });
+    const B = await s.join("B", { e2ee: {} });
+    await directoryReady(A, s.clients);
+    const sections = [];
+    let opened = 0;
+    for (const how of ["remove", "stop", null]) {
+      await A.publish("camera", "video");
+      await verifyRoom(s.env, s.clients);
+      const { mapping } = await directoryReady(B, s.clients);
+      const mid = mapping.find((m) => m.publication.kind === "video").mid;
+      sections.push(mid);
+      const stats = await B.e2eeStats();
+      const transforms = stats.transforms.filter((t) => t.label === `rx:${mid}`);
+      check(transforms.length === 1, `B has ${transforms.length} transforms on ${mid}`);
+      const worker = transformOf(stats, `rx:${mid}`);
+      check(worker.passed > opened, `B's receiver on ${mid} opened no new frame: ${JSON.stringify(worker)}`);
+      opened = worker.passed;
+      if (!how) break;
+      await A.unpublish("camera", how);
+      await sectionFreed(B, mid);
+    }
+    check(sections.every((mid) => mid === sections[0]), `the camera moved between sections ${sections}`);
+    const results = await verifyRoom(s.env, s.clients);
+    return { summary: `B's section ${sections[0]} carried the camera ${sections.length} times; ${summarise(results)}`, results };
   },
 };
 
