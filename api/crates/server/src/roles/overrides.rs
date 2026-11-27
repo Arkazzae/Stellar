@@ -18,7 +18,7 @@ use crate::http::{ApiError, ApiResult, Endpoints, Json, Path, json_response};
 use crate::permissions::audit::{self, AuditChange, AuditEvent};
 use crate::permissions::authorization::{self, Scope};
 use crate::permissions::membership::ActiveServer;
-use crate::permissions::privileges::{self, ADMINISTRATOR, MANAGE_ROLES, contains};
+use crate::permissions::privileges::{self, MANAGE_ROLES, SERVER_ONLY, contains};
 use crate::permissions::roles::Member;
 use crate::permissions::access_changed::ViewChange;
 use crate::permissions::visibility;
@@ -116,7 +116,8 @@ fn refuse(
 }
 
 /// The two masks of a request: known names, none both allowed and denied, and
-/// never Administrator.
+/// none of the server's alone (Administrator, and creating and managing
+/// events), which no place can change.
 fn masks(request: &OverrideRequest, messages: &Messages) -> Result<(i64, i64), ApiError> {
     let parse = |names: &Option<Vec<String>>| {
         privileges::parse_names(names.iter().flatten().map(String::as_str))
@@ -130,7 +131,7 @@ fn masks(request: &OverrideRequest, messages: &Messages) -> Result<(i64, i64), A
             messages.get(MessageKey::PermissionAllowedAndDenied, &[])?,
         ));
     }
-    if (allow | deny) & ADMINISTRATOR != privileges::NONE {
+    if (allow | deny) & SERVER_ONLY != privileges::NONE {
         return Err(crate::http::Problem::invalid_field(
             "permissions",
             messages.get(MessageKey::PermissionServerWideOnly, &[])?,
