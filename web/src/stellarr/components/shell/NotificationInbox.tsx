@@ -2,12 +2,21 @@ import { useState, type ReactNode } from "react";
 
 import { Icon } from "@stellarr/icons";
 import { AnchoredCard } from "@/components/primitives/AnchoredCard";
+import type { MessageKey } from "@/i18n";
 import { formatAgo, formatFull } from "@/lib/format/format";
 import type { InboxNotification, ServerInviteNotificationTarget } from "@/ports";
 import { useLanguage } from "@/state/hooks";
 
 /** The source of a row written by the server when someone mentions the reader. */
 const MENTION_PACKAGE_ID = "stellarr.mention";
+/** An event's notices: the module says which, and the module's name is the event's. */
+const EVENT_PACKAGE_ID = "stellarr.events";
+const EVENT_NOTICES: Record<string, { title: MessageKey; body: MessageKey }> = {
+  reminder: { title: "notifications.event.reminderTitle", body: "notifications.event.reminderBody" },
+  seat: { title: "notifications.event.seatTitle", body: "notifications.event.seatBody" },
+  cancelled: { title: "notifications.event.cancelledTitle", body: "notifications.event.cancelledBody" },
+  changed: { title: "notifications.event.changedTitle", body: "notifications.event.changedBody" },
+};
 
 export interface NotificationInboxProps {
   items: readonly InboxNotification[];
@@ -34,7 +43,7 @@ export interface NotificationInboxProps {
    */
   scheduled?: { count: number; list: ReactNode };
   /** Opens an event's card from a reminder or a seat given. */
-  onOpenEvent?: (eventId: string) => void;
+  onOpenEvent?: (target: { serverId: string; eventId: string }) => void;
 }
 
 interface NotificationRowProps {
@@ -46,7 +55,7 @@ interface NotificationRowProps {
   onDelete: (notificationId: string) => void;
   onOpenChannel: (channelId: string) => void;
   onJoinInvite?: (inviteCode: string) => void;
-  onOpenEvent?: (eventId: string) => void;
+  onOpenEvent?: (target: { serverId: string; eventId: string }) => void;
 }
 
 const MAX_UNREAD_SHOWN = 99;
@@ -72,7 +81,9 @@ function NotificationRow({
   const canOpenChannel = channelId !== null && channel !== null;
   const canJoinInvite = invite !== null && onJoinInvite !== undefined;
   const isJoiningThis = invite !== null && joiningInvite === invite.inviteCode;
-  const eventId = target?.type === "event" ? target.eventId : null;
+  const eventTarget = target?.type === "event" ? target : null;
+  // An event's notices are worded here too, by which notice it is.
+  const eventNotice = source.packageId === EVENT_PACKAGE_ID ? EVENT_NOTICES[source.moduleId] : undefined;
 
   const activateRow = canOpenChannel
     ? () => {
@@ -83,10 +94,10 @@ function NotificationRow({
       ? () => {
           if (joiningInvite === null) onJoinInvite(invite.inviteCode);
         }
-      : eventId !== null && onOpenEvent !== undefined
+      : eventTarget !== null && onOpenEvent !== undefined
         ? () => {
             if (unread) onMarkRead(notification.id);
-            onOpenEvent(eventId);
+            onOpenEvent({ serverId: eventTarget.serverId, eventId: eventTarget.eventId });
           }
         : undefined;
 
@@ -102,6 +113,9 @@ function NotificationRow({
     });
   } else if (source.packageId === MENTION_PACKAGE_ID) {
     title = t("notifications.mentionTitle", { author: source.moduleName });
+  } else if (eventNotice !== undefined) {
+    title = t(eventNotice.title, { event: source.moduleName });
+    body = t(eventNotice.body);
   }
 
   const className = [

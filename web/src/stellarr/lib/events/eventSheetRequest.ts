@@ -7,8 +7,11 @@ import type { ServerEvent } from "@/ports/events";
 export type EventWindow =
   | { kind: "create"; announceOn?: string }
   | { kind: "edit"; event: ServerEvent }
-  /** One event's card on its own, opened from the list. */
-  | { kind: "view"; eventId: string };
+  /**
+   * One event's card on its own, from the list, the inbox or a notification.
+   * With a server, it waits until that server is on screen and reads its events.
+   */
+  | { kind: "view"; eventId: string; serverId?: string };
 
 /** A store of its own; the app uses `eventWindow`, and tests make fresh ones. */
 export function createEventWindow() {

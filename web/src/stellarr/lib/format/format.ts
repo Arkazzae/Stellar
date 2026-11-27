@@ -190,8 +190,10 @@ export function messageReference(
   const content = message.content.replace(/\s+/g, " ").trim();
   const hasAttachment = message.attachments.length > 0;
 
-  // A poll with no text of its own is quoted by its question, as the server quotes it.
-  const quoted = content.length === 0 && message.poll !== undefined ? message.poll.question : content;
+  // A poll or an announced event with no text of its own is quoted by its
+  // question or the event's name.
+  const quoted =
+    content.length > 0 ? content : (message.poll?.question ?? message.event?.name ?? content);
   let preview = quoted;
   if (quoted.length > PREVIEW_CHARS) {
     preview = `${quoted.slice(0, PREVIEW_CHARS - 1)}…`;

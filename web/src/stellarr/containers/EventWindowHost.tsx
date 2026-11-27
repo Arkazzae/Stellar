@@ -1,6 +1,6 @@
-import { useId, useSyncExternalStore } from "react";
+import { useEffect, useId, useState, useSyncExternalStore } from "react";
 
-import { cx } from "@stellarr/ui";
+import { Button, cx } from "@stellarr/ui";
 import { EventSheet } from "@/components/events/EventSheet";
 import { Modal } from "@/components/primitives/Modal";
 import { eventWindow } from "@/lib/events/eventSheetRequest";
@@ -26,6 +26,59 @@ function draftOf(event: ServerEvent, zone: string): EventDraft {
   };
 }
 
+/**
+ * One event's card on its own. One this client does not hold yet is looked
+ * for in its server's events, once that server is on screen; there is no
+ * other way to read a single event. Not there means it ended, was cancelled
+ * or is no longer the reader's to see, and the window says so.
+ */
+function EventView({ eventId, serverId }: { eventId: string; serverId?: string }) {
+  const { events } = usePorts();
+  const { server } = useDirectory();
+  const { t } = useLanguage();
+  const titleId = useId();
+  const event = useSyncExternalStore(
+    events.subscribe,
+    () => events.get(eventId),
+    () => events.get(eventId),
+  );
+  const [looked, setLooked] = useState(false);
+  const here = serverId === undefined || serverId === server.id;
+  useEffect(() => {
+    if (event !== undefined || looked || !here) return;
+    let current = true;
+    events.load(server.id).then(
+      () => current && setLooked(true),
+      () => current && setLooked(true),
+    );
+    return () => {
+      current = false;
+    };
+  }, [event, looked, here, events, server.id]);
+
+  if (event === undefined && !looked) return null;
+  return (
+    <Modal open onClose={eventWindow.close} labelledBy={titleId} className={cx(css.wrap)} exitMs={0}>
+      {event === undefined ? (
+        <div className={css.gone}>
+          <h2 id={titleId}>{t("event.goneTitle")}</h2>
+          <p>{t("event.goneBody")}</p>
+          <Button type="button" variant="secondary" onClick={eventWindow.close}>
+            {t("common.close")}
+          </Button>
+        </div>
+      ) : (
+        <div className={css.card}>
+          <h2 id={titleId} className="sr-only">
+            {event.name}
+          </h2>
+          <EventCardContainer snapshot={event} />
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 /** Whatever event window is asked for: a new one, a change, or one card on its own. */
 export function EventWindowHost() {
   const open = useSyncExternalStore(eventWindow.subscribe, eventWindow.get, eventWindow.get);
@@ -34,21 +87,15 @@ export function EventWindowHost() {
   const { locale, t } = useLanguage();
   const zone = useReaderZone();
   const now = useEventNow();
-  const titleId = useId();
   if (open === null) return null;
 
   if (open.kind === "view") {
-    const event = events.get(open.eventId);
-    if (event === undefined) return null;
     return (
-      <Modal open onClose={eventWindow.close} labelledBy={titleId} className={cx(css.wrap)} exitMs={0}>
-        <div className={css.card}>
-          <h2 id={titleId} className="sr-only">
-            {event.name}
-          </h2>
-          <EventCardContainer snapshot={event} />
-        </div>
-      </Modal>
+      <EventView
+        key={`${open.serverId ?? ""}:${open.eventId}`}
+        eventId={open.eventId}
+        {...(open.serverId === undefined ? {} : { serverId: open.serverId })}
+      />
     );
   }
 

@@ -8,6 +8,7 @@ import {
   initials,
   messageReference,
 } from "./format";
+import { serverEvent } from "@/test/events";
 
 function message(
   id: string,
@@ -182,6 +183,15 @@ describe("messageReference", () => {
       preview: "Kliknij, aby zobaczyć załącznik",
       hasAttachment: true,
     });
+  });
+});
+
+describe("messageReference of a message with no words", () => {
+  it("quotes a poll by its question and an announcement by its event's name", () => {
+    const empty = message("a", "ada", "2026-08-10T19:00:00Z", "");
+    const poll = { question: "Kiedy gramy?", answers: [], multiple: false, endsAt: "2026-08-11T19:00:00Z", voters: 0 };
+    expect(messageReference({ ...empty, poll }).preview).toBe("Kiedy gramy?");
+    expect(messageReference({ ...empty, event: serverEvent() }).preview).toBe("Wieczór planszówek");
   });
 });
 

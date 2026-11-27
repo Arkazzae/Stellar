@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { getJson } from "@/lib/api/calls/http";
 import { expectRecord, expectString } from "@/lib/api/expect";
 import { parseMessage } from "@/lib/api/parsers";
+import { eventWindow } from "@/lib/events/eventSheetRequest";
 import type { Message } from "@/ports";
 import { useDirectory, useSession, useUi } from "@/state/hooks";
 
@@ -10,11 +11,17 @@ export interface LaunchProps {
   onEntryHandled?: () => void;
 }
 
-type Destination = { kind: "dm"; id: string } | { kind: "channel"; server: string; message: Message };
+type Destination =
+  | { kind: "dm"; id: string }
+  | { kind: "channel"; server: string; message: Message }
+  | { kind: "event"; server: string; eventId: string };
 
 function destination(value: unknown, path: string): Destination {
   const row = expectRecord(value, path);
   if (row.kind === "dm") return { kind: "dm", id: expectString(row, "conversationId", path) };
+  if (row.kind === "event") {
+    return { kind: "event", server: expectString(row, "serverId", path), eventId: expectString(row, "eventId", path) };
+  }
   return { kind: "channel", server: expectString(row, "serverId", path), message: parseMessage(row.message, path) };
 }
 
@@ -42,6 +49,9 @@ export function LaunchTarget({ entry, finish, reveal }: {
             selectServer(target.server);
             reload();
             return;
+          } else if (target.kind === "event") {
+            // Its card, over the server's room, which reads the server's events.
+            eventWindow.open({ kind: "view", eventId: target.eventId, serverId: target.server });
           } else {
             selectTextChannel(target.message.channelId);
             reveal(target.message);
