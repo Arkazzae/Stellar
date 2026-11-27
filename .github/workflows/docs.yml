@@ -1,7 +1,7 @@
 name: Docs
 
 # Builds the documentation site (docs/, built with VitePress) and publishes it
-# to GitHub Pages at https://arkazzae.github.io/Stellar/. The build fails on a
+# to GitHub Pages at https://arkazzae.github.io/Stellarr/. The build fails on a
 # link to a page that does not exist, so it doubles as the link check.
 #
 # Runs for pull requests into main and for pushes to main that change the

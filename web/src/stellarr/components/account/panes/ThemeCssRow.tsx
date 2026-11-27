@@ -70,7 +70,7 @@ export function ThemeCssRow({ theme, onChange }: {
                   setError(null);
                 }}
               />
-              <a className={styles.cssDocs} href="https://arkazzae.github.io/Stellar/themes.html#write-a-css-theme" target="_blank" rel="noreferrer">
+              <a className={styles.cssDocs} href="https://arkazzae.github.io/Stellarr/themes.html#write-a-css-theme" target="_blank" rel="noreferrer">
                 {t("theme.css.docs")}
               </a>
             </div>
