@@ -19,6 +19,7 @@
     "media.d.ts",
     "CONTRACT.md",
     "BOT-CONTRACT.md",
+    "WEBHOOK-CONTRACT.md",
     "dev/",
     "host/",
     "LICENSE"
