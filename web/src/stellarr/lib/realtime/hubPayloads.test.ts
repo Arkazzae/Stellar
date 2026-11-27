@@ -285,7 +285,8 @@ describe("parseMediaSessionClosed", () => {
 
 describe("parseMediaSessionOpened", () => {
   it("reads the session id out of the hub's answer", () => {
-    expect(parseMediaSessionOpened({ sessionId: "session-1" })).toBe("session-1");
+    expect(parseMediaSessionOpened({ sessionId: "session-1" })).toEqual({ sessionId: "session-1", cameraSimulcast: false });
+    expect(parseMediaSessionOpened({ sessionId: "s", cameraSimulcast: true })).toEqual({ sessionId: "s", cameraSimulcast: true });
   });
 
   it("refuses an answer without a session id", () => {

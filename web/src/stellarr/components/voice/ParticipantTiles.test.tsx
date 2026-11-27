@@ -7,6 +7,7 @@ import { renderWithConfirm } from "@/test/confirm";
 
 import { CameraTileContext, useCameraTiles } from "./useCameraTiles";
 import { ParticipantTiles } from "./ParticipantTiles";
+import { ParticipantTile } from "./ParticipantTile";
 
 const ada: PersonVM = {
   id: "ada",
@@ -33,11 +34,11 @@ describe("ParticipantTiles", () => {
       disconnect() {}
     });
     function Gallery({ duplicate }: { duplicate: boolean }) {
-      const { cameras, observe } = useCameraTiles();
+      const { cameras, largeCameras, observe } = useCameraTiles();
       return <CameraTileContext.Provider value={observe}>
-        <output>{[...cameras].join(",")}</output>
+        <output data-large={[...largeCameras].join(",")}>{[...cameras].join(",")}</output>
         <ParticipantTiles people={[ada, ilya]} localPersonId={ada.id} />
-        {duplicate && <ParticipantTiles people={[ilya]} />}
+        {duplicate && <ParticipantTile person={ilya} focused />}
       </CameraTileContext.Provider>;
     }
     try {
@@ -48,12 +49,14 @@ describe("ParticipantTiles", () => {
       expect(cameraIds).toBeEmptyDOMElement();
       act(() => { first!(true); second!(true); });
       expect(cameraIds).toHaveTextContent("ilya");
+      expect(cameraIds).toHaveAttribute("data-large", "ilya");
       act(() => first!(false));
       expect(cameraIds).toHaveTextContent("ilya");
       view.rerender(<Gallery duplicate={false} />);
       expect(cameraIds).toBeEmptyDOMElement();
       act(() => first!(true));
       expect(cameraIds).toHaveTextContent("ilya");
+      expect(cameraIds).toHaveAttribute("data-large", "");
       const hidden = vi.spyOn(document, "hidden", "get");
       try {
         hidden.mockReturnValue(true);

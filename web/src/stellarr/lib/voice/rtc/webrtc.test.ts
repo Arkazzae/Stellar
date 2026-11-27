@@ -229,6 +229,7 @@ class FakeRealtime implements RealtimeClient {
   /** Hub calls in the order they were made. */
   calls: string[] = [];
   sessions = 0;
+  cameraSimulcast = true;
   status: RealtimeStatus = "connected";
   private handlers = new Map<RealtimeEventName, Array<(payload: never) => void>>();
   private statusListeners: Array<() => void> = [];
@@ -258,7 +259,7 @@ class FakeRealtime implements RealtimeClient {
   openMediaSession = vi.fn(async (channelId: string) => {
     this.sessions += 1;
     this.calls.push(`OpenMediaSession ${channelId}`);
-    return `media-session-${this.sessions}`;
+    return { sessionId: `media-session-${this.sessions}`, cameraSimulcast: this.cameraSimulcast };
   });
   sendMediaSignal = vi.fn(async (signal: MediaSignal<BrowserMediaSignalKind>) => {
     this.media.push(signal);
@@ -682,14 +683,14 @@ describe("joining", () => {
   });
 
   it("builds nothing for a session that opens after the call was left", async () => {
-    const opening = deferred<string>();
+    const opening = deferred<{ sessionId: string; cameraSimulcast: boolean }>();
     realtime.openMediaSession.mockReturnValueOnce(opening.promise);
     const client = build();
 
     const joining = client.join(CHANNEL);
     await vi.waitFor(() => expect(realtime.openMediaSession).toHaveBeenCalled());
     await client.leave();
-    opening.resolve("media-session-1");
+    opening.resolve({ sessionId: "media-session-1", cameraSimulcast: true });
     await joining;
 
     expect(FakePeerConnection.instances).toHaveLength(0);
@@ -1091,6 +1092,10 @@ describe("publishing on the one connection", () => {
     expect(pc.addTransceiver).toHaveBeenLastCalledWith(face, {
       direction: "sendonly",
       streams: [voice],
+      sendEncodings: [
+        expect.objectContaining({ rid: "thumb", maxBitrate: 200_000, maxFramerate: 15, scaleResolutionDownBy: 4 }),
+        expect.objectContaining({ rid: "main", maxBitrate: 1_500_000 }),
+      ],
     });
     await vi.waitFor(() => expect(realtime.mediaOfKind("offer")).toHaveLength(2));
     const sdp = payloadOf(realtime.mediaOfKind("offer")[1]).sdp;
@@ -1101,6 +1106,17 @@ describe("publishing on the one connection", () => {
         payload: expect.stringContaining(`"cameraStreamId":"${voice.id}"`),
       }),
     );
+  });
+
+  it("publishes a single camera encoding when the session lacks simulcast support", async () => {
+    realtime.cameraSimulcast = false;
+    const client = build();
+    const pc = await joined(client);
+    await answerOffer(pc);
+    const face = fakeTrack("video");
+    getUserMedia.mockResolvedValueOnce(new FakeMediaStream([face], "cam-a"));
+    await client.startCamera();
+    expect(pc.addTransceiver).toHaveBeenLastCalledWith(face, { direction: "sendonly", streams: expect.any(Array) });
   });
 
   it("gives a share's sound its own stereo profile in the very offer that first carries it", async () => {
@@ -2616,6 +2632,15 @@ describe("receiving subscriptions", () => {
     await vi.waitFor(() =>
       expect(selections().at(-1)?.mids).toEqual(["c1", "b1", "c2", "c3", "c4"]),
     );
+    client.setReceivePreferences({
+      screen: { userId: "u-c", streamId: "screen-c" },
+      cameras: new Set(["u-b", "u-c"]),
+      largeCameras: new Set(["u-c"]),
+    });
+    await vi.waitFor(() => expect(JSON.parse(realtime.mediaOfKind("subscriptions").at(-1)!.payload)).toEqual({
+      mids: ["c1", "b1", "c2", "c3", "c4", "b2"],
+      thumbnailMids: ["b2"],
+    }));
   });
 
   it("says which picture the media server holds back for this side, and when it is back", async () => {

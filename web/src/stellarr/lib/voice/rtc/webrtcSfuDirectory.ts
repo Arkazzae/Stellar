@@ -88,8 +88,9 @@ export class TrackDirectory {
    * sends every sound whatever the downlink, and takes the pictures in this
    * order while they fit. The directory itself keeps them all.
    */
-  subscribedMids(preferences: VoiceReceivePreferences, held: (person: Participant) => boolean = () => false): string[] {
-    const { cameras } = preferences;
+  subscriptions(preferences: VoiceReceivePreferences, held: (person: Participant) => boolean = () => false) {
+    const { cameras, largeCameras } = preferences;
+    const thumbnailMids: string[] = [];
     const ranked: { rank: number; mid: string }[] = [];
     for (const entry of this.entries.values()) {
       const person = this.env.people.get(entry.userId);
@@ -102,11 +103,13 @@ export class TrackDirectory {
       } else if (entry.kind === "audio") {
         ranked.push({ rank: 0, mid: entry.mid });
       } else if (cameras === true || (cameras !== false && cameras.has(entry.userId))) {
-        ranked.push({ rank: 3, mid: entry.mid });
+        const thumbnail = largeCameras !== undefined && !largeCameras.has(entry.userId);
+        if (thumbnail) thumbnailMids.push(entry.mid);
+        ranked.push({ rank: thumbnail ? 4 : 3, mid: entry.mid });
       }
     }
     // The sort is stable: within a rank the directory's order stands.
-    return ranked.sort((a, b) => a.rank - b.rank).map(({ mid }) => mid);
+    return { mids: ranked.sort((a, b) => a.rank - b.rank).map(({ mid }) => mid), thumbnailMids };
   }
 
   /** Whose track the media server says the section `mid` carries, or null before it says. */

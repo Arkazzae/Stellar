@@ -37,6 +37,7 @@ export interface ParticipantTileProps {
   onOpenProfile?: OpenProfile;
   /** The tile has the stage on its own. */
   focused?: boolean;
+  largeCamera?: boolean;
   /** Give the tile the stage, or take it back when it has it. Absent: no such click. */
   onFocus?: () => void;
   /** The activity this person is inside, marked after their name. */
@@ -89,13 +90,14 @@ export function ParticipantTile({
   soundPlays,
   onOpenProfile,
   focused = false,
+  largeCamera = focused,
   onFocus,
   activity,
 }: ParticipantTileProps) {
   const observe = useContext(CameraTileContext);
   const cameraTile = useCallback((tile: HTMLDivElement | null) => {
-    if (tile && !local) return observe?.(tile, person.id);
-  }, [observe, local, person.id]);
+    if (tile && !local) return observe?.(tile, person.id, largeCamera);
+  }, [observe, local, person.id, largeCamera]);
   const video = useRef<HTMLVideoElement>(null);
   const menu = useContextMenu();
   const { t } = useLanguage();

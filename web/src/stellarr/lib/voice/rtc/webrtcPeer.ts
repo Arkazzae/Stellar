@@ -36,6 +36,7 @@ export interface MediaFlow {
  * it carries everybody; the media server's directory says whose track is whose.
  */
 export interface Link {
+  readonly cameraSimulcast: boolean;
   readonly connection: RTCPeerConnection;
   /** What this side sends on the link; each is null while it is off. */
   micSender: RTCRtpSender | null;
@@ -59,6 +60,7 @@ export interface LinkRecovery {
 }
 
 export interface LinkInit {
+  cameraSimulcast?: boolean;
   iceServers: RTCIceServer[];
   recovery: LinkRecovery;
   crypto?: CallCrypto | null;
@@ -78,6 +80,7 @@ export function createLink(init: LinkInit): Link {
 
   const link: Link = {
     connection,
+    cameraSimulcast: init.cameraSimulcast === true && crypto === null,
     micSender: null,
     cameraSender: null,
     screenVideoSender: null,
@@ -110,8 +113,24 @@ export function createLink(init: LinkInit): Link {
  * the track would silently go nowhere. A send-only transceiver of its own is
  * always a new section the media server accepts.
  */
-export function addSender(link: Link, track: MediaStreamTrack, stream: MediaStream): RTCRtpSender {
-  const { sender } = link.connection.addTransceiver(track, { direction: "sendonly", streams: [stream] });
+export function addSender(
+  link: Link,
+  track: MediaStreamTrack,
+  stream: MediaStream,
+  encodings?: RTCRtpEncodingParameters[],
+): RTCRtpSender {
+  const init: RTCRtpTransceiverInit = { direction: "sendonly", streams: [stream] };
+  let transceiver: RTCRtpTransceiver;
+  if (encodings && link.cameraSimulcast) {
+    try {
+      transceiver = link.connection.addTransceiver(track, { ...init, sendEncodings: encodings });
+    } catch {
+      transceiver = link.connection.addTransceiver(track, init);
+    }
+  } else {
+    transceiver = link.connection.addTransceiver(track, init);
+  }
+  const { sender } = transceiver;
   // In an encrypted call, from the sender's very first frame. A later
   // `replaceTrack` keeps the transform.
   link.crypto?.attachSender(sender, track.kind === "video" ? "video" : "audio");

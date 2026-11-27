@@ -111,6 +111,17 @@ export function cameraEncoding(
   return { maxBitrate, maxFramerate, networkPriority: "medium", priority: "medium" };
 }
 
+/** The short edge of the thumbnail is about 180 pixels even after a device swap. */
+export function thumbnailEncoding(
+  track: MediaStreamTrack,
+  quality: CameraQualityId,
+): RTCRtpEncodingParameters {
+  const capture = track.getSettings?.();
+  const profile = CAMERA_PROFILES[quality];
+  const shortEdge = Math.min(capture?.height || profile.height, capture?.width || profile.width);
+  return { maxBitrate: 200_000, maxFramerate: 15, scaleResolutionDownBy: Math.max(1, shortEdge / 180) };
+}
+
 function classifyCameraError(cause: unknown, t: Translator): CameraCaptureError {
   const name = cause instanceof DOMException ? cause.name : "";
   switch (name) {

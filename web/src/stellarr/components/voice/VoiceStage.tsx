@@ -197,6 +197,7 @@ export function VoiceStage({
               key={tile.key}
               {...participantTileProps(tile.person, sources)}
               focused={tile === focused}
+              largeCamera={tile === focused || (layout === "grid" && tiles.length <= 2)}
               onFocus={underActivity ? undefined : () => focus(tile.key)}
             />
           ),

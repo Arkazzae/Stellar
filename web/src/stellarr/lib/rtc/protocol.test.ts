@@ -272,6 +272,12 @@ describe("Stellarr Media hub leg", () => {
       mids: ["00D", "screen-2"],
     });
     expect(decodeMediaSubscriptions(encodeMediaSubscriptions([]))).toEqual({ mids: [] });
+    expect(decodeMediaSubscriptions(encodeMediaSubscriptions(["mic", "cam"], ["cam"]))).toEqual({
+      mids: ["mic", "cam"], thumbnailMids: ["cam"],
+    });
+    for (const invalid of [["outside"], ["cam", "cam"]]) {
+      expect(() => encodeMediaSubscriptions(["mic", "cam"], invalid)).toThrow(TypeError);
+    }
     const limit = Array.from({ length: 4096 }, (_, index) => String(index));
     expect(decodeMediaSubscriptions(encodeMediaSubscriptions(limit))?.mids).toHaveLength(4096);
     expect(decodeMediaSubscriptions(encodeMediaSubscriptions(["x".repeat(16)]))).toEqual({

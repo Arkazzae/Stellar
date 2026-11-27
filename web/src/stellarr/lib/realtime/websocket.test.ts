@@ -375,7 +375,7 @@ describe("realtime commands", () => {
     socket.receive({ type: "result", id: 1, value: { id: "session-7" } });
     await invalid;
 
-    const opened = expect(client.openMediaSession("voice-1")).resolves.toBe("session-7");
+    const opened = expect(client.openMediaSession("voice-1")).resolves.toEqual({ sessionId: "session-7", cameraSimulcast: false });
     socket.receive({ type: "result", id: 2, value: { sessionId: "session-7" } });
     await opened;
 

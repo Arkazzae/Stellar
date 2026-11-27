@@ -166,13 +166,13 @@ export class WebSocketRealtimeClient implements RealtimeClient {
     return this.command(RTC_HUB.methods.signal, signal);
   }
 
-  async openMediaSession(channelId: ChannelId): Promise<string> {
+  async openMediaSession(channelId: ChannelId) {
     const result = await this.invoke(RTC_HUB.methods.openMediaSession, channelId);
-    const sessionId = parseMediaSessionOpened(result);
-    if (sessionId === null) {
+    const session = parseMediaSessionOpened(result);
+    if (session === null) {
       throw new Error(`${RTC_HUB.methods.openMediaSession} returned no session id`);
     }
-    return sessionId;
+    return session;
   }
 
   sendMediaSignal(signal: MediaSignal<BrowserMediaSignalKind>): Promise<void> {
