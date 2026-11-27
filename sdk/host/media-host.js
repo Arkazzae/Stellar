@@ -10,7 +10,7 @@ const gifCodes = ["permission", "unavailable", "declined", "rateLimited", "notFo
 const gifTypes = ["image/gif", "image/webp", "image/svg+xml"];
 const gifError = (code, message) => Object.assign(new Error(message), { code });
 const pixels = value => Number.isSafeInteger(value) && value > 0 ? value : 1;
-export function bindMediaHost({ frame, origin, nonce, embedHosts = [], title, permissions = [], controls, tile, camera, cloneLocalCamera, volume, muted = () => false, fixtures = false, language = "en", overlay, ask, labels = {}, gifs }) {
+export function bindMediaHost({ frame, origin, nonce, embedHosts = [], title, permissions = [], controls, tile, camera, cloneLocalCamera, volume = 1, muted = () => false, fixtures = false, language = "en", overlay, ask, labels = {}, gifs, onDevices }) {
   const words = (en, polish) => (typeof language === "function" ? language() : language).startsWith("pl") ? polish : en;
   const deviceName = kind => kind === "microphoneLevel" ? words("Microphone", "Mikrofon") : words("Camera", "Kamera");
   const deviceFiles = new Map(), active = new Map(), mounts = new Map();
@@ -19,6 +19,9 @@ export function bindMediaHost({ frame, origin, nonce, embedHosts = [], title, pe
   let port, prompt, simMuted = false, disposed = false, requestingImages = false;
   function send(data) { port?.postMessage(data); }
   const embeds = new Map();
+  // The page that draws its own controls hears every device the activity has
+  // open, pending ones included, so its stop is there from the first moment.
+  const reportDevices = () => { if (!disposed) onDevices?.([...active.keys()]); };
   function stop(kind, reason) {
     const device = active.get(kind);
     if (!device) return;
@@ -26,6 +29,7 @@ export function bindMediaHost({ frame, origin, nonce, embedHosts = [], title, pe
     device.controller.abort();
     device.button.remove();
     send({ op: "ended", kind, reason });
+    reportDevices();
   }
   const button = (text, fn) => {
     const node = document.createElement("button");
@@ -36,7 +40,7 @@ export function bindMediaHost({ frame, origin, nonce, embedHosts = [], title, pe
   };
   const toolbar = document.createElement("span");
   toolbar.className = "activity-device-controls";
-  controls.append(toolbar);
+  controls?.append(toolbar);
   for (const kind of kinds) {
     if (!fixtures || !permissions.includes("media." + kind)) continue;
     const label = document.createElement("label");
@@ -81,6 +85,7 @@ export function bindMediaHost({ frame, origin, nonce, embedHosts = [], title, pe
       toolbar.append(control);
       const device = { button: control, controller, id, ready: false };
       active.set(kind, device);
+      reportDevices();
       try {
         await capture(kind, { file: deviceFiles.get(kind), muted: () => simMuted || muted(), send: data => requester.postMessage(data), tile, cloneLocalCamera, camera: kind === "cameraTile" ? cameraTransport() : undefined, ended: end, signal: controller.signal });
         if (controller.signal.aborted) throw new Error("Device stopped.");
@@ -280,8 +285,14 @@ export function bindMediaHost({ frame, origin, nonce, embedHosts = [], title, pe
     } catch { for (const item of mounts.values()) item.image.hidden = true; }
     finally { requestingImages = false; }
   }, 250);
-  const volumeChanged = () => send({ op: "volume", value: Number(volume.value) / 100 });
-  volume.addEventListener("input", volumeChanged);
+  // Game audio comes from a slider the host owns, or from the page as a number.
+  const slider = typeof volume === "object" && volume !== null ? volume : null;
+  let level = slider ? Number(slider.value) / 100 : Math.min(1, Math.max(0, Number(volume) || 0));
+  const volumeChanged = () => {
+    if (slider) level = Number(slider.value) / 100;
+    send({ op: "volume", value: level });
+  };
+  slider?.addEventListener("input", volumeChanged);
   function reset() {
     for (const item of embeds.values()) item.destroy();
     for (const controller of gifRequests.values()) controller.abort();
@@ -336,6 +347,15 @@ export function bindMediaHost({ frame, origin, nonce, embedHosts = [], title, pe
       if (prompt?.kind === "cameraTile") prompt.cancel();
       stop("cameraTile", "camera-off");
     },
+    stop(kind) {
+      if (prompt?.kind === kind) prompt.cancel();
+      stop(kind, "stopped");
+    },
+    setVolume(value) {
+      if (!Number.isFinite(value)) return;
+      level = Math.min(1, Math.max(0, value));
+      send({ op: "volume", value: level });
+    },
     dispose() {
       // Nothing that goes wrong while letting go of the devices may leave the
       // image poll or the listeners behind.
@@ -343,7 +363,7 @@ export function bindMediaHost({ frame, origin, nonce, embedHosts = [], title, pe
       clearInterval(refresh);
       observer?.disconnect();
       window.removeEventListener("scroll", relayout, true);
-      volume.removeEventListener("input", volumeChanged);
+      slider?.removeEventListener("input", volumeChanged);
       window.removeEventListener("message", bind);
       window.removeEventListener("pagehide", reset);
       try {

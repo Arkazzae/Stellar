@@ -1,4 +1,12 @@
-export interface HostMediaControls { stopCamera(): void; dispose(): void }
+export type HostDeviceKind = "cameraTile" | "microphoneLevel";
+export interface HostMediaControls {
+  stopCamera(): void;
+  /** Stops a device the activity has open, or withdraws its pending question. */
+  stop(kind: HostDeviceKind): void;
+  /** Game audio for this listener, 0–1, for a page that draws its own control. */
+  setVolume(value: number): void;
+  dispose(): void;
+}
 /** Owned by the parent. Tracks and streams never cross the iframe port. */
 export interface ActivityCamera {
   publish(stream: MediaStream, signal: AbortSignal, ended: () => void): Promise<void>;
@@ -25,8 +33,14 @@ export const gifLimits: {
   bytes: Record<"preview" | "full", number>; pageSize: number; queryLength: number; maxOffset: number;
 };
 export function bindMediaHost(options: {
-  frame: HTMLIFrameElement; origin: string; nonce?: string; embedHosts?: string[]; title: string; permissions?: string[]; controls: HTMLElement;
-  volume: HTMLInputElement; muted?: () => boolean; fixtures?: boolean; language?: string | (() => string);
+  frame: HTMLIFrameElement; origin: string; nonce?: string; embedHosts?: string[]; title: string; permissions?: string[];
+  /** Where the host puts its own stop buttons. Without it the page draws them from `onDevices`. */
+  controls?: HTMLElement;
+  /** A slider the host listens to, or the starting level, 0–1 (1 without it); `setVolume` changes it later. */
+  volume?: HTMLInputElement | number;
+  /** Every device the activity has open, pending ones included, each time that changes. */
+  onDevices?(kinds: HostDeviceKind[]): void;
+  muted?: () => boolean; fixtures?: boolean; language?: string | (() => string);
   camera?: () => ActivityCamera;
   cloneLocalCamera?: () => MediaStreamTrack | undefined;
   /** Image relay for standalone development previews. */
