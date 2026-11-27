@@ -216,6 +216,42 @@ impl TimeZone {
             offset,
         }
     }
+
+    /// The moment at which the zone's clocks show this date and time. A time
+    /// the clocks skip, in the hour lost when they go forward, is taken as
+    /// that much later: 02:30 on the night they go from 02:00 to 03:00 is
+    /// 03:30. A time they show twice, in the hour repeated when they go back,
+    /// is taken the first time.
+    pub fn from_local(&self, year: i64, month: u32, day: u32, hour: u32, minute: u32, second: u32) -> i64 {
+        let local = civil::days_from_civil(year, month, day) * 86_400
+            + i64::from(hour) * 3600
+            + i64::from(minute) * 60
+            + i64::from(second);
+        // A day either side is far from any one transition, so the offsets
+        // there are the two that can be in force at `local`.
+        let before = i64::from(self.at(local - 86_400).seconds);
+        let after = i64::from(self.at(local + 86_400).seconds);
+        let shows = |moment: i64| moment + i64::from(self.at(moment).seconds) == local;
+        [local - before, local - after]
+            .into_iter()
+            .filter(|moment| shows(*moment))
+            .min()
+            .unwrap_or(local - before)
+    }
+
+    /// The moment whose clock time in this zone is that of `start`, on the
+    /// date `months` months and then `days` days after `start`'s date there.
+    /// A day the month does not have is its last day, so the 31st of January
+    /// a month on is the 28th or 29th of February, and two months on the 31st
+    /// of March again.
+    pub fn shifted(&self, start: i64, months: i64, days: i64) -> i64 {
+        let shown = self.local_time(start);
+        let index = shown.year * 12 + i64::from(shown.month) - 1 + months;
+        let (year, month) = (index.div_euclid(12), (index.rem_euclid(12) + 1) as u32);
+        let day = shown.day.min(civil::days_in_month(year, month));
+        let (year, month, day) = civil::civil_from_days(civil::days_from_civil(year, month, day) + days);
+        self.from_local(year, month, day, shown.hour, shown.minute, shown.second)
+    }
 }
 
 /// The zone in a file, named by the part of the path (or of the link it is)
