@@ -20,6 +20,7 @@ import type {
   NotificationTone,
 } from "@/ports/notifications";
 
+import { readEvent } from "./calls/events";
 import { readPoll } from "./calls/polls";
 import { TIMELINE_LINE_KINDS } from "./types";
 import type {
@@ -177,6 +178,7 @@ export function parseMessage(value: unknown, path = "message"): Message {
     ...(encrypted === undefined ? {} : { encrypted }),
     ...(line === undefined ? {} : { line }),
     ...definedField("poll", readPoll(record["poll"], `${path}.poll`)),
+    ...definedField("event", readEvent(record["event"], `${path}.event`)),
   };
 }
 
@@ -304,6 +306,8 @@ function parseNotificationTarget(
         serverName: expectString(record, "serverName", path),
         invitedByName: expectString(record, "invitedByName", path),
       };
+    case "event":
+      return { type: "event", eventId: expectString(record, "eventId", path) };
     default:
       throw new ApiError("malformed", `${path}: "type" is not supported`);
   }

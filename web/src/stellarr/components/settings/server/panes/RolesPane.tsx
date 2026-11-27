@@ -22,6 +22,8 @@ const SAVED_FLASH_MS = 1500;
 
 export const PERMISSION_LABEL: Record<ServerPermission, MessageKey> = {
   manageServer: "settings.permission.manageServer",
+  createEvents: "settings.permission.createEvents",
+  manageEvents: "settings.permission.manageEvents",
   manageChannels: "settings.permission.manageChannels",
   manageRoles: "settings.permission.manageRoles",
   manageMembers: "settings.permission.manageMembers",
@@ -40,6 +42,8 @@ export const PERMISSION_LABEL: Record<ServerPermission, MessageKey> = {
 
 const PERMISSION_DETAIL: Record<ServerPermission, MessageKey> = {
   manageServer: "srv.perm.manageServer",
+  createEvents: "srv.perm.createEvents",
+  manageEvents: "srv.perm.manageEvents",
   manageChannels: "srv.perm.manageChannels",
   manageRoles: "srv.perm.manageRoles",
   manageMembers: "srv.perm.manageMembers",
@@ -63,6 +67,7 @@ const PERMISSION_GROUPS: readonly { caption: MessageKey; permissions: readonly S
   { caption: "srv.roles.groupModeration", permissions: ["manageMessages", "moderateMembers", "manageBans", "viewAuditLog"] },
   { caption: "srv.roles.groupText", permissions: ["sendMessages", "attachFiles", "addReactions"] },
   { caption: "srv.roles.groupVoice", permissions: ["connect"] },
+  { caption: "srv.roles.groupEvents", permissions: ["createEvents", "manageEvents"] },
   { caption: "srv.roles.groupAdvanced", permissions: ["administrator"] },
 ];
 

@@ -76,6 +76,8 @@ export function fakeDirectory(overrides: Partial<DirectoryValue> = {}): Director
     textChannels: [{ id: "ch-general", name: "general", kind: "text", topic: "Anything." }],
     members: [],
     canManageServer: false,
+    canCreateEvents: false,
+    canManageEvents: false,
     canManageMessages: false,
     channelName: () => "",
     ...overrides,

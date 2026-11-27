@@ -102,6 +102,8 @@ export interface RailProps {
   ) => Promise<void> | void;
   /** `<VoiceDock>`, composed by the container. */
   voiceDock?: ReactNode;
+  /** The events row over the channels, composed by the container. */
+  events?: ReactNode;
   /** `<AccountRow>`, composed by the container. */
   account?: ReactNode;
   /**
@@ -172,6 +174,7 @@ export function Rail({
   voiceMemberMenu,
   onMoveVoiceMember,
   voiceDock,
+  events,
   account,
   hidden = false,
 }: RailProps) {
@@ -406,6 +409,7 @@ export function Rail({
       />
 
       <div className="rail-scroll" ref={dragContainer}>
+        {events}
         <CollapsibleGroup
           id={`${railId}-text`}
           caption={showTextCaption ? t("shell.textChannels") : undefined}

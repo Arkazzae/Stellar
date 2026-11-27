@@ -18,6 +18,8 @@ import type { Perform } from "./use-access-actions";
 /** The permission keys the server knows, shown as they are stored. */
 const permissionKeys = [
   "manageServer",
+  "createEvents",
+  "manageEvents",
   "manageChannels",
   "manageRoles",
   "manageMembers",

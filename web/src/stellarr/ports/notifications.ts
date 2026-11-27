@@ -29,9 +29,16 @@ export interface ServerInviteNotificationTarget {
   invitedByName: string;
 }
 
+/** Opens an event's card: a reminder, a seat given from the waitlist, a change. */
+export interface EventNotificationTarget {
+  type: "event";
+  eventId: string;
+}
+
 export type NotificationTarget =
   | ChannelNotificationTarget
-  | ServerInviteNotificationTarget;
+  | ServerInviteNotificationTarget
+  | EventNotificationTarget;
 
 export interface InboxNotification {
   id: string;

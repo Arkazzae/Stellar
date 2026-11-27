@@ -33,6 +33,8 @@ export interface NotificationInboxProps {
    * how many there are. Without it the inbox has no tabs.
    */
   scheduled?: { count: number; list: ReactNode };
+  /** Opens an event's card from a reminder or a seat given. */
+  onOpenEvent?: (eventId: string) => void;
 }
 
 interface NotificationRowProps {
@@ -44,6 +46,7 @@ interface NotificationRowProps {
   onDelete: (notificationId: string) => void;
   onOpenChannel: (channelId: string) => void;
   onJoinInvite?: (inviteCode: string) => void;
+  onOpenEvent?: (eventId: string) => void;
 }
 
 const MAX_UNREAD_SHOWN = 99;
@@ -56,6 +59,7 @@ function NotificationRow({
   onDelete,
   onOpenChannel,
   onJoinInvite,
+  onOpenEvent,
 }: NotificationRowProps) {
   const { locale, t } = useLanguage();
   const { source, target } = notification;
@@ -68,6 +72,7 @@ function NotificationRow({
   const canOpenChannel = channelId !== null && channel !== null;
   const canJoinInvite = invite !== null && onJoinInvite !== undefined;
   const isJoiningThis = invite !== null && joiningInvite === invite.inviteCode;
+  const eventId = target?.type === "event" ? target.eventId : null;
 
   const activateRow = canOpenChannel
     ? () => {
@@ -78,7 +83,12 @@ function NotificationRow({
       ? () => {
           if (joiningInvite === null) onJoinInvite(invite.inviteCode);
         }
-      : undefined;
+      : eventId !== null && onOpenEvent !== undefined
+        ? () => {
+            if (unread) onMarkRead(notification.id);
+            onOpenEvent(eventId);
+          }
+        : undefined;
 
   // Invitations and mentions are worded here, so that they follow the
   // reader's language; every other row arrives already written.
@@ -216,6 +226,7 @@ export function NotificationInbox({
   onOpenChannel,
   onJoinInvite,
   scheduled,
+  onOpenEvent,
 }: NotificationInboxProps) {
   const { t } = useLanguage();
   const [tab, setTab] = useState<"notifications" | "scheduled">("notifications");
@@ -360,6 +371,7 @@ export function NotificationInbox({
               onDelete={onDelete}
               onOpenChannel={onOpenChannel}
               onJoinInvite={joinInvite}
+              {...(onOpenEvent === undefined ? {} : { onOpenEvent })}
             />
           ))}
         </ol>

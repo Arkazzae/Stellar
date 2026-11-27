@@ -1,6 +1,7 @@
 /** Wire types shared by the HTTP client, the realtime hub and the UI ports. */
 
 import type { MessageKey } from "@/i18n";
+import type { ServerEvent } from "@/ports/events";
 import type { Poll } from "@/ports/polls";
 
 import type { PollBody } from "./calls/polls";
@@ -166,6 +167,8 @@ export interface ChannelReadChanged {
 
 export const SERVER_PERMISSION_VALUES = [
   "manageServer",
+  "createEvents",
+  "manageEvents",
   "manageChannels",
   "manageRoles",
   "manageMembers",
@@ -387,6 +390,8 @@ export interface Message {
   reactions?: MessageReaction[];
   /** A question with answers to choose from; such a message is never edited. */
   poll?: Poll;
+  /** The event this message announces, as it was when the message was read. */
+  event?: ServerEvent;
   /**
    * Direct messages only: the end-to-end encrypted body, with `content` empty.
    * The friends adapter decrypts it and takes this field off, so nothing above

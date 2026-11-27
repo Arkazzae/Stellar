@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 
+import { eventWindow } from "@/lib/events/eventSheetRequest";
 import { offerInstallAfterInvite } from "@/lib/platform/install";
 import { Icon } from "@stellarr/icons";
 import { ScheduledList } from "@/components/scheduled/ScheduledList";
@@ -8,6 +9,7 @@ import {
   useDirectory,
   useLanguage,
   useNotifications,
+  usePorts,
   useSession,
   useUi,
 } from "@/state/hooks";
@@ -37,6 +39,7 @@ export function NotificationInboxButton() {
   const [button, setButton] = useState<HTMLButtonElement | null>(null);
   const [clicked, setAnchor] = useState<HTMLButtonElement | null>(null);
   const scheduledCount = useScheduledItems().length;
+  const ports = usePorts();
   /** When the inbox opened, which the scheduled list's "today" is read against. */
   const [openedAt, setOpenedAt] = useState(() => new Date());
   const anchor = ui.modal === "inbox" ? button : clicked;
@@ -111,6 +114,12 @@ export function NotificationInboxButton() {
           }}
           onJoinInvite={joinInvite}
           scheduled={{ count: scheduledCount, list: <ScheduledInboxList now={openedAt} /> }}
+          onOpenEvent={(eventId) => {
+            // The card opens over the server's room, where its events are known.
+            if (ports.events.get(eventId) === undefined) return;
+            eventWindow.open({ kind: "view", eventId });
+            close();
+          }}
         />
       )}
     </>

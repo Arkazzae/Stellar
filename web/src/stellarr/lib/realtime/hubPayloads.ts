@@ -12,6 +12,7 @@ import {
   parseEpochCreated,
   parseKeysChanged,
 } from "@/lib/api/encryptionParsers";
+import { EVENT_EVENTS, parseEventChanged, parseEventSignupChanged } from "@/lib/api/calls/events";
 import { parsePollUpdated, parsePollVoteChanged, POLL_EVENTS } from "@/lib/api/calls/polls";
 import {
   parseScheduledChanged,
@@ -320,6 +321,8 @@ export const HUB_DECODERS: { [E in RealtimeEventName]: HubDecoder<E> } = {
   [SCHEDULED_EVENTS.removed]: parseScheduledRemoved,
   [POLL_EVENTS.updated]: parsePollUpdated,
   [POLL_EVENTS.voteChanged]: parsePollVoteChanged,
+  [EVENT_EVENTS.changed]: parseEventChanged,
+  [EVENT_EVENTS.signup]: parseEventSignupChanged,
   [RTC_HUB.events.participants]: decodeVoiceParticipants,
   [RTC_HUB.events.sessionReplaced]: strings("channelId"),
   VoiceChannelKicked: decodeVoiceChannelKicked,

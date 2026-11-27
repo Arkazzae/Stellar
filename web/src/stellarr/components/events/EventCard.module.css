@@ -1,0 +1,225 @@
+/*
+ * An event's card: a calendar leaf, its name, when and where, and one button.
+ * The same card in the announcement and anywhere else it is shown.
+ */
+
+.card {
+  position: relative;
+  width: 470px;
+  max-width: 100%;
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid var(--line-subtle);
+  background: var(--surface-raised);
+}
+
+.live {
+  border-color: color-mix(in oklab, var(--live) 40%, transparent);
+}
+
+.top {
+  display: flex;
+  gap: 14px;
+  padding: 16px 16px 12px;
+}
+
+/* The date, as a leaf torn off a calendar. */
+.leaf {
+  width: 52px;
+  flex: none;
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid var(--line-subtle);
+  background: var(--surface-field);
+  text-align: center;
+}
+
+.leaf i {
+  display: block;
+  width: 100%;
+  padding: 3px 0 2px;
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--on-accent);
+  background: var(--accent);
+}
+
+.leaf b {
+  padding: 6px 0 7px;
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.ended .leaf i {
+  background: var(--line-strong);
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.name {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.livePill,
+.endedPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 650;
+}
+
+.livePill {
+  background: color-mix(in oklab, var(--live) 14%, transparent);
+  color: var(--live);
+}
+
+.livePill::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--live);
+}
+
+.endedPill {
+  background: var(--surface-overlay);
+  color: var(--text-muted);
+}
+
+.when,
+.where {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.where {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.where svg {
+  flex: none;
+  color: var(--text-faint);
+}
+
+.where a {
+  color: var(--accent-text);
+}
+
+.more {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: -4px -6px 0 0;
+  border-radius: 7px;
+  color: var(--text-faint);
+}
+
+.more:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.description {
+  margin: 0;
+  padding: 0 16px 12px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+.foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-height: 55px;
+  padding: 10px 12px 10px 16px;
+  border-top: 1px solid var(--line-subtle);
+}
+
+.faces {
+  display: inline-flex;
+  flex: none;
+  padding-left: 6px;
+}
+
+.faces > * {
+  margin-left: -6px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--surface-raised);
+}
+
+.status {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.buttons {
+  display: flex;
+  margin-left: auto;
+}
+
+.buttons > * {
+  flex: none;
+  height: 34px;
+  font-size: 13.5px;
+}
+
+/* Signed up: the button says so in the colour of what is going on. */
+.signed {
+  gap: 6px;
+  background: color-mix(in oklab, var(--live) 16%, transparent);
+  color: var(--live);
+  border-color: transparent;
+}
+
+.problem {
+  margin: 0;
+  padding: 0 16px 10px;
+  font-size: 12.5px;
+  color: var(--danger-text);
+}

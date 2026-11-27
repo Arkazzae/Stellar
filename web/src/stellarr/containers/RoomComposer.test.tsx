@@ -7,6 +7,7 @@ import type { ComposerProps, MentionCandidate } from "@/components/room/composer
 import type { PollSheetProps } from "@/components/room/poll/PollSheet";
 import { readGiphyConfig } from "@/lib/giphy/giphy";
 import type * as GiphyModule from "@/lib/giphy/giphy";
+import { eventWindow } from "@/lib/events/eventSheetRequest";
 import { giphyChoice } from "@/lib/giphy/giphyChoice";
 
 import { RoomComposer } from "./RoomComposer";
@@ -44,7 +45,11 @@ const room = vi.hoisted(() => ({
     revealAccountPanel: vi.fn(),
   },
   closeThread: vi.fn(),
-  directory: { canModerateMembers: false, canManageBans: false },
+  directory: { canModerateMembers: false, canManageBans: false, canCreateEvents: false } as {
+    canModerateMembers: boolean;
+    canManageBans: boolean;
+    canCreateEvents?: boolean;
+  },
   admin: { supported: { moderation: true }, kick: vi.fn(), ban: vi.fn() },
   scheduled: { subscribe: () => () => {}, getSnapshot: () => NO_SCHEDULED },
 }));
@@ -97,7 +102,7 @@ beforeEach(() => {
   seen.props = null;
   seen.sheet = null;
   room.ui.channelPanel = null;
-  room.directory = { canModerateMembers: false, canManageBans: false };
+  room.directory = { canModerateMembers: false, canManageBans: false, canCreateEvents: false };
   room.admin.supported.moderation = true;
   vi.clearAllMocks();
   window.localStorage.clear();
@@ -231,5 +236,18 @@ describe("RoomComposer's polls", () => {
     act(() => composer.onPoll?.(""));
 
     expect(seen.sheet?.place).toBe("composer.poll.inThread");
+  });
+});
+
+describe("RoomComposer's events", () => {
+  it("offers a new event only to whoever may create one, announced where it was asked for", async () => {
+    expect((await renderComposer()).onEvent).toBeUndefined();
+
+    room.directory = { ...room.directory, canCreateEvents: true };
+    const composer = await renderComposer();
+    act(() => composer.onEvent?.());
+
+    expect(eventWindow.get()).toEqual({ kind: "create", announceOn: "c1" });
+    eventWindow.close();
   });
 });

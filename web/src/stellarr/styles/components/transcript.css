@@ -865,5 +865,6 @@
   /* The neutral face is the avatar's own `system` state now, so the fill no
      longer has to shout an `!important` over an inline style. */
   .msg-head .sys-name{color:var(--text-faint);font-weight:550}
+  .msg-head .msg-tag{align-self:center;font-size:11px;font-weight:600;color:var(--text-faint);padding:1px 6px;border-radius:5px;background:var(--surface-overlay)}
 
 }
