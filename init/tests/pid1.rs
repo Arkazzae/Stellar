@@ -180,6 +180,7 @@ fn scenarios() -> Vec<Scenario> {
         scenario("health_against_a_trickle", one_service, check_trickle),
         scenario("stun_readiness", stun, check_stun),
         scenario("stops_answering_while_alive", stalls, check_stalls),
+        scenario("restarted_for_stalling", restarted, check_restarted),
         Scenario {
             plain: true,
             ..scenario("not_pid1", orphan_outside, check_not_pid1)
@@ -1621,5 +1622,72 @@ fn check_stalls(t: &mut Pid1) {
     let log = t.log();
     assert!(log.contains("api: failed its check 3 times in a row; failing, and left running"));
     assert!(log.contains("api: answers its check again; ready"));
+    t.stop(secs(2));
+}
+
+/// A service that is restarted when it stops answering, as the media server
+/// is. Each miss takes 0.8 s, as in `stalls`.
+fn restarted_on_stall(name: &str, port: u16, stall: &str, args: &[&str]) -> Service {
+    let port_text = port.to_string();
+    let mut command = vec!["--http", &port_text, "--stall-file", stall];
+    command.extend_from_slice(args);
+    helper(name, &command)
+        .ready(Readiness::http(lo(port), "/health"))
+        .watch(Watch {
+            interval: ms(300),
+            timeout: ms(500),
+            misses: 3,
+        })
+        .stop(Signal::Term, secs(1))
+        .restart_failing()
+        .critical()
+}
+
+fn restarted(dir: &Path) -> Vec<Service> {
+    let stall = path(dir, "stall");
+    vec![
+        restarted_on_stall("heeds", 21251, &stall, &[]),
+        restarted_on_stall("stubborn", 21252, &stall, &["--ignore-term"]),
+    ]
+}
+
+fn check_restarted(t: &mut Pid1) {
+    let names = ["heeds", "stubborn"];
+    t.wait_ready(&names, secs(3));
+    let old: Vec<Option<u32>> = names.iter().map(|n| t.service(n).pid).collect();
+    let stall = t.file("stall");
+
+    // Alive and silent: each is stopped and started again under a new PID,
+    // whether it heeds SIGTERM or not. The new run cannot become ready while
+    // the stall lasts, so it is not checked, nor restarted again.
+    fs::write(&stall, "").unwrap();
+    t.wait_until("the restarts", secs(8), |s| {
+        s.services
+            .iter()
+            .zip(&old)
+            .all(|(line, old)| line.restarts == 1 && line.pid.is_some() && line.pid != *old)
+    });
+    fs::remove_file(&stall).unwrap();
+    t.wait_ready(&names, secs(4));
+    assert_eq!(t.cli(&["health"]).code, 0);
+    let log = t.log();
+    for name in names {
+        assert_eq!(t.service(name).restarts, 1, "{name}");
+        // The old process is gone, not only forgotten.
+        let left = t.tagged(name);
+        assert_eq!(left.len(), 1, "{name}: {left:?}");
+        let restarting = format!(
+            "{name}: failed its check 3 times in a row; restarting; SIGTERM sent, SIGKILL in 1s"
+        );
+        assert!(log.contains(&restarting), "{log}");
+    }
+    assert!(log.contains("heeds: killed by SIGTERM"), "{log}");
+    assert!(!log.contains("heeds: still running"), "{log}");
+    let killed = t.log_lines("stellarr-init: stubborn: still running");
+    assert!(
+        killed.len() == 1 && killed[0].ends_with("after SIGTERM; SIGKILL sent"),
+        "{log}"
+    );
+    assert!(log.contains("stubborn: killed by SIGKILL"), "{log}");
     t.stop(secs(2));
 }
