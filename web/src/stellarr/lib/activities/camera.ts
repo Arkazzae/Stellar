@@ -9,6 +9,8 @@ import {
 } from "@/lib/rtc/protocol";
 import { resolveIceServers } from "@/lib/voice/rtc/iceConfig";
 
+const NO_SUBSCRIPTIONS = encodeMediaSubscriptions([]);
+
 async function cameraIce(): Promise<RTCIceServer[]> {
   const { rtc } = await sessionCalls().bootstrap();
   return resolveIceServers({ runtime: rtc?.iceServers, env: iceServers(), isProduction: import.meta.env.PROD });
@@ -144,7 +146,7 @@ export class ActivityCameraTransport implements ActivityCamera {
       const publisher = pc.addTransceiver("video", { direction: "inactive", streams: [new MediaStream()] });
       const link: Link = {
         pc, grant: credentials, publisher, directory: [], streams: new Map(),
-        negotiation: Promise.resolve(), outbox: Promise.resolve(), subscriptions: encodeMediaSubscriptions([]),
+        negotiation: Promise.resolve(), outbox: Promise.resolve(), subscriptions: NO_SUBSCRIPTIONS,
         needsOffer: true,
       };
       this.link = link;
@@ -207,6 +209,10 @@ export class ActivityCameraTransport implements ActivityCamera {
       const offer = decodeMediaServerOffer(event.payload);
       if (!offer || pc.signalingState !== "stable") return;
       link.directory = offer.tracks;
+      // The media server forgets what was asked for on a section it hands to
+      // another person's camera, so the list goes out again with every offer,
+      // the same as the last or not. An empty one has nothing to forget.
+      if (link.subscriptions !== NO_SUBSCRIPTIONS) link.subscriptions = "";
       this.render();
       await pc.setRemoteDescription({ type: "offer", sdp: offer.sdp });
       const answer = await pc.createAnswer();

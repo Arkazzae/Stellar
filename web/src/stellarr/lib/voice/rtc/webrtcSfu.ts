@@ -676,7 +676,7 @@ export class Sfu implements CallTopology {
       // leaves ahead of the answer that makes them live.
       session.directory.update(offer.tracks);
       this.bindReceivers(session);
-      this.syncSubscriptions(session);
+      this.syncSubscriptions(session, true);
       session.answering = offer.negotiationId;
       try {
         await this.negotiator.receive(link, { type: "offer", sdp: offer.sdp });
@@ -764,8 +764,12 @@ export class Sfu implements CallTopology {
    * cameras unless they are turned off, and the one share being watched.
    * What is not asked for stops playing here at once, before the list has
    * reached the media server.
+   *
+   * The media server forgets what it was asked for on a section it hands to
+   * another track, so with `again` the list goes out whole, the same as the
+   * last or not. An empty list has nothing to forget.
    */
-  private syncSubscriptions(session: MediaSessionLink): void {
+  private syncSubscriptions(session: MediaSessionLink, again = false): void {
     const mids = session.directory.subscribedMids(this.receivePreferences, (person) => this.held(person));
     session.directory.applySubscriptions(mids);
     let payload: string;
@@ -777,6 +781,10 @@ export class Sfu implements CallTopology {
       return;
     }
     session.desiredSubscriptions = payload;
+    if (again && payload !== NO_SUBSCRIPTIONS) {
+      session.sentSubscriptions = "";
+      session.queuedSubscriptions = "";
+    }
     this.flushSubscriptions(session);
   }
 

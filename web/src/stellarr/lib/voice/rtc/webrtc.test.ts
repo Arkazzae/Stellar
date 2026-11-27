@@ -50,6 +50,10 @@ class FakeMediaStream {
     this.id = id ?? `made-${FakeMediaStream.made++}`;
   }
   getTracks = () => this.tracks;
+  removeTrack = (track: MediaStreamTrack) => {
+    const at = this.tracks.indexOf(track);
+    if (at >= 0) this.tracks.splice(at, 1);
+  };
   getAudioTracks = () => this.tracks.filter((track) => track.kind === "audio");
   getVideoTracks = () => this.tracks.filter((track) => track.kind === "video");
 }
@@ -906,6 +910,52 @@ describe("the directory", () => {
 
     expect(peerOf(client, "u-b")?.camera).toBeNull();
     expect(remove).toHaveBeenCalledWith("u-b");
+  });
+
+  it("hands a section to the next person's camera, and the last owner's tile gets nothing of it", async () => {
+    playback();
+    const { client, pc } = await ready();
+    announce("u-b", "u-c");
+    state("u-b", { cameraStreamId: "cam-b" });
+    state("u-c", { cameraStreamId: "cam-c" });
+    const face = fakeTrack("video");
+    await serverOffer(pc, 1, [
+      { mid: "v1", userId: "u-b", kind: "video", streamId: "cam-b", track: face },
+    ]);
+    const shownToB = peerOf(client, "u-b")?.camera?.stream;
+    expect(shownToB?.getTracks()).toEqual([face]);
+
+    // B's camera is withdrawn, and the section receives again for C's: the
+    // browser reports the track it already has.
+    await serverOffer(pc, 2, []);
+    await serverOffer(pc, 3, [
+      { mid: "v1", userId: "u-c", kind: "video", streamId: "cam-c", track: face },
+    ]);
+
+    expect(peerOf(client, "u-c")?.camera?.stream?.getTracks()).toEqual([face]);
+    expect(peerOf(client, "u-b")?.camera).toBeNull();
+    expect(shownToB?.getTracks()).toEqual([]);
+  });
+
+  it("plays the next person's microphone on a section and none of it to the last owner", async () => {
+    const { attach, remove } = playback();
+    const { pc } = await ready();
+    announce("u-b", "u-c");
+    const voice = fakeTrack();
+    await serverOffer(pc, 1, [
+      { mid: "b1", userId: "u-b", kind: "audio", streamId: "mic-b", track: voice },
+    ]);
+
+    // The section goes from B to C in one directory, as after a collision
+    // this side's answer settled.
+    await serverOffer(pc, 2, [
+      { mid: "b1", userId: "u-c", kind: "audio", streamId: "mic-c", track: voice },
+    ]);
+
+    expect(remove).toHaveBeenCalledWith("u-b");
+    const voices = attachedTracks(attach, "voice");
+    expect(voices.get("u-c")).toEqual([voice]);
+    expect(voices.get("u-b")).toEqual([]);
   });
 
   it("follows a tracks update that changes a stream id, with no new description", async () => {
@@ -2694,6 +2744,35 @@ describe("receiving subscriptions", () => {
     await outlastPace();
     expect(selections()).toHaveLength(before);
     expect(selections().at(-1)?.mids).toEqual(["b1"]);
+  });
+
+  it("asks again for the same list when the media server offers a section to another track", async () => {
+    const client = build();
+    const pc = await answered(client);
+    announce("u-b", "u-c");
+    state("u-b", { cameraStreamId: "cam-b" });
+    state("u-c", { cameraStreamId: "cam-c" });
+    const face = fakeTrack("video");
+    await serverOffer(pc, 1, [
+      { mid: "b1", userId: "u-b", kind: "audio", streamId: "cam-b", track: fakeTrack() },
+      { mid: "v1", userId: "u-b", kind: "video", streamId: "cam-b", track: face },
+    ]);
+    await vi.waitFor(() => expect(selections().at(-1)?.mids).toEqual(["b1", "v1"]));
+    const lists = selections().length;
+    await outlastPace();
+
+    // B's camera went and C's took its section, without this side ever
+    // seeing a directory between the two: the list is the one it sent.
+    await serverOffer(pc, 2, [
+      { mid: "b1", userId: "u-b", kind: "audio", streamId: "cam-b" },
+      { mid: "v1", userId: "u-c", kind: "video", streamId: "cam-c", track: face },
+    ]);
+
+    await vi.waitFor(() => expect(selections()).toHaveLength(lists + 1));
+    expect(selections().at(-1)?.mids).toEqual(["b1", "v1"]);
+    // It goes ahead of the answer that makes the section receive.
+    const order = realtime.media.map((signal) => signal.kind);
+    expect(order.lastIndexOf("subscriptions")).toBeLessThan(order.lastIndexOf("answer"));
   });
 
   it("paces a list that keeps changing and always ends on the latest", async () => {

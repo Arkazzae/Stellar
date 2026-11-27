@@ -133,7 +133,10 @@ export class SfuHealth {
         }
         const packets = received.get(mid) ?? 0;
         judged = true;
-        if (packets > (before?.packets ?? 0)) advanced = true;
+        // A count that went down is another stream's: a section the media
+        // server hands to a new microphone starts counting again.
+        const counted = before && before.packets <= packets ? before.packets : 0;
+        if (packets > counted) advanced = true;
         baselines.set(mid, { packets, at: now });
       }
       const heard = judged ? advanced : this.arriving.has(person.userId);
