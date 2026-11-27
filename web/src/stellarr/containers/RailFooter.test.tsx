@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -85,6 +85,17 @@ describe("RailAccount", () => {
     render(<RailAccount />);
 
     expect(screen.getByRole("button", { name: /^…/ })).toBeInTheDocument();
+  });
+
+  it("opens the account panel when the shell is asked to, with the focus on the availability that is set", async () => {
+    setStubs({ session: { presence: "dnd" }, ui: { accountPanelOpen: true } });
+    render(<RailAccount />);
+
+    const availability = screen.getByRole("group", { name: "Twoja dostępność" });
+    expect(availability).toBeVisible();
+    const chosen = within(availability).getByRole("button", { pressed: true });
+    expect(chosen).toHaveTextContent("Nie przeszkadzać");
+    await waitFor(() => expect(chosen).toHaveFocus());
   });
 
   it("opens the account settings from the only shortcut beside the user", async () => {

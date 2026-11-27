@@ -75,7 +75,9 @@ export function ConfirmDialog({
   const fieldId = useId();
   const hintId = useId();
   const formRef = useRef<HTMLFormElement>(null);
-  const [value, setValue] = useState("");
+  // Seeded here as well as below: the first question mounts the card already
+  // open, so the reset below never runs for it.
+  const [value, setValue] = useState(field?.initial ?? "");
 
   // Cleared while rendering rather than in an effect, so a reused dialog is
   // never painted holding the previous answer.
@@ -84,7 +86,7 @@ export function ConfirmDialog({
   if (wasOpen !== open || wasKey !== questionKey) {
     setWasOpen(open);
     setWasKey(questionKey);
-    if (open) setValue("");
+    if (open) setValue(field?.initial ?? "");
   }
 
   // The modal moves the focus in when it opens. A question that replaces

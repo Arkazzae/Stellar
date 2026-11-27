@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useImperativeHandle, useRef, useState, type Ref } from "react";
 
 import { useLayer } from "@stellarr/ui/behavior";
 import { Icon } from "@stellarr/icons";
@@ -13,6 +13,8 @@ import {
 import { useLanguage } from "@/state/LanguageProvider";
 
 const PAGE_SIZE = 24;
+/** As long as a search may be. */
+export const GIF_QUERY_MAX_LENGTH = 50;
 /** A blank query is the trending list and loads at once; typing waits for a pause. */
 const TYPING_PAUSE_MS = 280;
 const SKELETON_TILES = 12;
@@ -118,9 +120,15 @@ function useGifResults(locale: SupportedLocale, query: string, active: boolean) 
   };
 }
 
+/** Opens the panel from elsewhere, such as the composer's /gif, with the words to look for. */
+export interface GifBrowserHandle {
+  open(query: string): void;
+}
+
 export interface GifBrowserProps {
   /** Sends the chosen GIF. A rejection keeps the browser open and shows an error. */
   onSelect(pageUrl: string): Promise<void>;
+  ref?: Ref<GifBrowserHandle>;
 }
 
 /**
@@ -129,7 +137,7 @@ export interface GifBrowserProps {
  * a close. While open it is a layer on the shared stack: Escape and a press
  * elsewhere close it when no layer above it takes them.
  */
-export function GifBrowser({ onSelect }: GifBrowserProps) {
+export function GifBrowser({ onSelect, ref }: GifBrowserProps) {
   const { t, locale } = useLanguage();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -148,6 +156,18 @@ export function GifBrowser({ onSelect }: GifBrowserProps) {
     setOpen(false);
     triggerRef.current?.focus();
   };
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      open(words: string) {
+        setQuery(words.slice(0, GIF_QUERY_MAX_LENGTH));
+        setSendFailed(false);
+        setOpen(true);
+      },
+    }),
+    [],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -227,7 +247,7 @@ export function GifBrowser({ onSelect }: GifBrowserProps) {
               ref={searchRef}
               type="search"
               value={query}
-              maxLength={50}
+              maxLength={GIF_QUERY_MAX_LENGTH}
               placeholder={t("gif.searchPlaceholder")}
               disabled={busy}
               onChange={(event) => {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Icon } from "@stellarr/icons";
 
@@ -20,6 +20,12 @@ export interface AccountRowProps {
   onOpenSettings: () => void;
   /** Everything the panel above the row needs; the row only opens it. */
   panel: AccountPanelProps;
+  /**
+   * Whether the panel is open, for a host that opens it from elsewhere too;
+   * without it the row keeps the state itself.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 /** The signed-in user at the foot of the rail, and the handle of the account panel. */
@@ -27,9 +33,38 @@ export function AccountRow({
   user,
   onOpenSettings,
   panel,
+  open: controlledOpen,
+  onOpenChange,
 }: AccountRowProps) {
   const { t } = useLanguage();
-  const [open, setOpen] = useState(false);
+  const [ownOpen, setOwnOpen] = useState(false);
+  const open = controlledOpen ?? ownOpen;
+  const row = useRef<HTMLDivElement>(null);
+  /** The row itself opened the panel, so the focus stays where the press left it. */
+  const openedHere = useRef(false);
+  const setOpen = (next: boolean) => {
+    if (onOpenChange === undefined) setOwnOpen(next);
+    else onOpenChange(next);
+  };
+
+  // Opened from elsewhere, as /status in the composer does, the panel takes
+  // the focus on the availability that is set, so the keyboard lands on the
+  // choice it came for.
+  useEffect(() => {
+    if (!open) return;
+    if (openedHere.current) {
+      openedHere.current = false;
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      const panel = row.current?.querySelector<HTMLElement>(".acc-pop");
+      (
+        panel?.querySelector<HTMLElement>('[aria-pressed="true"]') ??
+        panel?.querySelector<HTMLElement>("button")
+      )?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [open]);
 
   /** Signing out ends the visit; a status or a presence keeps the panel up. */
   const closing = (action: () => void) => () => {
@@ -45,12 +80,15 @@ export function AccountRow({
   const micOff = seat?.muted === true;
 
   return (
-    <div className="account">
+    <div ref={row} className="account">
       {/* The panel slides out of the row, anchored inside the rail rather than
           floating beside it. */}
       <Popover
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={(next) => {
+          openedHere.current = next;
+          setOpen(next);
+        }}
         className="acc-pop"
         renderTrigger={(trigger) => (
           <button {...trigger} type="button" className="acc-open">
