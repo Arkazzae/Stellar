@@ -27,6 +27,7 @@ import type {
   RtcSignalKind,
 } from "@/lib/rtc/protocol";
 import type { NotificationInboxChangedEvent } from "@/ports/notifications";
+import type { ScheduledMessage } from "@/ports/scheduled";
 
 export type RealtimeStatus =
   | "idle"
@@ -239,6 +240,10 @@ export interface RealtimeEventMap {
   DirectEncryptionKeysChanged: { conversationId: string; userId: UserId };
   /** This account's keys, backup or devices changed: read them again. */
   EncryptionAccountChanged: Record<string, never>;
+  /** One of your scheduled messages was created, edited or failed; to your own connections. */
+  ScheduledMessageChanged: ScheduledMessage;
+  /** One of your scheduled messages was deleted, or went out with the same id. */
+  ScheduledMessageRemoved: { id: string; sent: boolean };
 }
 
 export type RealtimeEventName = keyof RealtimeEventMap;

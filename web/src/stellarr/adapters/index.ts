@@ -14,6 +14,7 @@ import {
   type SocialApiClient,
 } from "@/lib/api/client";
 import { encryptionCalls, type EncryptionApiClient } from "@/lib/api/calls/encryption";
+import { scheduledCalls, type ScheduledApiClient } from "@/lib/api/calls/scheduled";
 import { isUnauthorized } from "@/lib/api/errors";
 import type { Bootstrap, RtcConfig } from "@/lib/api/types";
 import { createPasskey, getPasskey, passkeysSupported } from "@/lib/auth/webauthn";
@@ -34,6 +35,7 @@ import { createNotificationDeliveryAdapter } from "./notificationDelivery";
 import { createNotificationAdapter } from "./notifications";
 import { createConnectionAdapter, createPresenceAdapter } from "./presence";
 import { ChannelReadStore } from "./readState";
+import { createScheduledAdapter } from "./scheduled";
 import { createSoundboardAdapter } from "./soundboard";
 import { DirectoryStore } from "./store";
 import { loadedSignedInCode, loadSignedInCode } from "./signedInLoader";
@@ -60,6 +62,8 @@ export interface RuntimeOptions {
   desktop?: DesktopPort;
   /** The encryption routes; same-origin HTTP by default. */
   encryption?: EncryptionApiClient;
+  /** The scheduled-message routes; same-origin HTTP by default. */
+  scheduled?: ScheduledApiClient;
 }
 
 /** Copies the profile fields of the signed-in account onto their directory row. */
@@ -231,6 +235,7 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
   const soundboard = createSoundboardAdapter(api, realtime, voiceSettingsStore.getSnapshot);
   const messageActions = createMessageActionsAdapter(api, realtime, reactionStore);
   const typing = createTypingAdapter(realtime);
+  const scheduled = createScheduledAdapter(options.scheduled ?? scheduledCalls(), realtime);
   const chat = createChatAdapter(api, realtime, reactionStore, readStore);
   const admin = createServerAdminAdapter(
     api,
@@ -350,6 +355,7 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
     encryption: encryption.port,
     notifications: createNotificationAdapter(api, realtime),
     soundboard,
+    scheduled,
     voiceSettings: createVoiceSettingsAdapter(voiceSettingsStore),
     createVoice,
   };
@@ -381,6 +387,7 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
       encryption.dispose();
       friends.dispose?.();
       soundboard.dispose();
+      scheduled.dispose();
       messageActions.dispose?.();
       typing.dispose?.();
       chat.dispose?.();

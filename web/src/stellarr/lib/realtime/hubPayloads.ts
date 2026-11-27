@@ -12,6 +12,11 @@ import {
   parseEpochCreated,
   parseKeysChanged,
 } from "@/lib/api/encryptionParsers";
+import {
+  parseScheduledChanged,
+  parseScheduledRemoved,
+  SCHEDULED_EVENTS,
+} from "@/lib/api/calls/scheduled";
 import { isRecord } from "@/lib/api/expect";
 import { isPresence, SERVER_PERMISSION_VALUES } from "@/lib/api/types";
 import type { ChannelPlacement, ServerPermission } from "@/lib/api/types";
@@ -310,6 +315,8 @@ export const HUB_DECODERS: { [E in RealtimeEventName]: HubDecoder<E> } = {
   ServerAccessRevoked: decodeAccessRevoked,
   EmojiChanged: () => ({}),
   NotificationInboxChanged: decodeInboxChanged,
+  [SCHEDULED_EVENTS.changed]: parseScheduledChanged,
+  [SCHEDULED_EVENTS.removed]: parseScheduledRemoved,
   [RTC_HUB.events.participants]: decodeVoiceParticipants,
   [RTC_HUB.events.sessionReplaced]: strings("channelId"),
   VoiceChannelKicked: decodeVoiceChannelKicked,
