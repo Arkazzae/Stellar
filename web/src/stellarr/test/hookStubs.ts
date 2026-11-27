@@ -54,6 +54,8 @@ function stub<T>(members: object): T {
 
 /** One object for the whole run: `useSyncExternalStore` needs a stable snapshot. */
 const VOICE_SETTINGS = { soundboardVolume: 50, noiseSuppression: "off", opusProfile: "auto" };
+/** Nothing waits to be sent later, as one array for the same reason. */
+const NOTHING_SCHEDULED: never[] = [];
 
 function defaults(): HookStubs {
   return {
@@ -186,6 +188,10 @@ function defaults(): HookStubs {
       },
       soundboard: {
         live: IDLE_SOUNDBOARD,
+      },
+      scheduled: {
+        getSnapshot: () => NOTHING_SCHEDULED,
+        subscribe: () => () => {},
       },
       encryption: {
         listDevices: vi.fn(async () => []),

@@ -36,6 +36,8 @@ const mocks = vi.hoisted(() => ({
   ports: {
     // The composer's commands ask whether moderation has an endpoint.
     admin: { supported: { moderation: false } },
+    // The composer's bar counts what waits here: nothing.
+    scheduled: { subscribe: () => () => {}, getSnapshot: () => NOBODY },
     typing: { onTypingChanged: () => () => {}, typingIn: () => NOBODY },
     voiceSettings: { subscribe: () => () => {}, getSnapshot: () => ({}), update: vi.fn() },
     soundboard: {

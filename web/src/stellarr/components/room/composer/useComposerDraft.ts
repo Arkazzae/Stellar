@@ -1,8 +1,10 @@
 import { locales } from "@/i18n";
 import { useDeferredValue, useMemo, useState, useSyncExternalStore, type FormEvent } from "react";
 
-import type { InterfaceLocale, Translator } from "@/i18n";
+import type { InterfaceLocale, MessageKey, Translator } from "@/i18n";
 import { composerDraft } from "@/lib/platform/drafts";
+import { timeProblem } from "@/lib/schedule/scheduleTime";
+import { ScheduleRefusedError, type ScheduleRefusalReason } from "@/ports";
 import { triggerHaptic } from "@/lib/platform/haptics";
 
 import {
@@ -20,11 +22,31 @@ interface Options {
   chips: readonly ComposerChip[];
   /** Receives the trimmed text, fenced when the draft is a code message. */
   onSubmit(text: string): Promise<void> | void;
+  /** Schedules the same text instead, while a send time is chosen. */
+  onSchedule?(text: string, sendAt: Date): Promise<void> | void;
+  /** The clock a chosen time is checked against when it is used. */
+  clock?: () => Date;
   /** The draft was delivered and consumed. */
   onSent(): void;
   locale: InterfaceLocale;
   t: Translator;
 }
+
+/** Why a schedule was refused, in the words the field shows under itself. */
+export const SCHEDULE_REFUSALS: Record<ScheduleRefusalReason, MessageKey> = {
+  time: "composer.schedule.refused.time",
+  content: "composer.schedule.refused.content",
+  attachments: "composer.schedule.refused.attachments",
+  limit: "composer.schedule.refused.limit",
+  encrypted: "composer.schedule.refused.encrypted",
+  failed: "composer.schedule.refused.failed",
+  forbidden: "composer.schedule.refused.forbidden",
+  slowMode: "composer.schedule.refused.slowMode",
+  changed: "composer.schedule.refused.changed",
+  other: "composer.schedule.refused.other",
+};
+
+const systemClock = () => new Date();
 
 /** What the code looks like, as a reader would guess it from a fence with no language. */
 function guessLanguage(source: string): CodeLanguageId {
@@ -35,10 +57,25 @@ function guessLanguage(source: string): CodeLanguageId {
  * The text being written and what it takes to send it: the code-message mode,
  * whether a send is in flight, and why the last one failed.
  */
-export function useComposerDraft({ draftScope, restoringFiles, chips, onSubmit, onSent, locale, t }: Options) {
+export function useComposerDraft({
+  draftScope,
+  restoringFiles,
+  chips,
+  onSubmit,
+  onSchedule,
+  clock = systemClock,
+  onSent,
+  locale,
+  t,
+}: Options) {
   const entry = useMemo(() => composerDraft(draftScope), [draftScope]);
-  const { draft: { text, manualCode, codeLanguage }, loading, failed } = useSyncExternalStore(entry.subscribe, entry.get, entry.get);
+  const { draft: { text, manualCode, codeLanguage, sendAt: chosenAt }, loading, failed } = useSyncExternalStore(entry.subscribe, entry.get, entry.get);
   const setText = (text: string) => entry.change(draft => ({ ...draft, text }));
+  // A time chosen where scheduling is not offered (a conversation that has
+  // since been encrypted) is not one: the message would only post.
+  const sendAt = chosenAt === undefined || onSchedule === undefined ? null : new Date(chosenAt);
+  const setSendAt = (at: Date | null) =>
+    entry.change(({ sendAt: _previous, ...draft }) => (at === null ? draft : { ...draft, sendAt: at.toISOString() }));
   const setCodeMode = (manualCode: boolean) => entry.change(draft => ({ ...draft, manualCode }));
   const setCodeLanguage = (codeLanguage: CodeLanguageChoice) => entry.change(draft => ({ ...draft, codeLanguage }));
   const [sending, setSending] = useState(false);
@@ -75,6 +112,12 @@ export function useComposerDraft({ draftScope, restoringFiles, chips, onSubmit, 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!canSend) return;
+    // The chosen time may have passed while the message was written.
+    const problem = sendAt === null ? null : timeProblem(sendAt, clock());
+    if (problem !== null) {
+      setSendError(t(problem === "tooFar" ? "composer.schedule.tooFar" : "composer.schedule.passed"));
+      return;
+    }
     // Acknowledge the deliberate send gesture, not every keystroke. Kept in the
     // submit stack so mobile browsers can use their native haptic path.
     triggerHaptic("selection");
@@ -95,19 +138,24 @@ export function useComposerDraft({ draftScope, restoringFiles, chips, onSubmit, 
         );
         return;
       }
-      await onSubmit(body);
+      if (sendAt !== null && onSchedule !== undefined) await onSchedule(body, sendAt);
+      else await onSubmit(body);
       // A slow request must not erase what was typed after the send started.
       // In the usual append case only the delivered prefix is consumed; if the
-      // original was edited in place, the whole current draft is kept.
-      entry.change(current => ({
+      // original was edited in place, the whole current draft is kept. The
+      // time goes with the message it was chosen for.
+      entry.change(({ sendAt: _used, ...current }) => ({
         ...current,
         text: current.text.startsWith(draft) ? current.text.slice(draft.length).trimStart() : current.text,
         manualCode: false,
       }));
       onSent();
-    } catch {
-      // The text stays in the field: a failed send must not lose what was written.
-      setSendError(t("composer.sendFailed"));
+    } catch (cause) {
+      // The text, and the chosen time, stay: a failed send must not lose what
+      // was written. A refused schedule says why.
+      setSendError(
+        cause instanceof ScheduleRefusedError ? t(SCHEDULE_REFUSALS[cause.reason]) : t("composer.sendFailed"),
+      );
     } finally {
       setSending(false);
     }
@@ -128,6 +176,8 @@ export function useComposerDraft({ draftScope, restoringFiles, chips, onSubmit, 
     codeGuess,
     codeHighlight,
     codeRoom,
+    sendAt,
+    setSendAt,
     hasPayload,
     attachmentsBlocked,
     canSend,

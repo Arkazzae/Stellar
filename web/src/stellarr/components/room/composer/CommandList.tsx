@@ -251,11 +251,13 @@ export interface ArgumentHintProps {
   label: string;
   optional: boolean;
   hint: string;
+  /** Why what was typed cannot be used; the command waits until it can. */
+  problem?: string;
   t: Translator;
 }
 
 /** The hint while an argument is being filled in: its name and what goes in it. */
-export function ArgumentHint({ id, label, optional, hint, t }: ArgumentHintProps) {
+export function ArgumentHint({ id, label, optional, hint, problem, t }: ArgumentHintProps) {
   return (
     <div className={css.pop}>
       <div id={id} className={`${css.hint} ${css.argumentHint}`}>
@@ -264,6 +266,7 @@ export function ArgumentHint({ id, label, optional, hint, t }: ArgumentHintProps
           {optional ? <span>{t("composer.commands.optional")}</span> : null}
         </p>
         <p>{hint}</p>
+        {problem === undefined ? null : <p className={css.blocked}>{problem}</p>}
       </div>
     </div>
   );

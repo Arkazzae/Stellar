@@ -13,6 +13,8 @@ export interface CommandArgsProps {
   active: ActiveCommand;
   /** Who a person argument offers. */
   people: readonly MentionCandidate[];
+  /** Why a typed value cannot be used, by argument id, in words. */
+  problems?: Readonly<Record<string, string>>;
   locale: InterfaceLocale;
   onText(id: string, value: string): void;
   onPerson(id: string, person: MentionCandidate | undefined): void;
@@ -33,6 +35,7 @@ export interface CommandArgsProps {
 export function CommandArgs({
   active,
   people,
+  problems = {},
   locale,
   onText,
   onPerson,
@@ -148,6 +151,7 @@ export function CommandArgs({
           label={t(arg.label)}
           optional={arg.optional}
           hint={t(arg.hint)}
+          {...(problems[arg.id] === undefined ? {} : { problem: problems[arg.id] })}
           t={t}
         />
       )}
@@ -189,6 +193,7 @@ export function CommandArgs({
                     : undefined
                 }
                 aria-describedby={here ? describedBy : undefined}
+                aria-invalid={problems[entry.id] === undefined ? undefined : true}
                 onFocus={() => {
                   if (!here) onFocusArgument(index);
                 }}

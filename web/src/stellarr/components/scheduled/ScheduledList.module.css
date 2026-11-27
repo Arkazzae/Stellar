@@ -1,0 +1,286 @@
+/*
+ * The author's scheduled messages, as a dialog of its own or inside the
+ * inbox. Grouped by day, each row its time, its words, where it goes and
+ * what can be done with it.
+ */
+
+.list {
+  position: relative;
+  container: scheduled / inline-size;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 100%;
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 20px 20px 12px;
+}
+
+.compactHead {
+  padding: 10px 14px 4px;
+}
+
+.head > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.head h2 {
+  margin: 0;
+  font-size: var(--text-18);
+  font-weight: 700;
+}
+
+.head p {
+  margin: 3px 0 0;
+  font-size: var(--text-13);
+  color: var(--text-faint);
+}
+
+.close {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+}
+
+.close:hover {
+  background: var(--surface-overlay);
+  color: var(--text);
+}
+
+.error {
+  margin: 0 20px 8px;
+  font-size: var(--text-13);
+  color: var(--danger-text);
+}
+
+.empty {
+  margin: 0;
+  padding: 8px 20px 24px;
+  font-size: var(--text-13);
+  color: var(--text-faint);
+}
+
+.scroll {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 10px;
+}
+
+.scroll ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.day {
+  margin: 0;
+  padding: 10px 20px 6px;
+  font-size: var(--text-12);
+  font-weight: 600;
+  color: var(--text-faint);
+}
+
+.item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 14px 10px 20px;
+  border-top: 1px solid var(--line-subtle);
+}
+
+.item:hover,
+.item:focus-within {
+  background: var(--surface-hover);
+}
+
+.time {
+  width: 56px;
+  flex: none;
+  padding-top: 1px;
+  font-size: var(--text-13);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.failedTime {
+  color: var(--danger-text);
+}
+
+.body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.text {
+  quotes: none;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: var(--text-14);
+  line-height: 1.45;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-12);
+  color: var(--text-faint);
+}
+
+.bad {
+  color: var(--danger-text);
+}
+
+.avatar {
+  flex: none;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.actions {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.rest {
+  display: none;
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+/* Where there is a pointer and room, a waiting row shows its actions only
+   while it is pointed at or focused, and three dots until then. */
+@media (hover: hover) {
+  @container scheduled (min-width: 480px) {
+    .waiting:not(:hover, :focus-within) .actions > button {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .waiting:not(:hover, :focus-within) .rest {
+      display: inline-flex;
+    }
+  }
+}
+
+/* A narrow list gives the words the width and puts the actions under them. */
+@container scheduled (max-width: 479px) {
+  .item {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+
+  .actions {
+    flex-basis: 100%;
+    padding-left: 60px;
+  }
+}
+
+.iconAction {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+}
+
+.iconAction:hover:not(:disabled) {
+  background: var(--surface-overlay);
+  color: var(--text);
+}
+
+.iconAction:disabled {
+  opacity: 0.45;
+}
+
+.textAction {
+  height: 30px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-13);
+  font-weight: 550;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.textAction:hover {
+  background: var(--surface-overlay);
+  color: var(--text);
+}
+
+.edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.edit textarea {
+  width: 100%;
+  min-height: 64px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-field);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-14);
+  resize: vertical;
+}
+
+.editActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Rescheduling: the picker stands over the list, not over the composer. The
+   list's class first, so this wins over the picker's own placement. */
+.list .picker {
+  top: 64px;
+  bottom: auto;
+  left: max(8px, calc(50% - 160px));
+  right: auto;
+}
+
+@media (pointer: coarse) {
+  .iconAction,
+  .close {
+    width: 44px;
+    height: 44px;
+  }
+
+  .textAction {
+    min-height: 44px;
+  }
+}

@@ -21,6 +21,7 @@ export type CommandId =
   | "file"
   | "gif"
   | "voice"
+  | "schedule"
   | "code"
   | "spoiler"
   | "pinned"
@@ -31,10 +32,11 @@ export type CommandId =
 export type CommandGroup = "add" | "message" | "server";
 
 /**
- * Where the phone's sheet puts a command: a tile across the top, a row in its
- * group, or nowhere, for one whose button stays in the field's row.
+ * Where the phone's sheet puts a command: a tile across the top, in the order
+ * the numbers give, a row in its group, or nowhere, for one whose button
+ * stays in the field's row.
  */
-export type SheetPlace = "tile" | "row" | "none";
+export type SheetPlace = { tile: number } | "row" | "none";
 
 /** The groups in the order the list draws them, each with its caption. */
 export const COMMAND_GROUPS: readonly { id: CommandGroup; label: MessageKey }[] = [
@@ -53,6 +55,17 @@ export interface CommandArgument {
   hint: MessageKey;
   /** As long as the feature that receives it accepts. */
   maxLength?: number;
+  /**
+   * Why what was typed cannot be used, or nothing when it can. The command
+   * does not run while an argument has a reason against it.
+   */
+  check?: (value: string, context: CommandCheckContext) => MessageKey | undefined;
+}
+
+/** What checking an argument may read: only what the reading of a value needs. */
+export interface CommandCheckContext {
+  /** Reads a typed send time, where messages can be scheduled. */
+  parseWhen?: (text: string) => { at: Date } | { problem: MessageKey };
 }
 
 /**
@@ -70,6 +83,14 @@ export interface CommandContext {
   insertSpoiler: (words: string) => void;
   openPinned?: () => void;
   openStatus?: () => void;
+  /** Sending later, where the message can be scheduled. */
+  schedule?: {
+    /** Reads a typed time: the instant, or why it is not one. */
+    parse(text: string): { at: Date } | { problem: MessageKey };
+    /** Puts the time in the field as the message's send time. */
+    choose(at: Date): void;
+    openPicker(): void;
+  };
   /** Asks first: running the command never removes anyone by itself. */
   kick?: (person: MentionCandidate) => void;
   /** Asks first, with the reason already in the question. */
@@ -128,7 +149,12 @@ function copy<Id extends CommandId>(id: Id) {
 function argument<Id extends CommandId, Arg extends string>(
   command: Id,
   id: Arg,
-  shape: { kind: CommandArgument["kind"]; optional: boolean; maxLength?: number },
+  shape: {
+    kind: CommandArgument["kind"];
+    optional: boolean;
+    maxLength?: number;
+    check?: CommandArgument["check"];
+  },
 ) {
   return {
     id,
@@ -145,7 +171,7 @@ export const COMMANDS: readonly ComposerCommand[] = [
     alias: "file",
     ...copy("file"),
     icon: "paperclip",
-    sheet: "tile",
+    sheet: { tile: 1 },
     args: [],
     available: (context) =>
       context.openFilePicker === undefined ? HIDDEN : shownUnless(context.fileBlocked),
@@ -158,7 +184,8 @@ export const COMMANDS: readonly ComposerCommand[] = [
     ...copy("gif"),
     example: "composer.command.gif.example",
     icon: "gif",
-    sheet: "tile",
+    // Back among the rows once polls and events take their tiles.
+    sheet: { tile: 3 },
     args: [argument("gif", "query", { kind: "text", optional: true, maxLength: GIF_QUERY_MAX_LENGTH })],
     available: (context) => (context.openGifs === undefined ? HIDDEN : READY),
     run: (context, input) => context.openGifs?.(input.text("query")),
@@ -175,6 +202,37 @@ export const COMMANDS: readonly ComposerCommand[] = [
     available: (context) =>
       context.recordVoice === undefined ? HIDDEN : shownUnless(context.voiceBlocked),
     run: (context) => context.recordVoice?.(),
+  },
+  {
+    id: "schedule",
+    group: "message",
+    alias: "schedule",
+    ...copy("schedule"),
+    example: "composer.command.schedule.example",
+    icon: "clock",
+    sheet: { tile: 2 },
+    args: [
+      argument("schedule", "when", {
+        kind: "text",
+        optional: true,
+        check: (value, context) => {
+          if (value.trim() === "" || context.parseWhen === undefined) return undefined;
+          const parsed = context.parseWhen(value);
+          return "problem" in parsed ? parsed.problem : undefined;
+        },
+      }),
+    ],
+    available: (context) => (context.schedule === undefined ? HIDDEN : READY),
+    run: (context, input) => {
+      const when = input.text("when").trim();
+      if (context.schedule === undefined) return;
+      if (when === "") {
+        context.schedule.openPicker();
+        return;
+      }
+      const parsed = context.schedule.parse(when);
+      if ("at" in parsed) context.schedule.choose(parsed.at);
+    },
   },
   {
     id: "code",
@@ -265,4 +323,18 @@ export function argumentsComplete(command: ComposerCommand, input: CommandInput)
       arg.optional ||
       (arg.kind === "person" ? input.person(arg.id) !== undefined : input.text(arg.id).trim() !== ""),
   );
+}
+
+/** Each argument's reason against what was typed into it, by argument id. */
+export function argumentProblems(
+  command: ComposerCommand,
+  input: CommandInput,
+  context: CommandCheckContext,
+): Readonly<Record<string, MessageKey>> {
+  const problems: Record<string, MessageKey> = {};
+  for (const arg of command.args) {
+    const problem = arg.check?.(input.text(arg.id), context);
+    if (problem !== undefined) problems[arg.id] = problem;
+  }
+  return problems;
 }

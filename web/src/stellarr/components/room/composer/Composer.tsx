@@ -5,10 +5,13 @@ import {
   useState,
   type CSSProperties,
   type KeyboardEvent,
+  type MouseEvent,
+  type PointerEvent,
 } from "react";
 
 import { Icon } from "@stellarr/icons";
-import { type InterfaceLocale, type Translator } from "@/i18n";
+import { ContextMenu } from "@/components/primitives/ContextMenu";
+import { type InterfaceLocale, type MessageKey, type Translator } from "@/i18n";
 import { documentLocale, translateForDocument } from "@/i18n/defaultLocale";
 import type { CustomEmoji, OpenVoiceMessageCapture } from "@/ports";
 
@@ -22,12 +25,17 @@ import { CommandList, commandOptionId } from "./CommandList";
 import { CommandSheet, type SheetEntry, type SheetGroup } from "./CommandSheet";
 import {
   COMMANDS,
+  argumentProblems,
   argumentsComplete,
   type CommandContext,
   type CommandInput,
   type ComposerCommand,
 } from "./commandRegistry";
 import commandCss from "./ComposerCommands.module.css";
+import { ScheduledBar, SchedulePicker, useClock, useNarrowForm, WhenChip } from "./ComposerSchedule";
+import scheduleCss from "./ComposerSchedule.module.css";
+import { presetRow, whenLabel } from "@/lib/schedule/scheduleLabels";
+import { parseWhen, schedulePresets, timeProblem, type TimeProblem } from "@/lib/schedule/scheduleTime";
 import { codeLanguageNamed } from "@/lib/messages/codeLanguages";
 import { namesCommand } from "@/lib/messages/composerCommands";
 import { insertMention, type MentionCandidate } from "@/lib/messages/composerMentions";
@@ -101,6 +109,15 @@ const ANY_ATTACHMENT = [
 ].join(",");
 
 const NO_INPUT: CommandInput = commandInput({ text: {}, people: {} });
+/** How long a finger holds the send button before it offers sending later. */
+const LONG_PRESS_MS = 500;
+
+const WHEN_PROBLEMS: Record<TimeProblem | "unknown", MessageKey> = {
+  unknown: "composer.schedule.parse.unknown",
+  past: "composer.schedule.passed",
+  tooSoon: "composer.schedule.passed",
+  tooFar: "composer.schedule.tooFar",
+};
 const NO_PEOPLE: readonly MentionCandidate[] = [];
 
 /**
@@ -117,6 +134,21 @@ export interface ComposerCommandHost {
   ban?(person: MentionCandidate, reason: string): void;
   /** Who a person argument offers; the host leaves out whoever cannot be chosen. */
   people?: readonly MentionCandidate[];
+}
+
+/** Sending later, where the message can be scheduled. */
+export interface ComposerScheduling {
+  /** Schedules instead of posting; the text is trimmed and fenced as a send's would be. */
+  onSchedule(text: string, sendAt: Date): Promise<void>;
+  /** What the author has waiting here, for the bar over the field. */
+  waiting: { count: number; next: Date | null };
+  /** Which words the bar uses for this place. */
+  place: "channel" | "thread" | "conversation";
+  onShowScheduled(): void;
+  /** The reader's time zone, in which times are chosen and shown. */
+  zone: string;
+  /** The real clock unless a test or a picture fixes it. */
+  clock?: () => Date;
 }
 
 export interface ComposerProps {
@@ -163,6 +195,8 @@ export interface ComposerProps {
   onSendVoice?(file: File, durationSeconds: number): Promise<void>;
   /** The commands that lead out of the composer. */
   commandHost?: ComposerCommandHost;
+  /** Without it the message can only be sent now. */
+  scheduling?: ComposerScheduling;
   locale?: InterfaceLocale;
   t?: Translator;
 }
@@ -189,6 +223,7 @@ export function Composer({
   openVoiceMessageMicrophone,
   onSendVoice,
   commandHost,
+  scheduling,
   locale = documentLocale(),
   t = translateForDocument,
 }: ComposerProps) {
@@ -200,6 +235,13 @@ export function Composer({
    */
   const [sheet, setSheet] = useState<{ tiles: SheetEntry[]; groups: SheetGroup[] } | null>(null);
   const sheetOpen = sheet !== null;
+  /** The send-later menu, where it opens, while it is open. */
+  const [sendMenu, setSendMenu] = useState<{ x: number; y: number } | null>(null);
+  /** The date picker, while it is open, with the time it opens on. */
+  const [picker, setPicker] = useState<{ initial: Date | null } | null>(null);
+  const press = useRef<number | null>(null);
+  /** A long press opened the menu: the click that ends it must not also send. */
+  const swallowClick = useRef(false);
 
   const field = useRef<HTMLTextAreaElement | null>(null);
   const filePicker = useRef<HTMLInputElement | null>(null);
@@ -263,6 +305,8 @@ export function Composer({
     codeGuess,
     codeHighlight,
     codeRoom,
+    sendAt,
+    setSendAt,
     hasPayload,
     attachmentsBlocked,
     canSend,
@@ -272,6 +316,9 @@ export function Composer({
     restoringFiles,
     chips,
     onSubmit,
+    ...(scheduling === undefined
+      ? {}
+      : { onSchedule: scheduling.onSchedule, ...(scheduling.clock === undefined ? {} : { clock: scheduling.clock }) }),
     onSent: () => setMobileActionsOpen(false),
     locale,
     t,
@@ -336,6 +383,25 @@ export function Composer({
     });
   };
 
+  const now = useClock(scheduling?.clock);
+  const formElement = useRef<HTMLFormElement>(null);
+  /** Where the row has no room for the time beside the words, it waits over the box. */
+  const timeOverBox = useNarrowForm(formElement) || codeMode;
+  const zone = scheduling?.zone ?? "UTC";
+  /** Nobody is told someone is writing a message that will appear only later. */
+  const typing = () => {
+    if (sendAt === null) onTyping?.();
+  };
+  /** A typed send time, read against the clock on screen. */
+  const readWhen = (text: string): { at: Date } | { problem: MessageKey } => {
+    const parsed = parseWhen(text, now, zone, locale);
+    return "at" in parsed ? parsed : { problem: WHEN_PROBLEMS[parsed.problem] };
+  };
+  const chooseTime = (at: Date, caretAt: number) => {
+    setSendAt(at);
+    selectLater(caretAt);
+  };
+
   const host = commandHost ?? {};
   const { openPinned, openStatus, kick, ban } = host;
 
@@ -376,6 +442,14 @@ export function Composer({
     openStatus,
     kick: kick === undefined ? undefined : (person) => askAfterFrame(() => kick(person)),
     ban: ban === undefined ? undefined : (person, reason) => askAfterFrame(() => ban(person, reason)),
+    schedule:
+      scheduling === undefined
+        ? undefined
+        : {
+            parse: readWhen,
+            choose: (at) => chooseTime(at, base.caret),
+            openPicker: () => setPicker({ initial: null }),
+          },
   });
 
   const commands = useComposerCommands({
@@ -389,13 +463,24 @@ export function Composer({
   useAutosizedField(
     field,
     text,
-    recordingScope,
+    // A chosen time widens the send button, and its chip may share the row:
+    // both narrow the field without changing its text.
+    `${recordingScope ?? ""}|${sendAt === null ? "send" : timeOverBox ? "over" : "inline"}`,
     codeMode ? CODE_FIELD_MAX_HEIGHT : undefined,
     active !== null,
   );
   const activeInput = active === null ? null : commandInput(active);
+  const activeProblems =
+    active === null || activeInput === null
+      ? {}
+      : argumentProblems(active.command, activeInput, {
+          ...(scheduling === undefined ? {} : { parseWhen: readWhen }),
+        });
   const activeReady =
-    active !== null && activeInput !== null && argumentsComplete(active.command, activeInput);
+    active !== null &&
+    activeInput !== null &&
+    argumentsComplete(active.command, activeInput) &&
+    Object.keys(activeProblems).length === 0;
 
   const mentions = useMentionSuggestions({
     text,
@@ -426,7 +511,7 @@ export function Composer({
     const edit = insertMention(text, mentions.mention, candidate.username);
     setText(edit.text);
     trackCaret(edit.selectionEnd);
-    onTyping?.();
+    typing();
     selectLater(edit.selectionEnd);
   };
 
@@ -598,7 +683,7 @@ export function Composer({
       return;
     }
     setText(`${element.value.slice(0, edit.from)}${edit.insert}${element.value.slice(edit.to)}`);
-    onTyping?.();
+    typing();
     selectLater(edit.selectionStart, edit.selectionEnd);
   };
 
@@ -749,7 +834,9 @@ export function Composer({
     };
     const [first, ...rest] = rows("message");
     return {
-      tiles: COMMANDS.filter((command) => command.sheet === "tile").flatMap(entry),
+      tiles: COMMANDS.flatMap((command) => (typeof command.sheet === "object" ? [{ command, tile: command.sheet.tile }] : []))
+        .sort((left, right) => left.tile - right.tile)
+        .flatMap(({ command }) => entry(command)),
       groups: [
         {
           id: "message",
@@ -763,6 +850,48 @@ export function Composer({
         },
       ],
     };
+  };
+
+  const cancelPress = () => {
+    if (press.current !== null) window.clearTimeout(press.current);
+    press.current = null;
+  };
+  /** The menu stands over the send button, whatever opened it. */
+  const openSendMenu = (button: HTMLElement) => {
+    const box = button.getBoundingClientRect();
+    setSendMenu({ x: box.right, y: box.top });
+  };
+  /**
+   * "Wyslij pozniej" opens on a right click, on the keyboard's menu key or
+   * Shift+F10 (the browser reports both as a context menu), and on a finger
+   * held on the button.
+   */
+  const sendLaterHandlers = {
+    onContextMenu: (event: MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      // A touch browser reports the long press itself too: one menu, and no send after it.
+      if (press.current !== null) swallowClick.current = true;
+      cancelPress();
+      if (canSend) openSendMenu(event.currentTarget);
+    },
+    onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {
+      if (event.pointerType === "mouse") return;
+      const button = event.currentTarget;
+      cancelPress();
+      press.current = window.setTimeout(() => {
+        press.current = null;
+        swallowClick.current = true;
+        openSendMenu(button);
+      }, LONG_PRESS_MS);
+    },
+    onPointerUp: cancelPress,
+    onPointerLeave: cancelPress,
+    onPointerCancel: cancelPress,
+    onClick: (event: MouseEvent<HTMLButtonElement>) => {
+      if (!swallowClick.current) return;
+      swallowClick.current = false;
+      event.preventDefault();
+    },
   };
 
   const prompt = placeholder ?? t("composer.toChannel", { channel: channelName });
@@ -783,6 +912,7 @@ export function Composer({
 
   return (
     <form
+      ref={formElement}
       className="composer"
       onSubmit={(event) => {
         // The send button stands for the command while one is in the field.
@@ -833,8 +963,35 @@ export function Composer({
           />
         </div>
       ) : (
+        <>
+        {scheduling === undefined || scheduling.waiting.count === 0 ? null : (
+          <ScheduledBar
+            count={scheduling.waiting.count}
+            next={scheduling.waiting.next}
+            place={scheduling.place}
+            now={now}
+            zone={zone}
+            locale={locale}
+            onShow={scheduling.onShowScheduled}
+            t={t}
+          />
+        )}
+        {timeOverBox && sendAt !== null ? (
+          <div className={scheduleCss.chipStrip}>
+            <WhenChip
+              label={whenLabel(sendAt, now, zone, locale, t)}
+              stale={timeProblem(sendAt, now) !== null}
+              onRemove={() => setSendAt(null)}
+              t={t}
+            />
+          </div>
+        ) : null}
         <div
-          className={codeMode ? `composer-box ${codeCss.box}` : "composer-box"}
+          className={[
+            "composer-box",
+            codeMode ? codeCss.box : null,
+            sendAt === null ? null : scheduleCss.scheduled,
+          ].filter(Boolean).join(" ")}
           // The phone's row keys on these: the plus is the commands', and the
           // microphone gives way to send once there is something to send.
           data-commands={codeMode ? undefined : ""}
@@ -898,9 +1055,24 @@ export function Composer({
               <Icon name={commandsOpenedHere ? "x" : "plus"} size={18} />
             </button>
           )}
+          {/* The chosen time sits in the field, before the words it is for. */}
+          {timeOverBox || sendAt === null || active !== null ? null : (
+            <WhenChip
+              label={whenLabel(sendAt, now, zone, locale, t)}
+              stale={timeProblem(sendAt, now) !== null}
+              onRemove={() => {
+                setSendAt(null);
+                field.current?.focus();
+              }}
+              t={t}
+            />
+          )}
           {active === null ? null : (
             <CommandArgs
               active={active}
+              problems={Object.fromEntries(
+                Object.entries(activeProblems).map(([id, key]) => [id, t(key)]),
+              )}
               people={host.people ?? NO_PEOPLE}
               locale={locale}
               onText={commands.setArgument}
@@ -965,7 +1137,7 @@ export function Composer({
                 const value = event.target.value;
                 const at = event.target.selectionStart;
                 clearSendError();
-                onTyping?.();
+                typing();
                 if (takeTypedCommand(value, at)) return;
                 setText(value);
                 trackCaret(at);
@@ -1126,27 +1298,33 @@ export function Composer({
             // button to zero width, which is how the empty composer looks.
             <button
               type="submit"
-              className={
-                sending
-                  ? "send sending"
-                  : hasPayload && attachmentsBlocked
-                    ? "send waiting"
-                    : "send"
-              }
+              className={[
+                "send",
+                sending ? "sending" : hasPayload && attachmentsBlocked ? "waiting" : null,
+                sendAt === null ? null : scheduleCss.later,
+                scheduling === undefined ? null : scheduleCss.pressable,
+              ].filter(Boolean).join(" ")}
               disabled={!canSend}
               aria-label={
                 sending
                   ? t("composer.sending")
                   : attachmentsBlocked
                     ? t("composer.waitForAttachments")
-                    : t("composer.send")
+                    : sendAt === null
+                      ? t("composer.send")
+                      : undefined
               }
+              aria-haspopup={scheduling === undefined ? undefined : "menu"}
+              aria-expanded={scheduling === undefined ? undefined : sendMenu !== null}
               aria-busy={sending}
+              {...(scheduling === undefined ? {} : sendLaterHandlers)}
             >
-              <Icon name="send" size={15} />
+              <Icon name={sendAt === null ? "send" : "clock"} size={15} />
+              {sendAt === null ? null : <span>{t("composer.schedule.send")}</span>}
             </button>
           )}
         </div>
+        </>
       )}
       {/* Outside `.composer-box`, so they are positioned against the form that
           `.fmt-pop` and `.emo-pop` anchor to; inside, the box's own rounding
@@ -1176,6 +1354,51 @@ export function Composer({
           />
         </div>
       ) : null}
+      {sendMenu === null || scheduling === undefined ? null : (
+        <ContextMenu
+          at={sendMenu}
+          label={t("composer.schedule.menu")}
+          titled
+          entries={[
+            ...schedulePresets(now, zone).map((preset) => ({
+              id: preset.id,
+              ...presetRow(preset, now, zone, locale, t),
+              onSelect: () => chooseTime(preset.at, caret.current ?? text.length),
+            })),
+            "separator" as const,
+            {
+              id: "pick",
+              label: t("composer.schedule.pick"),
+              trailingIcon: "calendar" as const,
+              onSelect: () => setPicker({ initial: sendAt }),
+            },
+          ]}
+          onClose={() => {
+            setSendMenu(null);
+            // Closed without a choice: back to the field rather than nowhere.
+            requestAnimationFrame(() => {
+              if (document.activeElement === document.body) field.current?.focus();
+            });
+          }}
+        />
+      )}
+      {picker === null || scheduling === undefined ? null : (
+        <SchedulePicker
+          now={now}
+          zone={zone}
+          locale={locale}
+          initial={picker.initial}
+          onCancel={() => {
+            setPicker(null);
+            selectLater(caret.current ?? text.length);
+          }}
+          onConfirm={(at) => {
+            setPicker(null);
+            chooseTime(at, caret.current ?? text.length);
+          }}
+          t={t}
+        />
+      )}
       {sheet === null ? null : (
         <CommandSheet
           tiles={sheet.tiles}

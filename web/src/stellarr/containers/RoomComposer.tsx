@@ -1,9 +1,13 @@
-import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 
 import { banPerson, kickPerson, personSubject } from "@/components/confirmations";
 import { useConfirm, usePrompt } from "@/components/primitives/confirmContext";
 import { draftScope } from "@/lib/platform/drafts";
-import { Composer, type ComposerCommandHost } from "@/components/room/composer/Composer";
+import {
+  Composer,
+  type ComposerCommandHost,
+  type ComposerScheduling,
+} from "@/components/room/composer/Composer";
 import { useGifsEnabled, useGiphyAccess } from "@/hooks/useGifsEnabled";
 import type { Translator } from "@/i18n";
 import { captureMicrophone, MicCaptureError } from "@/lib/voice/capture/micPipeline";
@@ -19,6 +23,8 @@ import {
 } from "@/state/hooks";
 
 import { useMemberModeration } from "./useMemberMenu";
+import { ScheduledDialogContainer } from "./ScheduledDialogContainer";
+import { useReaderZone, useWaitingHere } from "./useScheduled";
 
 interface RoomComposerProps {
   channelName: string;
@@ -78,6 +84,29 @@ export function RoomComposer({ channelName, threadRootId }: RoomComposerProps) {
   const inThread = threadRootId !== null;
   const reply = chat.replyingTo;
 
+  // Sending later goes to the same place a send would: the channel, or the
+  // thread written in. Its list opens over this place only.
+  const place = chat.channelId === null
+    ? null
+    : { kind: "channel" as const, channelId: chat.channelId, ...(threadRootId === null ? {} : { threadRootId }) };
+  const zone = useReaderZone();
+  const waiting = useWaitingHere(place);
+  const [listOpen, setListOpen] = useState(false);
+  const [listNow, setListNow] = useState(() => new Date());
+  const scheduling: ComposerScheduling | undefined =
+    place === null
+      ? undefined
+      : {
+          onSchedule: chat.schedule,
+          waiting,
+          place: inThread ? "thread" : "channel",
+          onShowScheduled: () => {
+            setListNow(new Date());
+            setListOpen(true);
+          },
+          zone,
+        };
+
   // As in the member menu, nobody kicks or bans themselves.
   const selfId = user?.id;
   const others = useMemo(
@@ -121,6 +150,7 @@ export function RoomComposer({ channelName, threadRootId }: RoomComposerProps) {
   };
 
   return (
+    <>
     <Composer
       key={scope}
       draftScope={scope}
@@ -141,6 +171,7 @@ export function RoomComposer({ channelName, threadRootId }: RoomComposerProps) {
       customEmoji={customEmoji}
       mentionCandidates={members}
       commandHost={commandHost}
+      {...(scheduling === undefined ? {} : { scheduling })}
       {...(gifsOffered && giphyAccess === "on" ? { onGif: chat.sendGif } : {})}
       locale={locale}
       t={t}
@@ -154,6 +185,10 @@ export function RoomComposer({ channelName, threadRootId }: RoomComposerProps) {
             onCancelReply: chat.cancelReply,
           })}
     />
+    {listOpen && place !== null ? (
+      <ScheduledDialogContainer place={place} now={listNow} zone={zone} onClose={() => setListOpen(false)} />
+    ) : null}
+    </>
   );
 }
 

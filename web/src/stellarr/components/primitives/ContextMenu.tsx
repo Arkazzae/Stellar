@@ -23,6 +23,10 @@ export interface MenuItem {
   icon?: IconName;
   /** Drawn red, and kept last in its group. */
   danger?: boolean;
+  /** A short fact on the right, such as the date a time falls on. */
+  detail?: string;
+  /** An icon on the right, for a row that opens something more rather than acting. */
+  trailingIcon?: IconName;
   onSelect: () => void;
 }
 
@@ -35,6 +39,8 @@ export interface ContextMenuProps {
   entries: MenuEntry[];
   /** Names the menu for assistive tech: "Message", "Maja". */
   label: string;
+  /** Shows the name over the items as well, for a menu that is not about what was pressed. */
+  titled?: boolean;
   /**
    * A local control that belongs to what is under the pointer, shown before the
    * action list. Unlike an item it stays open while it is operated.
@@ -77,7 +83,7 @@ function withoutStraySeparators(entries: MenuEntry[]): MenuEntry[] {
  * Keep it short. Past about six items a menu stops being faster than the
  * alternative and becomes something to read.
  */
-export function ContextMenu({ at, entries, label, controls, onClose }: ContextMenuProps) {
+export function ContextMenu({ at, entries, label, titled = false, controls, onClose }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [placed, setPlaced] = useState<{ left: number; top: number } | null>(null);
   const [cursor, setCursor] = useState(0);
@@ -186,6 +192,17 @@ export function ContextMenu({ at, entries, label, controls, onClose }: ContextMe
           </span>
         )}
         {entry.label}
+        {entry.detail === undefined ? null : (
+          <>
+            {" "}
+            <span className="ctx-detail">{entry.detail}</span>
+          </>
+        )}
+        {entry.trailingIcon === undefined ? null : (
+          <span className="ctx-detail" aria-hidden="true">
+            <Icon name={entry.trailingIcon} size={15} />
+          </span>
+        )}
       </button>
     );
   });
@@ -193,7 +210,17 @@ export function ContextMenu({ at, entries, label, controls, onClose }: ContextMe
   // Without controls the menu is the list. With them the list moves into a menu
   // of its own beneath the controls, and a menu of only controls is a dialog.
   const role = !hasControls ? "menu" : items.length === 0 ? "dialog" : undefined;
-  let body: ReactNode = list;
+  let body: ReactNode = titled ? (
+    <>
+      {/* The menu's own name, read with it; here only for the eye. */}
+      <div className="ctx-title" aria-hidden="true">
+        {label}
+      </div>
+      {list}
+    </>
+  ) : (
+    list
+  );
   if (hasControls) {
     body =
       items.length === 0 ? (

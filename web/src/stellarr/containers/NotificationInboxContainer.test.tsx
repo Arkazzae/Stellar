@@ -7,6 +7,8 @@ import type { InboxNotification } from "@/ports";
 
 import { NotificationInboxButton } from "./NotificationInboxContainer";
 
+const NOTHING_SCHEDULED: never[] = [];
+
 const mocks = vi.hoisted(() => ({
   inbox: {
     items: [] as InboxNotification[],
@@ -28,9 +30,13 @@ const mocks = vi.hoisted(() => ({
   },
   ui: { selectTextChannel: vi.fn(), openServer: vi.fn() },
   session: { reload: vi.fn() },
+  // Nothing scheduled: one array, as a store's snapshot is.
+  scheduled: { subscribe: () => () => {}, getSnapshot: () => NOTHING_SCHEDULED },
 }));
 
 vi.mock("@/state/hooks", () => ({
+  usePorts: () => ({ scheduled: mocks.scheduled }),
+  useFriends: () => ({ conversations: [] }),
   useNotifications: () => mocks.inbox,
   useDirectory: () => mocks.directory,
   useUi: () => mocks.ui,

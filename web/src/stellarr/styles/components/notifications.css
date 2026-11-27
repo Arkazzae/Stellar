@@ -141,6 +141,39 @@
     list-style: none;
   }
 
+  /* Notifications and scheduled messages: two lists of things addressed to
+     the reader alone. */
+  .notification-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--line-subtle);
+  }
+
+  .notification-tab {
+    height: 30px;
+    padding: 0 10px;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-13);
+    font-weight: 550;
+    color: var(--text-muted);
+  }
+
+  .notification-tab:hover {
+    color: var(--text);
+  }
+
+  .notification-tab[aria-selected="true"] {
+    background: var(--surface-overlay);
+    color: var(--text);
+  }
+
+  .notification-tab span {
+    margin-left: 6px;
+    color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
   /* ---------- one notification ----------
 
      A row is a message, not a control panel. The mark on the left carries
