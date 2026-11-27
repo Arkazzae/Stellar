@@ -22,6 +22,7 @@ const post = <T,>(path: string, body: unknown) => cockpitRequest<T>(base + "/" +
 function permission(name: string) {
   if (name === "media.microphoneLevel") return t("activities.mic");
   if (name === "media.cameraTile") return t("activities.camera");
+  if (name === "media.gifs") return t("activities.gifs");
   return name;
 }
 

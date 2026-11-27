@@ -226,6 +226,9 @@
   .act-bar-tools{flex:none;margin-left:auto;display:flex;align-items:center;gap:4px}
   .act-bar-call{display:flex;gap:2px;margin-right:4px;padding-right:6px;border-right:1px solid var(--line)}
   .activity-devices{display:contents}
+  /* GIPHY's mark, owed once the activity has used GIFs from it. */
+  .activity-giphy{display:inline-flex;align-items:center;padding:0 6px}
+  .activity-giphy img{display:block;width:80px;height:17px}
   .activity-device-controls{display:inline-flex;align-items:center;gap:4px}
   .activity-device-controls button{
     height:32px;padding:0 10px;border-radius:8px;

@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { RealtimeClient } from "@/lib/realtime/types";
 import { Icon } from "@stellarr/icons";
 import { Avatar } from "@/components/primitives/Avatar";
+import { GIPHY_MARK } from "@/components/room/composer/GifBrowser";
+import { createActivityGifs } from "@/lib/activities/gifs";
 import { detectDevice, type Participant } from "../../../../sdk/client.js";
 import { useLanguage } from "@/state/LanguageProvider";
 import { bindMediaHost, type HostMediaControls, type ActivityCamera } from "../../../../sdk/host/media-host.js";
@@ -30,6 +32,8 @@ export interface FrameParts {
   volume: ReactNode;
   /** Where the SDK host puts what stops a device the activity uses. */
   devices: ReactNode;
+  /** GIPHY's mark once the activity has used GIFs from it, drawn by the app since the frame cannot be trusted to; null before. */
+  attribution: ReactNode;
   players: readonly FramePlayer[];
 }
 
@@ -75,6 +79,8 @@ export function ActivityFrame({ src, title, permissions, embedHosts, muted = fal
   const asking = useRef(ask);
   useEffect(() => { asking.current = ask; }, [ask]);
   const [players, setPlayers] = useState<Participant[]>([]);
+  // The frame whose activity used GIFs; the mark stays until the frame changes.
+  const [gifsUsedBy, setGifsUsedBy] = useState<string | null>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const volume = useRef<HTMLInputElement>(null);
   const controls = useRef<HTMLSpanElement>(null);
@@ -90,9 +96,12 @@ export function ActivityFrame({ src, title, permissions, embedHosts, muted = fal
     const { origin, nonce } = target;
     // Local installations serve frame assets below the launch-specific directory.
     const portraitBase = nonce ? target.src : origin + "/";
+    // This page asks GIPHY for the frame, which never reaches it.
+    const gifs = permissions.includes("media.gifs")
+      ? createActivityGifs({ locale: () => language.current, onUse: () => setGifsUsedBy(target.src) }) : undefined;
     media.current = bindMediaHost({ frame: frame.current, origin, nonce, embedHosts, title, permissions, controls: controls.current,
       volume: volume.current, language: () => language.current ?? document.documentElement.lang, muted: () => callMuted.current,
-      camera, cloneLocalCamera, tile: tile ? action => tile(action, controller.signal) : undefined, overlay: viewport.current ?? undefined,
+      camera, cloneLocalCamera, tile: tile ? action => tile(action, controller.signal) : undefined, overlay: viewport.current ?? undefined, gifs,
       ask: asking.current ? (kind, signal) => asking.current?.(kind, signal) ?? Promise.resolve(false) : undefined,
       labels: {
         stop: { cameraTile: words.current("activities.stopCamera"), microphoneLevel: words.current("activities.stopMicrophoneLevel") },
@@ -183,9 +192,13 @@ export function ActivityFrame({ src, title, permissions, embedHosts, muted = fal
     </label>
   );
   const devices = <span className="activity-devices" ref={controls} />;
+  const attribution = gifsUsedBy === target.src
+    ? <a className="activity-giphy" href="https://giphy.com/" target="_blank" rel="noopener noreferrer">
+      <img src={GIPHY_MARK} alt={t("gif.poweredBy")} width={80} height={17} />
+    </a> : null;
 
   return <>
-    {bar ? bar({ volume: volumeControl, devices, players: roster }) : <>
+    {bar ? bar({ volume: volumeControl, devices, attribution, players: roster }) : <>
       {roster.length > 0 && <ul className="activity-players" aria-label={t("stage.activityPlayers")}>
         {roster.map(person => <li key={person.id}>
           <Avatar id={person.id} displayName={person.label} size="xs" offline={!person.connected} avatarUrl={person.avatarUrl} />
@@ -195,6 +208,7 @@ export function ActivityFrame({ src, title, permissions, embedHosts, muted = fal
       <div className="activity-frame-controls">
         {volumeControl}
         {devices}
+        {attribution}
       </div>
     </>}
     <div className="activity-viewport" ref={viewport}>

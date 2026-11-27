@@ -286,7 +286,7 @@ export function ActivityPanel({ slot, session, target }: PanelProps) {
   const fullscreenTitle = fullscreen ? t("voiceBar.fullscreenExit") : t("activities.fullscreen");
   const callControls = voice && fullscreen && call.call !== null;
 
-  const bar = ({ volume, devices, players }: FrameParts) => (
+  const bar = ({ volume, devices, attribution, players }: FrameParts) => (
     <header className="act-bar" onPointerMove={wake} onFocus={wake}>
       {voice ? null : (
         <button
@@ -344,6 +344,7 @@ export function ActivityPanel({ slot, session, target }: PanelProps) {
             </button>
           </span>
         ) : null}
+        {attribution}
         {volume}
         {devices}
         {voice && !fullscreen ? (
