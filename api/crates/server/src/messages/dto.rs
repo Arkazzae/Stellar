@@ -151,7 +151,7 @@ pub fn one_line(content: &str, limit: usize) -> String {
     cut
 }
 
-fn attachment_from(row: &Row<'_>, from: usize) -> rusqlite::Result<AttachmentDto> {
+pub(crate) fn attachment_from(row: &Row<'_>, from: usize) -> rusqlite::Result<AttachmentDto> {
     let id: Id = row.get(from)?;
     let poster: Option<String> = row.get(from + 6)?;
     let preview: Option<String> = row.get(from + 7)?;
@@ -171,7 +171,7 @@ fn attachment_from(row: &Row<'_>, from: usize) -> rusqlite::Result<AttachmentDto
     })
 }
 
-const ATTACHMENT_COLUMNS: &str = "a.\"Id\", a.\"FileName\", a.\"ContentType\", a.\"SizeBytes\", a.\"Width\", a.\"DurationSeconds\",
+pub(crate) const ATTACHMENT_COLUMNS: &str = "a.\"Id\", a.\"FileName\", a.\"ContentType\", a.\"SizeBytes\", a.\"Width\", a.\"DurationSeconds\",
     a.\"PosterObjectKey\", a.\"PreviewObjectKey\", a.\"Height\", a.\"IsVoiceMessage\", a.\"Placeholder\"";
 
 struct Row_ {
