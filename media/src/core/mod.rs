@@ -1479,24 +1479,7 @@ impl Core {
             .rooms
             .get(&room)
             .map_or_else(Vec::new, |r| r.sessions.clone());
-        let receiver_at_limit = !added.is_empty()
-            && others.iter().any(|other| {
-                *other != key
-                    && self
-                        .sessions
-                        .get(other)
-                        .is_some_and(|receiver| !receiver.fits(added.iter().map(|(_, kind)| *kind)))
-            });
         let s = &self.sessions[&key];
-        if receiver_at_limit {
-            self.work.push_back(Work::Close {
-                key,
-                reason: CloseReason::Error,
-            });
-            return Err(ApiError::LimitExceeded(
-                "The room has too many published tracks.".into(),
-            ));
-        }
         info!(
             session = %s.id,
             published = s.published.len(),
@@ -1523,6 +1506,10 @@ impl Core {
             };
             let mut changed = false;
             for (mid, kind) in &added {
+                if !o.fits([*kind]) {
+                    o.waiting_for_space = true;
+                    continue;
+                }
                 changed |= o.add_out(
                     TrackKey {
                         session: key,
@@ -1657,9 +1644,42 @@ impl Core {
         Ok(())
     }
 
+    /// A retired section can carry a publication this receiver had no room for.
+    /// Consult the live room so a withdrawn publication can never be resurrected.
+    fn fill_available_sections(&mut self, key: SessionKey) {
+        let mut missing = Vec::new();
+        let receiver = &self.sessions[&key];
+        for source in &self.rooms[&receiver.room].sessions {
+            if *source == key {
+                continue;
+            }
+            for track in &self.sessions[source].published {
+                let source = TrackKey {
+                    session: *source,
+                    mid: track.mid,
+                };
+                if !receiver.out_by_source.contains_key(&source) {
+                    missing.push((source, track.kind));
+                }
+            }
+        }
+        let receiver = self.sessions.get_mut(&key).expect("looked up above");
+        receiver.waiting_for_space = false;
+        for (source, kind) in missing {
+            if receiver.fits([kind]) {
+                receiver.add_out(source, kind);
+            } else {
+                receiver.waiting_for_space = true;
+            }
+        }
+    }
+
     /// Offers the browser whatever changed in what it receives, unless an
     /// offer is already waiting for its answer. Returns whether it offered.
     fn maybe_offer(&mut self, now: Instant, key: SessionKey) -> bool {
+        if self.sessions.get(&key).is_some_and(|s| s.waiting_for_space) {
+            self.fill_available_sections(key);
+        }
         let Some(s) = self.sessions.get(&key) else {
             return false;
         };

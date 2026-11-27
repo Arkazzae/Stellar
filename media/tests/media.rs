@@ -61,6 +61,61 @@ fn send_video(net: &mut Net, i: usize, mid: Mid, payload: &[u8]) {
 }
 
 #[test]
+fn a_full_receiver_does_not_interrupt_other_peoples_publications() {
+    let mut net = Net::new();
+    let full = net.join(100);
+    let sender = net.join(300);
+    let mic = net.publish(sender, MediaKind::Audio, "mic");
+    net.publish(full, MediaKind::Audio, "old-mic");
+    // Fill all 48 receive sections with audio. The parked audio sections can
+    // receive another microphone but cannot carry a new camera.
+    let mut leaving = Vec::new();
+    for user in 1..=6 {
+        let sender = net.join(user);
+        net.offer(sender, |api| {
+            let count = if user == 6 { 7 } else { 8 };
+            for _ in 0..count {
+                api.add_media(MediaKind::Audio, Direction::SendOnly, None, None, None);
+            }
+        })
+        .1
+        .unwrap();
+        leaving.push(sender);
+    }
+    for sender in leaving {
+        net.core
+            .delete_session(net.now, &net.clients[sender].session_id);
+        net.pump();
+    }
+    let fresh = net.join(200);
+    net.publish(fresh, MediaKind::Audio, "new-mic");
+    let camera = net.publish(sender, MediaKind::Video, "camera");
+
+    assert!(net.core.has_session(&net.client(sender).session_id));
+    assert_eq!(net.client(full).directory.len(), 2);
+    assert!(
+        net.client(full)
+            .directory
+            .iter()
+            .all(|track| track["kind"] == "audio")
+    );
+    net.run_until(Duration::from_secs(5), |n| {
+        [full, fresh, sender]
+            .iter()
+            .all(|i| n.client(*i).is_connected())
+    });
+    net.send_audio(sender, mic, &[1, 2, 3]);
+    send_video(&mut net, sender, camera, &[7, 8, 9]);
+    net.run_for(Duration::from_millis(100));
+    for receiver in [full, fresh] {
+        let mid = mid_from(&net, receiver, 300, "audio");
+        assert_eq!(payloads(&net, receiver, &mid), [vec![1, 2, 3]]);
+    }
+    let mid = mid_from(&net, fresh, 300, "video");
+    assert_eq!(payloads(&net, fresh, &mid), [vec![7, 8, 9]]);
+}
+
+#[test]
 fn two_clients_hear_each_other_with_the_payload_intact() {
     let mut net = Net::new();
     let a = net.join(1);
