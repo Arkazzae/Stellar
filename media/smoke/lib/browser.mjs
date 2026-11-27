@@ -220,8 +220,8 @@ export class Client {
   }
 
   /** Asks for exactly these sections from now on, and waits until the list is posted. */
-  async subscribe(mids) {
-    await this.page.evaluate((m) => window.smoke.subscribe(m), mids);
+  async subscribe(mids, thumbnails = []) {
+    await this.page.evaluate(([m, t]) => window.smoke.subscribe(m, t), [mids, thumbnails]);
     await this.hub.posted(this.sessionId);
   }
 

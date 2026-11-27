@@ -654,16 +654,27 @@ async function verifyDirectMedia(s, protocol, withVideo = false) {
   return { summary: `${protocol.toUpperCase()} ${summarise(results)}`, results };
 }
 
+function publishLayers(client) {
+  return client.publish("camera", "video", {
+    busy: { rgb: client.identity.rgb, width: 1280, height: 720, block: 16 },
+    codec: "VP8",
+    encodings: [
+      { rid: "thumb", scaleResolutionDownBy: 4, maxFramerate: 15, maxBitrate: 200_000 },
+      { rid: "main", scaleResolutionDownBy: 1, maxFramerate: 30, maxBitrate: 1_500_000 },
+    ],
+  });
+}
+
 // Each window starts from audio only, so a newly decoded frame measures the
 // time from the change of view to the first picture at each receiver.
-async function galleryWindow(peers, link, count) {
+async function galleryWindow(peers, link, count, layered) {
   await Promise.all(peers.map(({ client, audio }) => client.subscribe(audio)));
   await sleep(2000);
   const first = await Promise.all(peers.map(async ({ client, audio, video }) => {
     const selected = video.slice(0, count);
     const baseline = await client.stats();
     const start = performance.now();
-    await client.subscribe([...audio, ...selected]);
+    await client.subscribe([...audio, ...selected], layered ? selected.slice(1) : []);
     while (performance.now() - start < SETTLE_MS) {
       const { inbound } = await client.stats();
       if (selected.some(mid => (inbound[mid]?.framesDecoded ?? 0) > (baseline.inbound[mid]?.framesDecoded ?? 0))) {
@@ -687,20 +698,40 @@ async function galleryWindow(peers, link, count) {
   const voices = [];
   let activeVideo = 0;
   let sentVideoBytes = 0;
+  const decodedRates = [];
+  let thumbnailsAt180p = 0;
+  let focusedAt720p = 0;
   for (const [i, peer] of peers.entries()) {
     const window = receivedBetween(before[i], after[i], {}, peer.mapping, elapsed);
     voices.push(...window.voices);
     const selected = new Set(peer.video.slice(0, count));
     for (const picture of window.pictures) {
-      if (selected.has(picture.mid)) activeVideo += Number(picture.fps > 0);
-      else check(picture.kbps === 0, `hidden mid ${picture.mid} received video at ${peer.client.name}`);
+      if (!selected.has(picture.mid)) {
+        check(picture.kbps === 0, `hidden mid ${picture.mid} received video at ${peer.client.name}`);
+        continue;
+      }
+      decodedRates.push(picture.fps);
+      if (picture.fps > 0) {
+        activeVideo++;
+        const height = after[i].inbound[picture.mid].frameHeight;
+        if (picture.mid === peer.video[0] && height === 720) focusedAt720p++;
+        if (picture.mid !== peer.video[0] && height === 180) thumbnailsAt180p++;
+      }
     }
     const camera = Object.entries(after[i].outbound).find(([, sent]) => sent.kind === "video");
     check(camera, `no camera sender at ${peer.client.name}`);
     const [mid, sent] = camera;
     const bytes = sent.bytesSent - (before[i].outbound[mid]?.bytesSent ?? 0);
     check(bytes > 0, `camera stopped publishing at ${peer.client.name}`);
-    sentVideoBytes += bytes;
+    if (layered) {
+      for (const rid of ["thumb", "main"]) {
+        const delta = (after[i].encodings[rid]?.bytes ?? 0) - (before[i].encodings[rid]?.bytes ?? 0);
+        check(delta > 0, `${peer.client.name} stopped sending ${rid}`);
+        sentVideoBytes += delta;
+      }
+    } else {
+      sentVideoBytes += bytes;
+    }
   }
   const delays = voices.map(v => v.jitterBufferMs).filter(ms => ms !== null);
   const decoded = first.filter(ms => ms !== null);
@@ -708,6 +739,8 @@ async function galleryWindow(peers, link, count) {
     camerasRequestedPerReceiver: count,
     requestedVideo: count * peers.length,
     activeVideo,
+    streamsAt10Fps: decodedRates.filter(fps => fps >= 10).length,
+    ...(layered ? { thumbnailsAt180p, focusedAt720p } : {}),
     uploadOfferedMbps: (final.offeredBytes - initial.offeredBytes) * 8 / elapsed / 1000,
     uploadDeliveredMbps: (final.deliveredBytes - initial.deliveredBytes) * 8 / elapsed / 1000,
     sourceVideoMbps: sentVideoBytes * 8 / elapsed / 1000,
@@ -720,9 +753,9 @@ async function galleryWindow(peers, link, count) {
   };
 }
 
-/** Start both views from fresh sessions with the same shared bottleneck. */
-async function measureGallery(s, count) {
-  return relayed(s, `gallery-${count}`, async (room, nat) => {
+/** Start each layout from fresh sessions with the same shared bottleneck. */
+async function measureGallery(s, count, layered = false) {
+  return relayed(s, layered ? "gallery-mixed" : `gallery-${count}`, async (room, nat) => {
     const clients = [];
     for (let i = 0; i < 15; i++) {
       const fixture = room.env.identities[i % room.env.identities.length].name;
@@ -732,7 +765,8 @@ async function measureGallery(s, count) {
       // Answer the SFU offer for the existing publications before offering
       // the camera.
       await directoryReady(client, [...clients, client]);
-      await busyCamera(client, 1_500_000, { width: 1280, height: 720, block: 16 });
+      if (layered) await publishLayers(client);
+      else await busyCamera(client, 1_500_000, { width: 1280, height: 720, block: 16 });
       clients.push(client);
     }
     const peers = await Promise.all(clients.map(async (client, i) => {
@@ -746,21 +780,64 @@ async function measureGallery(s, count) {
       return { client, audio, video, mapping };
     }));
     const link = nat.shapeAll({ kbps: 50_000, queueMs: 100, delayMs: 10, jitterMs: 0 });
-    const result = await galleryWindow(peers, link, count);
-    check(result.activeVideo > 0 && result.audioJitterBufferMsByTrack.n > 0, "room delivered no usable media");
+    const result = await galleryWindow(peers, link, count, layered);
+    check(result.activeVideo > 0 && result.audioJitterBufferMsByTrack.n === clients.length * (clients.length - 1), "room delivered no usable media");
+    if (layered) {
+      check(result.thumbnailsAt180p > 0 && result.focusedAt720p > 0,
+        "the mixed gallery decoded no pictures at one of the requested sizes");
+    }
     return result;
   });
 }
 
 const SCENARIOS = {
+  async layers(s) {
+    const a = await s.join("A");
+    await publishLayers(a);
+    const b = await s.join("B");
+    const c = await s.join("C");
+    const clients = [a, b, c];
+    const views = await Promise.all([b, c].map(async client => {
+      const { mapping } = await directoryReady(client, clients);
+      const mid = mapping.find(m => m.publication.kind === "video").mid;
+      const audio = mapping.filter(m => m.publication.kind === "audio").map(m => m.mid);
+      return { client, mid, audio };
+    }));
+    const select = (view, small) => view.client.subscribe([...view.audio, view.mid], small ? [view.mid] : []);
+    const frames = async (view, height) => {
+      const start = await view.client.stats();
+      await waitFor(`${view.client.name} decoding ${height}p with uninterrupted audio`, async () => {
+        const stats = await view.client.stats();
+        const picture = stats.inbound[view.mid];
+        return picture?.frameHeight === height && picture.framesDecoded >= (start.inbound[view.mid]?.framesDecoded ?? 0) + 3 &&
+          view.audio.every(mid => stats.inbound[mid]?.packetsReceived > (start.inbound[mid]?.packetsReceived ?? 0));
+      }, 20_000).catch(async error => {
+        const source = (await a.stats()).encodings;
+        const inbound = (await view.client.stats()).inbound;
+        throw new Error(`${error.message}; sender=${JSON.stringify(source)} receiver=${JSON.stringify(inbound)}`);
+      });
+    };
+    const [first, second] = views;
+    await Promise.all(views.map(v => select(v, true)));
+    await Promise.all(views.map(v => frames(v, 180)));
+    const offers = (await b.snapshot()).offersAnswered.length;
+    await select(first, false);
+    await Promise.all([frames(first, 720), frames(second, 180)]);
+    await select(first, true);
+    await Promise.all(views.map(v => frames(v, 180)));
+    check((await b.snapshot()).offersAnswered.length === offers, "changing layers renegotiated");
+    return { summary: "one viewer switched 180p → 720p → 180p on the same mid; the other stayed at 180p with audio" };
+  },
   async gallery(s) {
     const full = await measureGallery(s, 14);
     const four = await measureGallery(s, 4);
-    const rates = [full, four].map(result => result.uploadDeliveredMbps.toFixed(1));
+    const mixed = await measureGallery(s, 4, true);
+    const rates = [full, four, mixed].map(result => result.uploadDeliveredMbps.toFixed(1));
     return {
-      summary: `15 publishers, shared 50 Mb/s, delivered ${rates.join(" / ")} Mb/s (14 / 4 cameras)`,
+      summary: `15 publishers, shared 50 Mb/s, delivered ${rates.join(" / ")} Mb/s (14 full / 4 full / 1 focus + 3 thumbnails)`,
       full,
       four,
+      mixed,
     };
   },
   /** Direct bidirectional audio with normal UDP connectivity and no relay. */
@@ -2347,7 +2424,7 @@ async function main() {
   const ids = Object.keys(SCENARIOS)
     .sort()
     .filter((id) =>
-      wanted.length > 0 ? wanted.includes(id) : id !== "gallery" && !id.startsWith("x") && !(e2ee && id === "i"),
+      wanted.length > 0 ? wanted.includes(id) : id !== "gallery" && !(e2ee && id === "layers") && !id.startsWith("x") && !(e2ee && id === "i"),
     );
   const out =
     process.env.STELLARR_SMOKE_OUT ?? mkdtempSync(join(tmpdir(), "stellarr-media-smoke-"));

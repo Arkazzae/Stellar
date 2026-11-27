@@ -41,6 +41,7 @@ Run `node smoke.mjs udp tcp` against a freshly built SFU to verify direct media 
 
 | ID | Verified behavior |
 | --- | --- |
+| `layers` | Two viewers subscribe to one simulcast camera. One switches 180p → 720p → 180p on the same MID while the other keeps decoding 180p. Both continue receiving audio. |
 | `a` | Two-way audio forwarding without self-echo; audio-level RTP header extension delivery |
 | `b` | Immediate PLI keyframe request when a new participant joins an already-running camera stream |
 | `c` | Late third participant receives all four existing tracks attributed to the right `userId`, with directory delivered before `ontrack` |
@@ -66,9 +67,9 @@ Run `node smoke.mjs udp tcp` against a freshly built SFU to verify direct media 
 
 ### Shared upload with 15 cameras
 
-Run `node smoke.mjs gallery` separately to measure 15 browser contexts sending continuous audio and animated 720p/30 cameras capped at 1.5 Mb/s. One UDP queue caps the combined server upload at 50 Mb/s. Two fresh rooms start with audio only. Each participant then requests 14 remote cameras in the first run or four in the second, so congestion estimates and video hold timers start fresh for each comparison. Each measurement window lasts ten seconds after settling.
+Run `node smoke.mjs gallery` separately to measure 15 browser contexts sending continuous audio and animated 720p/30 cameras capped at 1.5 Mb/s. One UDP queue caps the combined server upload at 50 Mb/s. Each of three rooms starts with audio only and fresh congestion estimates. Each participant then requests 14 single-encoding cameras, four single-encoding cameras, or one focused camera plus three thumbnails from simulcast publishers. Each measurement window lasts ten seconds after settling.
 
-The `gallery` entry in `results.json` records offered and delivered wire rates (including UDP/IPv4 headers), source video bitrate, queue drops, the number of cameras decoding frames, Opus queueing time, per-track audio loss and mean jitter-buffer delay, and the time each receiver takes to decode its first requested picture (sampled every 200 ms). Receivers still waiting after ten seconds are counted separately. Jitter-buffer delay measures the playout buffer only. When running the browsers, relay and SFU together, the host’s encoding and decoding capacity also affects the result.
+The `gallery` entry in `results.json` records offered and delivered wire rates (including UDP/IPv4 headers), source video bitrate, queue drops, the number of cameras decoding any frames and at least 10 fps, decoded 720p focus and 180p thumbnail counts in the mixed run, Opus queueing time, per-track audio loss and mean jitter-buffer delay, and the time each receiver takes to decode its first requested picture (sampled every 200 ms). Receivers still waiting after ten seconds are counted separately. Jitter-buffer delay measures the playout buffer only. When running the browsers, relay and SFU together, the host’s encoding and decoding capacity also affects the result.
 
 ### Encrypted call scenarios
 
