@@ -30,6 +30,7 @@ mod own_profile;
 mod passkeys;
 mod password_reset;
 mod permissions;
+mod polls;
 mod pipeline;
 mod profile_images;
 mod realtime;
