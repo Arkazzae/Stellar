@@ -263,8 +263,9 @@ async fn a_new_database_has_the_schema_and_both_one_time_steps() {
         .await
         .unwrap();
 
-    // Includes the temporary scrub marker, cleared during key backup initialization.
-    assert_eq!(objects, 301);
+    // Includes the temporary scrub marker, cleared during key backup
+    // initialization, and the access change journal with its triggers.
+    assert_eq!(objects, 333);
     assert_eq!(steps, ["ordinary-permissions", "view-channel"]);
     assert!(search);
 }
@@ -527,4 +528,50 @@ async fn a_timed_out_write_restores_the_pooled_connections_busy_timeout() {
         .write_with_lock_retry(|tx| insert_user(tx, "after-timeout").map(|_| ()))
         .await
         .unwrap();
+}
+
+#[tokio::test]
+async fn another_process_signals_only_through_a_token_file_the_api_made() {
+    let (_root, db) = new_database();
+    let wake = db.wake_file();
+    let mut external = Connection::open(db.path()).unwrap();
+    let signal = AccessSignal::external(db.path());
+    signal.register(&external).unwrap();
+    let mut add_user = |name: &str| {
+        let tx = external
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .unwrap();
+        let tx = AccessTransaction::new(tx, Some(&signal));
+        insert_user(&tx, name).unwrap();
+        tx.commit()
+    };
+    let users = |name: &str| {
+        Connection::open(db.path())
+            .unwrap()
+            .query_row(
+                "SELECT count(*) FROM Users WHERE Username = ?1",
+                [name],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap()
+    };
+
+    // Written in place, so the API keeps a file it can write.
+    let before = std::fs::read(&wake).unwrap();
+    add_user("signalled").unwrap();
+    assert_ne!(std::fs::read(&wake).unwrap(), before);
+
+    // A change that cannot be signalled is not made.
+    std::fs::remove_file(&wake).unwrap();
+    std::fs::create_dir(&wake).unwrap();
+    let refused = add_user("refused").unwrap_err();
+    assert!(refused.to_string().contains("cannot signal access changes"));
+    assert_eq!(users("refused"), 0);
+
+    // No API has made the file: nothing to wake, and nothing left behind
+    // that the API could not write.
+    std::fs::remove_dir(&wake).unwrap();
+    add_user("offline").unwrap();
+    assert!(!wake.exists());
+    assert_eq!(users("offline"), 1);
 }

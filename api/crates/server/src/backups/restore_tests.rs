@@ -50,12 +50,15 @@ fn a_backup_is_restored_over_another_instance_and_the_old_data_is_kept_aside() {
 
     // What was restored is what the source had; the logs stayed.
     let restored = target.files();
+    // The signal belongs to the running process. An API start recreates it.
+    assert!(!target.database_path().with_added_extension("access-wake").exists());
     assert_eq!(
         without_database(restored.clone())
             .into_iter()
             .filter(|(path, _)| path != "logs/today.log")
             .collect::<Vec<_>>(),
-        without_database(source.files())
+        without_database(source.files()).into_iter()
+            .filter(|(path, _)| path != "db/stellarr.db.access-wake").collect::<Vec<_>>()
     );
     assert!(restored.iter().any(|(path, _)| path == "logs/today.log"));
     assert_eq!(target.mark(), "first");
