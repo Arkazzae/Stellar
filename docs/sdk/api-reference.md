@@ -29,7 +29,7 @@ import { connect, detectDevice } from "/_stellarr/sdk/v1.js";
 | --- | --- | --- |
 | `context` | `ActivityContext` | `{ standalone, launchMode, sessionId, me, place, locale, device }`. `place` is `{ id: string }` in `"voice"` mode and `null` in `"personal"` mode; `standalone` is `true` in `stellarr dev` and `false` on a Stellarr instance. |
 | `limits` | `ActivityLimits` | Active room limits (`stateBytes`, `messageBytes`, `writesPerSecond`, `messagesPerSecond`, `graceSeconds`, `emptySeconds`, `maxParticipants`). |
-| `capabilities` | `string[]` | Supported host features (e.g. `"context"`, `"state"`, `"theme"`, `"participants"`, `"messages"`, `"clock"`, `"seats"`, `"progress"`, plus `"host"`, `"commands"`, `"assignments"` when `authority === "host"`, and granted `permissions`). |
+| `capabilities` | `string[]` | Supported host features (e.g. `"context"`, `"state"`, `"theme"`, `"participants"`, `"messages"`, `"clock"`, `"seats"`, `"progress"`, plus `"host"`, `"commands"`, `"assignments"` when `authority === "host"`, `"shell.dock"` where the page draws a dock, and granted `permissions`). |
 | `now()` | `() => number` | Estimated server timestamp in milliseconds (continuously RTT-compensated). |
 | `close()` | `() => Promise<void>` | Leaves the session immediately, disposes active media handles/mounts, and sets `connection` to `"closed"`. |
 
@@ -80,6 +80,28 @@ Every `Observable<T>` provides `get(): T` (returns a `structuredClone` snapshot)
 `EmbedOptions` accepts `title?: string`, `onLoad?(): void`, and `onMessage?(data: unknown): void`. `EmbedHandle` provides `setVisible(visible: boolean)`, `postMessage(data: unknown)`, and `destroy()`. `onMessage` receives messages from the mounted provider window and origin. `CameraTileMount` is callable to unmount the tile and has a `setVisible(visible: boolean)` method. Both visibility controls apply to the local viewer.
 
 `DeviceHandle` exposes `stop(): void` and `onEnded(listener: (reason: string) => void): () => void`.
+
+### The page around the activity (`session.shell`)
+
+In full screen Stellarr keeps a small dock at the bottom edge: it shows for a moment on the way in, comes up when the pointer reaches the edge, and drops when the pointer leaves it. A game that uses that edge itself (edge scrolling, a bottom HUD) can hold it.
+
+| API | Signature | Behavior |
+| --- | --- | --- |
+| `shell.dock` | `Observable<DockState>` | `{ fullscreen, visible, held, height }`: whether the activity has the screen, whether the dock is showing, whether a hold is in force, and the CSS pixels the visible dock takes from the bottom of the frame (`0` while hidden). |
+| `shell.dock.hold` | `() => { release(): void }` | While full screen, the edge no longer brings the dock up and it does not show on the way in. Holds count; the last `release()` ends it, and it also ends when the frame reloads or reconnects. The player keeps a small handle at the bottom edge, the keyboard and Esc, and may refuse holds altogether in the activity's settings. |
+| `shell.dock.peek` | `() => void` | Shows the dock for about 2.5 s, for example after a round. At most once every 10 s. |
+
+Where the page draws no dock (`stellarr dev`, older instances) `capabilities` lacks `"shell.dock"`, the dock stays `{ fullscreen: false, visible: false, held: false, height: 0 }` and `hold()` and `peek()` do nothing.
+
+```ts
+const round = session.shell.dock.hold();
+session.shell.dock.subscribe(({ visible, height }) => {
+  hud.style.bottom = visible ? `${height}px` : "0";
+});
+// When the round is over:
+round.release();
+session.shell.dock.peek();
+```
 
 ---
 

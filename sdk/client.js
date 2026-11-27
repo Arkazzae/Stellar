@@ -13,6 +13,7 @@ function embeddedTransport() {
   let serial = 0;
   channel.port1.onmessage = ({ data }) => {
     if (data?.update) { send.onUpdate?.(data.update); return; }
+    if (data?.shell) { send.onShell?.(data.shell); return; }
     const call = pending.get(data?.id);
     if (!call) return;
     if (typeof data.error === "string") {
@@ -73,6 +74,13 @@ export function detectDevice() {
   return Math.min(window.screen.width, window.screen.height) >= 600 ? "tablet" : "phone";
 }
 
+/** The dock as the frame hears it; anything else the host says is dropped. */
+function dockState(value) {
+  const height = Number(value?.height);
+  return { fullscreen: value?.fullscreen === true, visible: value?.visible === true, held: value?.held === true,
+    height: Number.isFinite(height) && height > 0 ? Math.round(height) : 0 };
+}
+
 function deviceTheme(dark) {
   return { mode: dark ? "dark" : "light", colors: dark
     ? { background: "#17191d", surface: "#24272d", text: "#f2f3f5", muted: "#b1b7c2", accent: "#90b8ff", border: "#474c55" }
@@ -118,6 +126,11 @@ export async function connect({ initialState = {} } = {}) {
   const host = observable(opened.host);
   const assignment = observable(opened.assignment);
   const connection = observable("connected");
+  // A host that draws a dock says so when the frame opens; anywhere else the
+  // dock stays hidden and holding it does nothing.
+  const shellHost = opened.shell?.dock !== undefined;
+  const dock = observable(dockState(opened.shell?.dock));
+  let dockHolds = 0;
   const scheme = window.matchMedia?.("(prefers-color-scheme: dark)");
   let explicitTheme = opened.theme;
   const theme = observable(explicitTheme ?? deviceTheme(scheme?.matches));
@@ -234,6 +247,23 @@ export async function connect({ initialState = {} } = {}) {
     clearTimeout(timer);
     timer = setTimeout(poll, 0);
   }
+  transport.onShell = shell => { if (!closed && shellHost) dock.update(dockState(shell.dock)); };
+  function askDock(change) {
+    if (!closed && shellHost) void request({ op: "shell", dock: change }).catch(() => {});
+  }
+  function holdDock() {
+    if (closed || !shellHost) return { release() {} };
+    let holding = true;
+    if (++dockHolds === 1) askDock("hold");
+    return {
+      release() {
+        if (!holding) return;
+        holding = false;
+        if (--dockHolds === 0) askDock("release");
+      },
+    };
+  }
+
   transport.onUpdate = update => {
     if (closed || !opened.roomEvents) return;
     if (update.message) { deliver(update.message); return; }
@@ -359,7 +389,8 @@ export async function connect({ initialState = {} } = {}) {
 
   const session = {
     context, limits, capabilities: ["context", "state", "theme", "participants", "messages", "clock", "seats",
-      ...(opened.progress ? ["progress"] : []), ...(hosted ? ["host", "commands", "assignments"] : []), ...permissions],
+      ...(opened.progress ? ["progress"] : []), ...(hosted ? ["host", "commands", "assignments"] : []),
+      ...(shellHost ? ["shell.dock"] : []), ...permissions],
     locale: locale.api, device: device.api,
     progress: {
       load() { return retry({ op: "loadProgress" }); },
@@ -371,6 +402,7 @@ export async function connect({ initialState = {} } = {}) {
       },
     },
     now: () => performance.now() + clockOffset, send, on,
+    shell: { dock: { ...dock.api, hold: holdDock, peek: () => askDock("peek") } },
     close: () => depart("close"), connection: connection.api, theme: theme.api, participants: participants.api,
     seats: { ...seats.api, claim: () => updateSeat(true), release: () => updateSeat(false) },
     assignments: { ...assignment.api, checkpoint() { assertOpen(); return request({ op: "checkpoint", epoch }); } },
