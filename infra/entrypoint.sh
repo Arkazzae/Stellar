@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Container entrypoint: prepares the data volume, exports the settings the
 # services read, renders the nginx and optional coturn configuration from their
-# templates, writes the web client's instance language file, and hands over to
-# stellarr-init, the process manager that runs the services as PID 1.
+# templates, writes the web client's instance language file, and execs the service as PID 1.
+# The single-container image starts all services under stellarr-init.
 #
 # It reads only STELLARR_* variables, the names in .env. A setting it shares
 # with the API is exported again under the same name with the value resolved
@@ -79,90 +79,74 @@ write_instance_language() {
   printf 'window.stellarrInstanceLanguage=%s;\n' "$value" > "$file"
 }
 
-# The settings, each with the image's default. A value that cannot be used
-# stops the container here, before anything is written.
-read_settings || exit 1
-activity_domain="$(or_default "${STELLARR_ACTIVITY_DOMAIN:-}")"
-activity_domain="${activity_domain,,}"
-activity_https_suffix=""
-if [[ -n "$activity_domain" ]]; then
-  (( ${#activity_domain} <= 253 )) &&
-    [[ "$activity_domain" =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] ||
-    fail "STELLARR_ACTIVITY_DOMAIN must be a DNS suffix."
-  activity_instance="${domain,,}"
-  activity_instance="${activity_instance%.}"
-  [[ -n "$activity_instance" && "$activity_instance" != "$activity_domain" && "$activity_instance" != *."$activity_domain" ]] ||
-    fail "Set STELLARR_DOMAIN to an instance name outside STELLARR_ACTIVITY_DOMAIN."
-  activity_origin="$(or_default "${STELLARR_ACTIVITY_ORIGIN:-}" "$public_url")"
-  [[ "$activity_origin" =~ ^https://([A-Za-z0-9.-]+)(:([0-9]{1,5}))?/?$ ]] ||
-    fail "Installed activities require an HTTPS instance origin."
-  activity_parent="${BASH_REMATCH[1],,}"
-  activity_port="${BASH_REMATCH[3]:-443}"
-  require_public_host "$activity_parent" || exit 1
-  require_port STELLARR_ACTIVITY_ORIGIN "$activity_port" || exit 1
-  [[ "${activity_parent%.}" != "$activity_domain" && "${activity_parent%.}" != *."$activity_domain" ]] ||
-    fail "The activity's parent origin must be outside STELLARR_ACTIVITY_DOMAIN."
-  if (( 10#$activity_port != 443 )); then
-    activity_https_suffix=":$((10#$activity_port))"
+configure_activity() {
+  activity_domain="$(or_default "${STELLARR_ACTIVITY_DOMAIN:-}")"
+  activity_domain="${activity_domain,,}"
+  activity_https_suffix=""
+  if [[ -n "$activity_domain" ]]; then
+    (( ${#activity_domain} <= 253 )) &&
+      [[ "$activity_domain" =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] ||
+      fail "STELLARR_ACTIVITY_DOMAIN must be a DNS suffix."
+    activity_instance="${domain,,}"
+    activity_instance="${activity_instance%.}"
+    [[ -n "$activity_instance" && "$activity_instance" != "$activity_domain" && "$activity_instance" != *."$activity_domain" ]] ||
+      fail "Set STELLARR_DOMAIN to an instance name outside STELLARR_ACTIVITY_DOMAIN."
+    activity_origin="$(or_default "${STELLARR_ACTIVITY_ORIGIN:-}" "$public_url")"
+    [[ "$activity_origin" =~ ^https://([A-Za-z0-9.-]+)(:([0-9]{1,5}))?/?$ ]] ||
+      fail "Installed activities require an HTTPS instance origin."
+    activity_parent="${BASH_REMATCH[1],,}"
+    activity_port="${BASH_REMATCH[3]:-443}"
+    require_public_host "$activity_parent" || exit 1
+    require_port STELLARR_ACTIVITY_ORIGIN "$activity_port" || exit 1
+    [[ "${activity_parent%.}" != "$activity_domain" && "${activity_parent%.}" != *."$activity_domain" ]] ||
+      fail "The activity's parent origin must be outside STELLARR_ACTIVITY_DOMAIN."
+    if (( 10#$activity_port != 443 )); then
+      activity_https_suffix=":$((10#$activity_port))"
+    fi
+    export STELLARR_ACTIVITY_DOMAIN="$activity_domain"
+    export STELLARR_ACTIVITY_ORIGIN="https://$activity_parent$activity_https_suffix"
   fi
-  export STELLARR_ACTIVITY_DOMAIN="$activity_domain"
-  export STELLARR_ACTIVITY_ORIGIN="https://$activity_parent$activity_https_suffix"
-fi
-trusted_proxy_rules="$(write_trusted_proxies)"
-public_ip="$(resolve_public_ip)"
-# A numeric domain can be used as the host candidate without DNS. Local
-# installs need the published loopback address instead of the Docker IP.
-media_public_ip="$public_ip"
-if [[ -z "$media_public_ip" ]]; then
-  if is_ipv4_address "$public_host"; then
-    media_public_ip="$public_host"
-  elif [[ "$public_host" == localhost ]]; then
-    media_public_ip=127.0.0.1
-  fi
-fi
-
-# The optional Compose stack selects a component explicitly. Its API shares
-# loopback with nginx; only the authenticated media control crosses a bridge.
-component="${1:-all}"
-# Stellarr Media advertises the public and LAN addresses when configured,
-# plus the container address that optional coturn uses to reach it.
-# STELLARR_MEDIA_ADVERTISE overrides that list.
-export STELLARR_MEDIA_BIND="0.0.0.0:49000"
-export STELLARR_MEDIA_PUBLIC_IP="$media_public_ip"
-export STELLARR_MEDIA_PUBLIC_PORT="$media_port"
-export STELLARR_MEDIA_LAN_IP="$media_lan_ip"
-export STELLARR_MEDIA_CONTROL_BIND="127.0.0.1:5200"
-export STELLARR_MEDIA_LOG="$media_log"
-if [[ -n "$media_advertise" ]]; then
-  export STELLARR_MEDIA_ADVERTISE="$media_advertise"
-else
-  unset STELLARR_MEDIA_ADVERTISE
-fi
-
-if [[ -z "$media_public_ip" && -z "$media_lan_ip" && -z "$media_advertise" ]]; then
-  echo "STELLARR_PUBLIC_IP is empty, so the media server advertises only this container's own address." \
-    "Browsers outside the container network need a reachable media candidate." \
-    "Set STELLARR_PUBLIC_IP to the IPv4 address browsers reach this host at, or to 'auto'." >&2
-fi
-
-# Each shared secret has a single writer and a dedicated volume. The API
-# mounts it read-only after the producing service passes its health check.
-split_secret() {
-  local root="/run/credentials/$1" name="$2"
-  if [[ "$component" == "split-$1" ]]; then
-    install -d -m 0700 "$root/secrets"
-  fi
-  read_or_create_secret "$root" "$name"
 }
 
-if [[ "$component" == split-media ]]; then
-  STELLARR_MEDIA_CONTROL_SECRET="$(split_secret media media-control-secret)"
-  export STELLARR_MEDIA_CONTROL_SECRET STELLARR_MEDIA_CONTROL_BIND="0.0.0.0:5200"
-  exec setpriv --reuid=nobody --regid=nogroup --clear-groups -- /opt/stellarr/media/stellarr-media
-fi
+configure_media() {
+  # A numeric domain can be used as the host candidate without DNS. Local
+  # installs need the published loopback address instead of the Docker IP.
+  local media_public_ip="$public_ip"
+  if [[ -z "$media_public_ip" ]]; then
+    if is_ipv4_address "$public_host"; then
+      media_public_ip="$public_host"
+    elif [[ "$public_host" == localhost ]]; then
+      media_public_ip=127.0.0.1
+    fi
+  fi
+  # Stellarr Media advertises the public and LAN addresses when configured,
+  # plus the container address that optional coturn uses to reach it.
+  # STELLARR_MEDIA_ADVERTISE overrides that list.
+  export STELLARR_MEDIA_BIND="0.0.0.0:49000"
+  export STELLARR_MEDIA_PUBLIC_IP="$media_public_ip"
+  export STELLARR_MEDIA_PUBLIC_PORT="$media_port"
+  export STELLARR_MEDIA_LAN_IP="$media_lan_ip"
+  export STELLARR_MEDIA_CONTROL_BIND="$1"
+  export STELLARR_MEDIA_LOG="$media_log"
+  if [[ -n "$media_advertise" ]]; then
+    export STELLARR_MEDIA_ADVERTISE="$media_advertise"
+  else
+    unset STELLARR_MEDIA_ADVERTISE
+  fi
+
+  if [[ -z "$media_public_ip" && -z "$media_lan_ip" && -z "$media_advertise" ]]; then
+    echo "STELLARR_PUBLIC_IP is empty, so the media server advertises only this container's own address." \
+      "Browsers outside the container network need a reachable media candidate." \
+      "Set STELLARR_PUBLIC_IP to the IPv4 address browsers reach this host at, or to 'auto'." >&2
+  fi
+}
 
 run_as_api() {
-  setpriv --reuid=stellarr --regid=stellarr --clear-groups -- "$@"
+  if [[ "$component" == api ]]; then
+    "$@"
+  else
+    setpriv --reuid=stellarr --regid=stellarr --clear-groups -- "$@"
+  fi
 }
 
 prepare_instance_data() {
@@ -176,8 +160,10 @@ prepare_instance_data() {
   else
     private_dirs+=("$data_root/tls")
   fi
-  find -P "$data_root" -xdev "${mounted_tls[@]}" \( -type d -o -type f \) ! -user stellarr \
-    -exec chown -h stellarr:stellarr -- {} +
+  if [[ "$component" == all ]]; then
+    find -P "$data_root" -xdev "${mounted_tls[@]}" \( -type d -o -type f \) ! -user stellarr \
+      -exec chown -h stellarr:stellarr -- {} +
+  fi
 
   # A backup staged with `stellarr backup restore` replaces the instance's data
   # here, before any service starts and before the secrets below are read, so
@@ -202,83 +188,50 @@ prepare_instance_data() {
   run_as_api chmod 700 "$data_root" "${private_dirs[@]}"
 }
 
-case "$component" in
-  split-web) install -d -m 0700 -o stellarr -g stellarr "$data_root" ;;
-  split-turn) [[ "$turn_enabled" == true ]] || fail "The TURN service requires STELLARR_TURN_ENABLED=true." ;;
-  *) prepare_instance_data ;;
-esac
-mkdir -p /run/nginx
-
-# The secrets the API shares with coturn and the media server are the ones in
-# the data volume, never a setting: the exports below replace any value the
-# environment brings under the names the services read.
-
-read_instance_secret() {
-  # shellcheck disable=SC2016 # the child shell needs its own positional arguments
-  run_as_api bash -e -c 'source /usr/local/lib/stellarr/settings.sh; read_or_create_secret "$1" "$2"' \
-    read-instance-secret "$data_root" "$1"
+service_secret() {
+  if [[ "$component" == all ]]; then
+    # shellcheck disable=SC2016 # the child shell needs its own positional arguments
+    run_as_api bash -e -c 'source /usr/local/lib/stellarr/settings.sh; read_or_create_secret "$1" "$2"' \
+      read-instance-secret "$data_root" "$2"
+  else
+    read_secret "/run/credentials/$1" "$2"
+  fi
 }
-case "$component" in
-  split-api) media_control_secret="$(split_secret media media-control-secret)" ;;
-  split-web|split-turn) media_control_secret='' ;;
-  *) media_control_secret="$(read_instance_secret media-control-secret)" ;;
-esac
-export STELLARR_MEDIA_CONTROL_SECRET="$media_control_secret"
 
-# What the API, the TLS script and the media server read, as resolved above.
-export STELLARR_DATA_ROOT="$data_root"
-export STELLARR_DOMAIN="$domain"
-export STELLARR_LANGUAGE="$language"
-export STELLARR_MEDIA_PORT="$media_port"
-export STELLARR_TURN_ENABLED="$turn_enabled"
-export STELLARR_TURN_TCP_ENABLED="$turn_tcp_enabled"
-export STELLARR_TURNS_ENABLED="$turns_enabled"
-# Values with no STELLARR_* name, which only the entrypoint derives.
-export Rtc__MediaControlUrl="http://127.0.0.1:5200"
-export Rtc__MediaControlSecret="$media_control_secret"
-if [[ "$turn_enabled" == "true" ]]; then
-  case "$component" in
-    split-api|split-turn) turn_secret="$(split_secret turn turn-shared-secret)" ;;
-    split-web) turn_secret='' ;;
-    *) turn_secret="$(read_instance_secret turn-shared-secret)" ;;
-  esac
-  export Rtc__TurnSharedSecret="$turn_secret"
-else
-  unset Rtc__TurnSharedSecret
-fi
+configure_api() {
+  STELLARR_MEDIA_CONTROL_SECRET="$(service_secret media media-control-secret)"
+  export STELLARR_MEDIA_CONTROL_SECRET
+  export Rtc__MediaControlUrl="$1" Rtc__MediaControlSecret="$STELLARR_MEDIA_CONTROL_SECRET"
+  if [[ "$turn_enabled" == true ]]; then
+    Rtc__TurnSharedSecret="$(service_secret turn turn-shared-secret)"
+    export Rtc__TurnSharedSecret
+  else
+    unset Rtc__TurnSharedSecret
+  fi
 
-# The address in mail links and the desktop client's canonical origin, as
-# read_settings derived it. Without one, reset links stay off and desktop
-# clients keep the address they connected to.
-if [[ -n "$public_url" ]]; then
-  export Operations__PublicUrl="$public_url"
-  export Desktop__CanonicalOrigin="$public_url"
-  echo "The public address of this instance is $public_url." >&2
-else
-  echo "STELLARR_DOMAIN is not set, so the instance has no public address: reset links stay off and desktop clients keep the address they connected to." >&2
-fi
+  # The address in mail links and the desktop client's canonical origin, as
+  # read_settings derived it. Without one, reset links stay off and desktop
+  # clients keep the address they connected to.
+  if [[ -n "$public_url" ]]; then
+    export Operations__PublicUrl="$public_url"
+    export Desktop__CanonicalOrigin="$public_url"
+    echo "The public address of this instance is $public_url." >&2
+  else
+    echo "STELLARR_DOMAIN is not set, so the instance has no public address: reset links stay off and desktop clients keep the address they connected to." >&2
+  fi
 
-# Where the API listens, and the environment it runs in. Both are assigned
-# whatever .env holds: nginx forwards to the loopback address, and the API
-# trusts the last X-Forwarded-For entry only because nothing else can reach it,
-# and any environment but production would publish a development secret and
-# send the session cookie over plain HTTP.
-export STELLARR_API_LISTEN="127.0.0.1:5000"
-export STELLARR_ENVIRONMENT="Production"
+  # Where the API listens, and the environment it runs in. Both are assigned
+  # whatever .env holds: nginx forwards to the loopback address, and the API
+  # trusts the last X-Forwarded-For entry only because nothing else can reach it,
+  # and any environment but production would publish a development secret and
+  # send the session cookie over plain HTTP.
+  export STELLARR_API_LISTEN="127.0.0.1:5000"
+  export STELLARR_ENVIRONMENT="Production"
+}
 
-if [[ "$component" == split-api ]]; then
-  export Rtc__MediaControlUrl="http://media:5200"
-  cd /opt/stellarr/api
-  umask 077
-  exec setpriv --reuid=stellarr --regid=stellarr --clear-groups -- ./stellarr-api
-fi
-
-if [[ "$component" != split-turn ]]; then
-  /usr/local/bin/stellarr-tls-maintenance prepare
-fi
-
-# Render TURN configuration only in the container serving TURN.
-if [[ "$turn_enabled" == "true" && "$component" != split-web ]]; then
+render_turn() {
+  local turn_config turn_tcp_line turn_tls_line turn_dtls_line external_ip_line ip
+  local -a local_addresses turn_peers
   turn_tcp_line="# TURN/TCP client listener enabled"
   turn_tls_line="# TURN/TLS client listener enabled"
   turn_dtls_line="# TURN/DTLS client listener enabled"
@@ -305,44 +258,47 @@ if [[ "$turn_enabled" == "true" && "$component" != split-web ]]; then
 
   turn_config="$(</etc/turnserver.conf.template)"
   turn_config="${turn_config//__REALM__/$public_host}"
-  turn_config="${turn_config//__STATIC_AUTH_SECRET__/$turn_secret}"
+  turn_config="${turn_config//__STATIC_AUTH_SECRET__/$1}"
   turn_config="${turn_config//__EXTERNAL_IP_LINE__/$external_ip_line}"
   turn_config="${turn_config//__TURN_RELAY_MIN__/$turn_relay_min}"
   turn_config="${turn_config//__TURN_RELAY_MAX__/$turn_relay_max}"
   turn_config="${turn_config//__TURN_TCP_LINE__/$turn_tcp_line}"
   turn_config="${turn_config//__TURN_TLS_LINE__/$turn_tls_line}"
   turn_config="${turn_config//__TURN_DTLS_LINE__/$turn_dtls_line}"
-  turn_pending="$(mktemp /etc/turnserver.conf.XXXXXX)"
-  printf '%s\n' "$turn_config" "${turn_peers[@]}" > "$turn_pending"
-  chown turnserver:turnserver "$turn_pending"
-  mv -f "$turn_pending" /etc/turnserver.conf
-  if [[ "$component" == split-turn ]]; then
-    exec setpriv --reuid=turnserver --regid=turnserver --clear-groups -- /usr/bin/turnserver -c /etc/turnserver.conf
+  printf '%s\n' "$turn_config" "${turn_peers[@]}"
+}
+
+prepare_web() {
+  local http_port="$1" tls_port="$2" worker_user="$3"
+  local nginx_config public_https_suffix redirect_host activity_frames script_hashes
+  /usr/local/bin/stellarr-tls-maintenance prepare
+  mkdir -p /run/nginx
+  write_instance_language /run/stellarr/stellarr-instance.js
+
+  public_https_suffix=""
+  if (( https_port != 443 )); then
+    public_https_suffix=":$https_port"
   fi
-fi
-
-write_instance_language /run/stellarr/stellarr-instance.js
-
-public_https_suffix=""
-if (( https_port != 443 )); then
-  public_https_suffix=":$https_port"
-fi
-# shellcheck disable=SC2016 # nginx variable
-redirect_host="${domain:-\$host}"
-[[ "$domain" != *:* ]] || redirect_host="[$domain]"
-nginx_config="$(</etc/nginx/nginx.conf.template)"
-nginx_config="${nginx_config//__REDIRECT_HOST__/$redirect_host}"
-nginx_config="${nginx_config//__PUBLIC_HTTPS_SUFFIX__/$public_https_suffix}"
-activity_frames=""
-: > /etc/nginx/stellarr-activity-server.conf
-if [[ -n "$activity_domain" ]]; then
-  activity_frames="https://*.$activity_domain$activity_https_suffix"
-  cat > /etc/nginx/stellarr-activity-server.conf <<EOF
+  # shellcheck disable=SC2016 # nginx variable
+  redirect_host="${domain:-\$host}"
+  [[ "$domain" != *:* ]] || redirect_host="[$domain]"
+  nginx_config="$(</etc/nginx/nginx.conf.template)"
+  nginx_config="${nginx_config//__HTTP_LISTEN__/$http_port}"
+  nginx_config="${nginx_config//__HTTPS_LISTEN__/$tls_port}"
+  nginx_config="${nginx_config//__NGINX_USER__/$worker_user}"
+  nginx_config="${nginx_config//__REDIRECT_HOST__/$redirect_host}"
+  nginx_config="${nginx_config//__PUBLIC_HTTPS_SUFFIX__/$public_https_suffix}"
+  activity_frames=""
+  : > /etc/nginx/stellarr-activity-server.conf
+  if [[ -n "$activity_domain" ]]; then
+    activity_frames="https://*.$activity_domain$activity_https_suffix"
+    cat > /etc/nginx/stellarr-activity-server.conf <<EOF
 server {
-  listen 80;
-  listen [::]:80;
-  listen 443 ssl http2;
-  listen [::]:443 ssl http2;
+  listen $http_port;
+  listen [::]:$http_port;
+  listen $tls_port ssl;
+  listen [::]:$tls_port ssl;
+  http2 on;
   server_name .$activity_domain;
   ssl_certificate /run/stellarr-tls/fullchain.pem;
   ssl_certificate_key /run/stellarr-tls/privkey.pem;
@@ -357,19 +313,74 @@ server {
   }
 }
 EOF
-fi
-nginx_config="${nginx_config//__ACTIVITY_FRAME_ORIGIN__/$activity_frames}"
-script_hashes="$(</etc/nginx/stellarr-csp-script-hashes)"
-[[ "$script_hashes" =~ ^(\'sha256-[A-Za-z0-9+/]{43}=\'\ ?)*$ ]] ||
-  fail "The web client's CSP script hashes are invalid."
-nginx_config="${nginx_config//__SCRIPT_HASHES__/$script_hashes}"
-printf '%s\n' "$trusted_proxy_rules" > /etc/nginx/stellarr-trusted-proxies.conf
-printf '%s\n' "$nginx_config" > /etc/nginx/nginx.conf
+  fi
+  nginx_config="${nginx_config//__ACTIVITY_FRAME_ORIGIN__/$activity_frames}"
+  script_hashes="$(</etc/nginx/stellarr-csp-script-hashes)"
+  [[ "$script_hashes" =~ ^(\'sha256-[A-Za-z0-9+/]{43}=\'\ ?)*$ ]] ||
+    fail "The web client's CSP script hashes are invalid."
+  nginx_config="${nginx_config//__SCRIPT_HASHES__/$script_hashes}"
+  printf '%s\n' "$trusted_proxy_rules" > /etc/nginx/stellarr-trusted-proxies.conf
+  printf '%s\n' "$nginx_config" > /etc/nginx/nginx.conf
+}
 
-# The services and how each is started, checked and stopped are compiled into
-# stellarr-init (init/src/services.rs), which passes each service its settings.
-umask 077
-if [[ "$component" == split-web ]]; then
-  exec /usr/sbin/nginx -e stderr -g 'daemon off;'
-fi
-exec /usr/local/bin/stellarr-init run
+component="${1:-all}"
+read_settings || exit 1
+# What the API, the TLS script and the media server read, as resolved above.
+export STELLARR_DATA_ROOT="$data_root"
+export STELLARR_DOMAIN="$domain"
+export STELLARR_LANGUAGE="$language"
+export STELLARR_MEDIA_PORT="$media_port"
+export STELLARR_TURN_ENABLED="$turn_enabled"
+export STELLARR_TURN_TCP_ENABLED="$turn_tcp_enabled"
+export STELLARR_TURNS_ENABLED="$turns_enabled"
+
+case "$component" in
+  all|web|api) configure_activity ;;
+esac
+case "$component" in
+  all|web) trusted_proxy_rules="$(write_trusted_proxies)" ;;
+esac
+case "$component" in
+  all|media|turn) public_ip="$(resolve_public_ip)" ;;
+esac
+
+case "$component" in
+  web)
+    prepare_web 8080 8443 ""
+    exec /usr/sbin/nginx -e stderr -g 'daemon off;'
+    ;;
+  api)
+    prepare_instance_data
+    configure_api "http://media:5200"
+    umask 077
+    exec /opt/stellarr/api/stellarr-api
+    ;;
+  media)
+    configure_media "0.0.0.0:5200"
+    STELLARR_MEDIA_CONTROL_SECRET="$(service_secret media media-control-secret)"
+    export STELLARR_MEDIA_CONTROL_SECRET
+    exec /opt/stellarr/media/stellarr-media
+    ;;
+  turn)
+    [[ "$turn_enabled" == true ]] || fail "The TURN service requires STELLARR_TURN_ENABLED=true."
+    umask 077
+    turn_secret="$(service_secret turn turn-shared-secret)"
+    render_turn "$turn_secret" > /run/turn/turnserver.conf
+    exec /usr/bin/turnserver -c /run/turn/turnserver.conf --pidfile /run/turn/turnserver.pid
+    ;;
+  all)
+    configure_media "127.0.0.1:5200"
+    prepare_instance_data
+    configure_api "http://127.0.0.1:5200"
+    prepare_web 80 443 "user www-data;"
+    if [[ "$turn_enabled" == true ]]; then
+      turn_pending="$(mktemp /etc/turnserver.conf.XXXXXX)"
+      render_turn "$Rtc__TurnSharedSecret" > "$turn_pending"
+      chown turnserver:turnserver "$turn_pending"
+      mv -f "$turn_pending" /etc/turnserver.conf
+    fi
+    umask 077
+    exec /usr/local/bin/stellarr-init run
+    ;;
+  *) fail "Unknown service: $component" ;;
+esac
