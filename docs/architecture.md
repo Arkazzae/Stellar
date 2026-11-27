@@ -192,7 +192,7 @@ docker compose exec stellarr stellarr-init reload nginx    # send SIGHUP to relo
 | `waiting` | Waiting for an upstream dependency (`api` waits for `media` to reach `ready`). |
 | `starting` | Process spawned; initial readiness probe (`500 ms` interval) has not yet passed. |
 | `ready` | Passing steady-state liveness probes (every `10 s`). |
-| `failing` | Missed 3 consecutive probes (~`45 s`); marks container `unhealthy` **without** killing the live process. |
+| `failing` | Missed 3 consecutive probes (~`45 s`); marks container `unhealthy` **without** killing the live process. `media` is the exception: it is restarted at that point instead (`stopping`, then `backoff`), because its probe and every call share one task. |
 | `backoff` | Exited; waiting to restart with exponential backoff (`1 s` to `30 s`, reset after `60 s` uptime). |
 | `stopping` / `stopped` | Ordered reverse-dependency shutdown (`60 s` supervisor deadline; `75 s` container stop grace). |
 
@@ -221,6 +221,6 @@ Nginx listens on `:443` (TLS) and `:80` (redirecting to HTTPS unless a listed `S
 3. **Trigger-driven relational cascades:** Deleting a server or channel cascades synchronously via SQLite triggers (`database/schema.sql`) across channels, messages, attachment links, reactions, embeds, pins, FTS5 rows, and `MessageChanges`, leaving unreferenced blobs for the hourly orphan sweep.
 4. **Strict app isolation & `259,000`-byte gzip entry budget:** Bundled chunks live under `static/` (leaving `/assets/` for API downloads), `/release.json` hashes all emitted files outside JS chunks, and heavy signed-in subsystems stay behind dynamic `import()`.
 5. **Full DOM transcript with CSS containment (`contain: layout style`):** Avoids scroll-jump jitter from virtualization or `content-visibility: auto` while keeping native `Ctrl+F` search, full accessibility tree access, and overhanging hover toolbars fast up to 10,000+ messages ([benchmarks](../web/bench/README.md)).
-6. **Non-destructive liveness probes:** `stellarr-init` marks slow services `failing` without killing them so transient host CPU/IO contention cannot drop in-flight requests or cause restart storms.
+6. **Non-destructive liveness probes:** `stellarr-init` marks slow services `failing` without killing them so transient host CPU/IO contention cannot drop in-flight requests or cause restart storms. The media server is the exception: one that misses three probes serves no call, so it is restarted, never more often than its ~`45 s` of missed probes plus the crash backoff allow.
 7. **Dedicated `sendonly` WebRTC transceivers:** Clients publish tracks exclusively via `addTransceiver(track, { direction: "sendonly", streams: [stream] })`—never `addTrack`, which browsers can bind to `recvonly` server m-lines.
 8. **Automated Docs-as-Code contracts:** CI enforces parity across `STELLARR_*` variables (`setting-names.test.sh`), `--ui-*` CSS tokens (`tokens:check`), Nginx/client routes and WASM SHA-256 digests (`documents.test.ts`, `artifacts.test.ts`), and VitePress links (`docs/` test & build).
