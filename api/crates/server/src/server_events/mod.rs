@@ -24,6 +24,9 @@ mod routes;
 mod store;
 mod worker;
 
+#[cfg(test)]
+mod tests;
+
 use std::time::Duration;
 
 use rusqlite::{Connection, OptionalExtension, params};

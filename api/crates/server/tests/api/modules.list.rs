@@ -42,6 +42,7 @@ mod roles;
 mod scheduled;
 mod second_step;
 mod servers;
+mod server_events;
 mod sign_in;
 mod social;
 mod soundboard;
