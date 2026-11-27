@@ -1,5 +1,6 @@
 //! Uploads nobody refers to: a file that was uploaded and never attached to
-//! a message, a card, a sound, a picture of a person or of a server.
+//! a message, a scheduled message, a card, a sound, a picture of a person or
+//! of a server.
 
 use std::collections::HashSet;
 
@@ -67,8 +68,10 @@ async fn pictures_in_use(state: &AppState) -> Result<HashSet<Id>, DbError> {
         .await
 }
 
-/// The oldest attachments that no message, card, sound or direct message
-/// holds, leaving out the pictures in use, up to `batch` of them.
+/// The oldest attachments that no message, scheduled message, card, sound
+/// or direct message holds, leaving out the pictures in use, up to `batch`
+/// of them. A scheduled message may wait thirty days, far longer than an
+/// orphan is kept, so its files must count as held.
 async fn candidates(
     state: &AppState,
     cutoff: Timestamp,
@@ -84,6 +87,7 @@ async fn candidates(
                  WHERE a.\"CreatedAt\" < ?1 AND (a.\"CreatedAt\", a.\"Id\") > (?2, ?3)
                    AND NOT EXISTS (SELECT 1 FROM \"MessageAttachments\" l WHERE l.\"AttachmentId\" = a.\"Id\")
                    AND NOT EXISTS (SELECT 1 FROM \"DirectMessageAttachments\" l WHERE l.\"AttachmentId\" = a.\"Id\")
+                   AND NOT EXISTS (SELECT 1 FROM \"ScheduledMessageAttachments\" l WHERE l.\"AttachmentId\" = a.\"Id\")
                    AND NOT EXISTS (SELECT 1 FROM \"MessageEmbeds\" e WHERE e.\"ThumbnailAttachmentId\" = a.\"Id\")
                    AND NOT EXISTS (SELECT 1 FROM \"SoundboardSounds\" s WHERE s.\"AttachmentId\" = a.\"Id\")
                  ORDER BY a.\"CreatedAt\", a.\"Id\" LIMIT ?4",
