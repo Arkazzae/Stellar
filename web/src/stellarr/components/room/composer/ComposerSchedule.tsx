@@ -155,51 +155,53 @@ export interface SchedulePickerProps {
  * It is modal: Tab stays in it (the shell keeps Tab from walking the page),
  * and Escape or a press beside it cancels.
  */
-export function SchedulePicker({
-  now,
-  zone,
+export interface MonthGridProps {
+  /** Today in the zone the grid is read in; marked as the current date. */
+  today: CalendarDay;
+  /** The earliest day that may be chosen. */
+  first: CalendarDay;
+  /** The latest, or null for no end. */
+  last: CalendarDay | null;
+  value: CalendarDay;
+  /** A day chosen, by a press or by the arrows walking to it. */
+  onChange(day: CalendarDay): void;
+  /** A day pressed, as opposed to walked to; a grid that closes on a choice listens here. */
+  onPick?(day: CalendarDay): void;
+  /** Gets the month's name, which may name a dialog around the grid. */
+  titleId: string;
+  /** Puts the keyboard on the chosen day once, when the grid shows. */
+  autoFocus?: boolean;
+  locale: InterfaceLocale;
+  t: Translator;
+}
+
+/**
+ * A month of days to pick one from, Monday first, with the months before and
+ * after a press away. Days outside `first` and `last` cannot be chosen.
+ */
+export function MonthGrid({
+  today,
+  first,
+  last,
+  value,
+  onChange,
+  onPick,
+  titleId,
+  autoFocus = false,
   locale,
-  initial = null,
-  className,
-  onCancel,
-  onConfirm,
   t,
-}: SchedulePickerProps) {
-  const today = wallClock(now, zone);
-  const last = lastAllowedDay(now, zone);
-  const start = initial === null ? null : wallClock(initial, zone);
-  const [day, setDay] = useState<CalendarDay>(start ?? addDays(today, 1));
-  const [view, setView] = useState({ year: (start ?? addDays(today, 1)).year, month: (start ?? addDays(today, 1)).month });
-  const [time, setTime] = useState(start === null ? "09:00" : `${pad(start.hour)}:${pad(start.minute)}`);
-  const titleId = useId();
-  const timeId = useId();
-  const panel = useRef<HTMLDivElement>(null);
+}: MonthGridProps) {
+  const [view, setView] = useState({ year: value.year, month: value.month });
   const grid = useRef<HTMLDivElement>(null);
 
-  useLayer(true, {
-    node: () => panel.current,
-    onEscape: (event) => {
-      event.preventDefault();
-      onCancel();
-    },
-    onTab: (event) => {
-      if (panel.current !== null) trapTab(event, panel.current);
-    },
-    onPointerDownOutside: () => onCancel(),
-  });
-
-  // The chosen day has the keyboard first.
   useEffect(() => {
-    grid.current?.querySelector<HTMLButtonElement>('button[tabindex="0"]')?.focus();
-    // Once, when the picker opens.
+    if (autoFocus) grid.current?.querySelector<HTMLButtonElement>('button[tabindex="0"]')?.focus();
+    // Once, when the grid shows.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const allowed = (candidate: CalendarDay) =>
-    daysBetween(today, candidate) >= 0 && daysBetween(candidate, last) >= 0;
-  const clock = readTime(time);
-  const at = clock === null ? null : instantAt(day, clock, zone);
-  const problem = at === null ? "unknown" : timeProblem(at, now);
-
+    daysBetween(first, candidate) >= 0 && (last === null || daysBetween(candidate, last) >= 0);
   const firstOfView = { year: view.year, month: view.month, day: 1 };
   const lead = weekdayOf(firstOfView) - 1;
   const length = daysBetween(firstOfView, { year: view.month === 12 ? view.year + 1 : view.year, month: (view.month % 12) + 1, day: 1 });
@@ -211,12 +213,12 @@ export function SchedulePicker({
     const moved = addDays({ year: view.year, month: view.month, day: 15 }, by * 30);
     setView({ year: moved.year, month: moved.month });
   };
-  const canGoBack = view.year > today.year || (view.year === today.year && view.month > today.month);
-  const canGoOn = view.year < last.year || (view.year === last.year && view.month < last.month);
+  const canGoBack = view.year > first.year || (view.year === first.year && view.month > first.month);
+  const canGoOn = last === null || view.year < last.year || (view.year === last.year && view.month < last.month);
 
   const choose = (candidate: CalendarDay) => {
     if (!allowed(candidate)) return;
-    setDay(candidate);
+    onChange(candidate);
     if (candidate.month !== view.month || candidate.year !== view.year) {
       setView({ year: candidate.year, month: candidate.month });
     }
@@ -230,17 +232,11 @@ export function SchedulePicker({
     const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[event.key];
     if (step === undefined) return;
     event.preventDefault();
-    choose(addDays(day, step));
+    choose(addDays(value, step));
   };
 
   return (
-    <div
-      ref={panel}
-      className={className === undefined ? css.picker : `${css.picker} ${className}`}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
-    >
+    <>
       <div className={css.pickerHead}>
         <span id={titleId}>{monthTitle(view.year, view.month, locale)}</span>
         <span className={css.pickerNav}>
@@ -277,17 +273,78 @@ export function SchedulePicker({
               type="button"
               className={css.day}
               aria-label={dayName(cell, locale)}
-              aria-pressed={sameDay(cell, day)}
+              aria-pressed={sameDay(cell, value)}
               aria-current={sameDay(cell, today) ? "date" : undefined}
               disabled={!allowed(cell)}
-              tabIndex={sameDay(cell, day) ? 0 : -1}
-              onClick={() => choose(cell)}
+              tabIndex={sameDay(cell, value) ? 0 : -1}
+              onClick={() => {
+                choose(cell);
+                if (allowed(cell)) onPick?.(cell);
+              }}
             >
               {cell.day}
             </button>
           ),
         )}
       </div>
+    </>
+  );
+}
+
+export function SchedulePicker({
+  now,
+  zone,
+  locale,
+  initial = null,
+  className,
+  onCancel,
+  onConfirm,
+  t,
+}: SchedulePickerProps) {
+  const today = wallClock(now, zone);
+  const last = lastAllowedDay(now, zone);
+  const start = initial === null ? null : wallClock(initial, zone);
+  const [day, setDay] = useState<CalendarDay>(start ?? addDays(today, 1));
+  const [time, setTime] = useState(start === null ? "09:00" : `${pad(start.hour)}:${pad(start.minute)}`);
+  const titleId = useId();
+  const timeId = useId();
+  const panel = useRef<HTMLDivElement>(null);
+
+  useLayer(true, {
+    node: () => panel.current,
+    onEscape: (event) => {
+      event.preventDefault();
+      onCancel();
+    },
+    onTab: (event) => {
+      if (panel.current !== null) trapTab(event, panel.current);
+    },
+    onPointerDownOutside: () => onCancel(),
+  });
+
+  const clock = readTime(time);
+  const at = clock === null ? null : instantAt(day, clock, zone);
+  const problem = at === null ? "unknown" : timeProblem(at, now);
+
+  return (
+    <div
+      ref={panel}
+      className={className === undefined ? css.picker : `${css.picker} ${className}`}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+    >
+      <MonthGrid
+        today={today}
+        first={today}
+        last={last}
+        value={day}
+        onChange={setDay}
+        titleId={titleId}
+        autoFocus
+        locale={locale}
+        t={t}
+      />
       <div className={css.timeRow}>
         <label className="sr-only" htmlFor={timeId}>
           {t("composer.schedule.time")}
