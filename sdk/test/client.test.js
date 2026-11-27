@@ -204,3 +204,61 @@ test("a push-capable session delivers messages and drains queued commands betwee
   assert.ok(lostSettlement);
   assert.equal(session.state.get().score, 5);
 });
+
+test("the dock belongs to the host page: holds count, its pushes arrive, and a host without one makes it inert", async t => {
+  const previousWindow = globalThis.window;
+  const opened = [];
+  t.after(async () => {
+    for (const { session, bridge } of opened) {
+      await session.close().catch(() => {});
+      bridge?.close();
+    }
+    if (previousWindow) globalThis.window = previousWindow;
+    else delete globalThis.window;
+  });
+  async function open(withDock) {
+    const room = createRoom();
+    const page = globalThis.window = new EventTarget();
+    const asked = [];
+    let bridge;
+    page.parent = { postMessage(kind, _, [port]) {
+      if (kind !== "stellarr:dev-connect:v1") return;
+      bridge = port;
+      port.onmessage = ({ data: { id, input } }) => {
+        if (input.op === "shell") { asked.push(input.dock); port.postMessage({ id, value: {} }); return; }
+        const value = room({ id: "alice", name: "Alice" }, input);
+        if (input.op === "open" && withDock) value.shell = { dock: { fullscreen: false, visible: false, held: false, height: 0 } };
+        port.postMessage({ id, value });
+      };
+    } };
+    const session = await connect();
+    opened.push({ session, bridge });
+    return { session, asked, push: dock => bridge.postMessage({ shell: { dock } }) };
+  }
+
+  const { session, asked, push } = await open(true);
+  assert.ok(session.capabilities.includes("shell.dock"));
+  const first = session.shell.dock.hold();
+  const second = session.shell.dock.hold();
+  first.release();
+  first.release();
+  await sleep(10);
+  assert.deepEqual(asked, ["hold"]);
+  second.release();
+  session.shell.dock.peek();
+  await eventually(() => asked.length === 3);
+  assert.deepEqual(asked, ["hold", "release", "peek"]);
+  const seen = [];
+  session.shell.dock.subscribe(value => seen.push(value));
+  push({ fullscreen: true, visible: true, held: false, height: 62.4, extra: "dropped" });
+  await eventually(() => seen.length === 2);
+  assert.deepEqual(seen.at(-1), { fullscreen: true, visible: true, held: false, height: 62 });
+
+  const older = await open(false);
+  assert.ok(!older.session.capabilities.includes("shell.dock"));
+  older.session.shell.dock.hold().release();
+  older.session.shell.dock.peek();
+  await sleep(20);
+  assert.deepEqual(older.asked, []);
+  assert.deepEqual(older.session.shell.dock.get(), { fullscreen: false, visible: false, held: false, height: 0 });
+});

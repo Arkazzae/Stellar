@@ -39,6 +39,28 @@ export interface ActivityLimits {
   emptySeconds: number;
   maxParticipants: number;
 }
+/** Stellarr's dock over a full-screen activity, as this frame hears it. */
+export interface DockState {
+  /** The activity has the screen. The dock exists only then. */
+  fullscreen: boolean;
+  /** The dock is showing over the activity's bottom edge. */
+  visible: boolean;
+  /** A `hold()` is in force and the player allows it, so the edge no longer calls the dock up. */
+  held: boolean;
+  /** CSS pixels the visible dock takes from the bottom of the frame; 0 while hidden. */
+  height: number;
+}
+export interface ShellDock extends Observable<DockState> {
+  /**
+   * Keeps the bottom edge for the activity while it is full screen: moving the
+   * pointer there no longer brings the dock up, and the dock does not show on
+   * entering full screen. The player keeps a small handle, the keyboard and
+   * Esc, and may refuse holds altogether. Holds count; the last release ends it.
+   */
+  hold(): { release(): void };
+  /** Shows the dock for a moment, for example after a round. Repeated calls are throttled. */
+  peek(): void;
+}
 export interface CommandDecision<S> {
   patch?: Partial<S>;
   result?: JsonValue;
@@ -59,6 +81,8 @@ export interface DevSession<S extends ActivityState> {
     save(data: ActivityState, expectedRevision: number): Promise<number>;
   };
   media: ActivityMedia;
+  /** The page around the activity. Without a host that draws a dock, it stays hidden and `hold()` does nothing. */
+  shell: { dock: ShellDock };
   participants: Observable<Participant[]>;
   send(kind: string, data: JsonValue | ArrayBuffer | ArrayBufferView, options?: { to?: string; latest?: boolean }): boolean;
   on(kind: string, listener: (data: JsonValue | Uint8Array, meta: { from: string }) => void): Unsubscribe;

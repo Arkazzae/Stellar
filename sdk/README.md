@@ -249,6 +249,19 @@ In `stellarr dev`, pick any local audio or video file in the simulator header ba
 
 ---
 
+### 7. Full screen and Stellarr's dock (`session.shell.dock`)
+
+In full screen a small dock comes up from the bottom edge with the call and the way out. If your game needs that edge (edge scrolling, a bottom HUD), hold it while a round runs and let it go afterwards:
+
+```js
+const round = session.shell.dock.hold();
+// ...
+round.release();
+session.shell.dock.peek(); // show the dock for a moment
+```
+
+Players keep a small handle, the keyboard and Esc, and can refuse holds. `session.shell.dock.subscribe(({ visible, height }) => ...)` tells you how much of the bottom the dock covers.
+
 ## CLI workflow: preview and publish
 
 ```sh
