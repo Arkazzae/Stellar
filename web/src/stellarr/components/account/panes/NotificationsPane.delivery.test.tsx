@@ -48,6 +48,7 @@ function delivery(overrides: Partial<NotificationDeliveryProps> = {}): Notificat
       status: "idle",
       pending: false,
       error: null,
+      errorDetail: null,
     },
     onEmailChange: vi.fn(),
     onPushChange: vi.fn(),
@@ -144,6 +145,7 @@ describe("notification delivery settings", () => {
           status: "enrolled",
           pending: false,
           error: null,
+          errorDetail: null,
         },
         onDisableDevice,
       }),
@@ -164,6 +166,7 @@ describe("notification delivery settings", () => {
           status: "idle",
           pending: false,
           error: null,
+          errorDetail: null,
         },
       }),
     );
@@ -181,6 +184,7 @@ describe("notification delivery settings", () => {
             status: "idle",
             pending: false,
             error: null,
+            errorDetail: null,
           },
         })}
       />,
@@ -198,6 +202,7 @@ describe("notification delivery settings", () => {
             status: "idle",
             pending: true,
             error: null,
+            errorDetail: null,
           },
         })}
       />,
@@ -215,11 +220,111 @@ describe("notification delivery settings", () => {
           status: "idle",
           pending: false,
           error: "preference.pushDeviceServerFailed",
+          errorDetail: null,
         },
       }),
     );
 
     expect(screen.getByRole("alert")).toHaveTextContent(/Serwer nie przyjął subskrypcji/);
+  });
+
+  it("puts the device's control at the row's edge, as the permission row does", () => {
+    renderPane(delivery());
+
+    // `.frm-switch` gives the row a label column and an `auto` control column
+    // centred beside it; a bare `.frm-ctl` dropped the button into the top of
+    // a wide second column. `.nt-ctl` stacks it under the sentence on a phone.
+    const control = screen.getByRole("button", { name: "Zapisz to urządzenie" }).parentElement!;
+    expect(control).toHaveClass("frm-ctl", "frm-switch", "nt-ctl");
+    expect(control.parentElement).toHaveClass("frm-row");
+    expect(control.parentElement).not.toHaveClass("nt-solo");
+  });
+
+  it("states an unsupported or unconfigured device once, with nothing to press", () => {
+    const { rerender, container } = renderPane(
+      delivery({
+        device: {
+          supported: false,
+          permission: "unsupported",
+          status: "idle",
+          pending: false,
+          error: null,
+          errorDetail: null,
+        },
+      }),
+    );
+
+    expect(screen.getAllByText("Ta przeglądarka nie obsługuje Web Push.")).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Zapisz to urządzenie" })).toBeNull();
+    expect(container.querySelectorAll(".frm-row.nt-solo")).toHaveLength(1);
+
+    rerender(
+      <UserNotificationsPane
+        preferences={preferences}
+        onChange={vi.fn()}
+        delivery={delivery({ pushKeyAvailable: false })}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Zapisz to urządzenie" })).toBeNull();
+    expect(container.querySelectorAll(".frm-row.nt-solo")).toHaveLength(1);
+  });
+
+  it("says blocked in a word beside the sentence that explains it", () => {
+    renderPane(
+      delivery({
+        device: {
+          supported: true,
+          permission: "denied",
+          status: "idle",
+          pending: false,
+          error: null,
+          errorDetail: null,
+        },
+      }),
+    );
+
+    expect(screen.getAllByText(/zablokowane w przeglądarce lub systemie/)).toHaveLength(1);
+    expect(screen.getByText("Zablokowane").closest(".nt-ctl")).not.toBeNull();
+  });
+
+  it("says what to do about a missing push service and quotes the browser under it", () => {
+    renderPane(
+      delivery({
+        device: {
+          supported: true,
+          permission: "granted",
+          status: "idle",
+          pending: false,
+          error: "preference.pushDeviceServiceFailed",
+          errorDetail: "AbortError – Registration failed - push service error",
+        },
+      }),
+    );
+
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(/nie ma działającej usługi push/);
+    const detail = screen.getByText("Szczegóły: AbortError – Registration failed - push service error");
+    expect(detail).toHaveClass("nt-error-detail");
+    // The alert is what a screen reader announces; the quote stays out of it.
+    expect(alert).not.toContainElement(detail);
+  });
+
+  it("names the Brave setting when Brave has push turned off", () => {
+    renderPane(
+      delivery({
+        device: {
+          supported: true,
+          permission: "granted",
+          status: "idle",
+          pending: false,
+          error: "preference.pushDeviceServiceBrave",
+          errorDetail: null,
+        },
+      }),
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent(/brave:\/\/settings\/privacy/);
+    expect(screen.queryByText(/^Szczegóły:/)).toBeNull();
   });
 
   it("offers a retry when capabilities could not be read", async () => {

@@ -4,11 +4,13 @@ import { WORKER_PATH, WORKER_SCOPE } from "@/lib/platform/worker";
 
 import {
   PushEnrollmentError,
+  browserIsBrave,
   decodeApplicationServerKey,
   disableDevicePush,
   enrollDevicePush,
   forgetRememberedSubscription,
   inspectDevicePush,
+  pushFailureDetail,
   releaseDevicePush,
 } from "./push";
 
@@ -258,6 +260,176 @@ describe("enrolling this device", () => {
     expect(deleteEndpoint).toHaveBeenCalledWith("https://push.example/sub-1");
     expect(push.last?.unsubscribe).toHaveBeenCalledOnce();
     expect(window.localStorage.getItem(REMEMBERED_KEY)).toBeNull();
+  });
+});
+
+describe("saying why a subscription failed", () => {
+  function enroll(overrides: Partial<Parameters<typeof enrollDevicePush>[0]> = {}) {
+    return enrollDevicePush({
+      userId: "u-1",
+      applicationServerKey: KEY,
+      save: vi.fn(async () => "row"),
+      deleteEndpoint: vi.fn(async () => undefined),
+      ...overrides,
+    });
+  }
+
+  async function failure(promise: Promise<unknown>): Promise<PushEnrollmentError> {
+    const error = await promise.then(
+      () => null,
+      (cause: unknown) => cause,
+    );
+    expect(error).toBeInstanceOf(PushEnrollmentError);
+    return error as PushEnrollmentError;
+  }
+
+  it("calls an AbortError a missing push service and keeps the browser's words", async () => {
+    const { manager: push } = installPlatform();
+    const refusal = new DOMException("Registration failed - push service error", "AbortError");
+    push.subscribe.mockRejectedValueOnce(refusal);
+    const save = vi.fn(async () => "row");
+
+    const error = await failure(enroll({ save }));
+
+    expect(error.code).toBe("push-service");
+    expect(error.cause).toBe(refusal);
+    expect(pushFailureDetail(error)).toBe("AbortError – Registration failed - push service error");
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("calls a NotAllowedError a refusal, and a bad key a key problem", async () => {
+    const { manager: push } = installPlatform();
+    push.subscribe.mockRejectedValueOnce(
+      new DOMException("Registration failed - permission denied", "NotAllowedError"),
+    );
+    await expect(enroll()).rejects.toMatchObject({ code: "denied" });
+
+    push.subscribe.mockRejectedValueOnce(
+      new DOMException("The provided applicationServerKey is not valid.", "InvalidAccessError"),
+    );
+    await expect(enroll()).rejects.toMatchObject({ code: "invalid-key" });
+  });
+
+  it("keeps any other rejection generic, with its cause", async () => {
+    const { manager: push } = installPlatform();
+    push.subscribe.mockRejectedValueOnce(new TypeError("boom"));
+
+    const error = await failure(enroll());
+
+    expect(error.code).toBe("subscribe");
+    expect(pushFailureDetail(error)).toBe("TypeError – boom");
+  });
+
+  it("replaces a subscription under another key that the first look missed", async () => {
+    const { manager: push } = installPlatform();
+    const leftover = new FakeSubscription();
+    push.current = leftover;
+    // The first look timed out or failed, so nothing was removed before subscribing.
+    push.getSubscription.mockResolvedValueOnce(null);
+    push.subscribe.mockRejectedValueOnce(
+      new DOMException(
+        "Registration failed - A subscription with a different applicationServerKey (or gcm_sender_id) already exists; to change the applicationServerKey, unsubscribe then resubscribe.",
+        "InvalidStateError",
+      ),
+    );
+    const save = vi.fn(async () => "row-new");
+    const deleteEndpoint = vi.fn(async () => undefined);
+
+    await expect(enroll({ save, deleteEndpoint })).resolves.toEqual({
+      id: "row-new",
+      endpoint: "https://push.example/sub-1",
+    });
+
+    expect(leftover.unsubscribe).toHaveBeenCalledOnce();
+    expect(deleteEndpoint).toHaveBeenCalledExactlyOnceWith(leftover.endpoint);
+    expect(push.subscribe).toHaveBeenCalledTimes(2);
+    expect(save).toHaveBeenCalledOnce();
+  });
+
+  it("gives up after one retry and says the old subscription is in the way", async () => {
+    const { manager: push } = installPlatform();
+    push.current = new FakeSubscription();
+    push.getSubscription.mockResolvedValueOnce(null);
+    const mismatch = new DOMException(
+      "Registration failed - A subscription with a different applicationServerKey already exists",
+      "InvalidStateError",
+    );
+    push.subscribe.mockRejectedValueOnce(mismatch).mockRejectedValueOnce(mismatch);
+
+    const error = await failure(enroll());
+
+    expect(error.code).toBe("key-mismatch");
+    expect(error.cause).toBe(mismatch);
+    expect(push.subscribe).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry for an enrollment nobody waits for any more", async () => {
+    const { manager: push } = installPlatform();
+    push.subscribe.mockRejectedValueOnce(new DOMException("mismatch", "InvalidStateError"));
+
+    const error = await failure(enroll({ isStillWanted: () => false }));
+
+    expect(error.code).toBe("cancelled");
+    expect(push.subscribe).toHaveBeenCalledOnce();
+  });
+
+  it("calls a push service that never answers a timeout, with nothing to quote", async () => {
+    vi.useFakeTimers();
+    try {
+      const { manager: push } = installPlatform();
+      push.subscribe.mockReturnValueOnce(new Promise<PushSubscription>(() => undefined));
+
+      const pending = failure(enroll());
+      await vi.advanceTimersByTimeAsync(15_000);
+      const error = await pending;
+
+      expect(error.code).toBe("timeout");
+      expect(pushFailureDetail(error)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("refuses a subscription without keys and takes it back", async () => {
+    const { manager: push } = installPlatform();
+    const incomplete = new FakeSubscription();
+    Object.defineProperty(incomplete, "toJSON", {
+      value: () => ({ endpoint: incomplete.endpoint, expirationTime: null, keys: {} }),
+    });
+    push.subscribe.mockResolvedValueOnce(incomplete as unknown as PushSubscription);
+    const save = vi.fn(async () => "row");
+
+    const error = await failure(enroll({ save }));
+
+    expect(error.code).toBe("malformed");
+    expect(incomplete.unsubscribe).toHaveBeenCalledOnce();
+    expect(save).not.toHaveBeenCalled();
+  });
+});
+
+describe("the detail shown under a failure", () => {
+  it("is the browser's name and message, cut short when it runs long", () => {
+    expect(pushFailureDetail(new DOMException("push service not available", "AbortError")))
+      .toBe("AbortError – push service not available");
+
+    const long = pushFailureDetail(new PushEnrollmentError("subscribe", new Error("x".repeat(500))));
+    expect(long).toHaveLength(300);
+    expect(long?.endsWith("…")).toBe(true);
+  });
+
+  it("is absent when the browser said nothing", () => {
+    expect(pushFailureDetail(new PushEnrollmentError("timeout"))).toBeNull();
+    expect(pushFailureDetail(undefined)).toBeNull();
+  });
+
+  it("recognises Brave by the object it adds to navigator", () => {
+    expect(browserIsBrave()).toBe(false);
+    Object.defineProperty(navigator, "brave", { value: { isBrave: () => true }, configurable: true });
+    try {
+      expect(browserIsBrave()).toBe(true);
+    } finally {
+      Reflect.deleteProperty(navigator, "brave");
+    }
   });
 });
 

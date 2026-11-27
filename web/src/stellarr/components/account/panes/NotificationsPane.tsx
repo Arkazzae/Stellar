@@ -63,6 +63,8 @@ export interface NotificationDeliveryDeviceProps {
   status: "idle" | "enrolled" | "stale";
   pending: boolean;
   error: MessageKey | null;
+  /** The browser's own words for `error`, shown small so it can be quoted. */
+  errorDetail: string | null;
 }
 
 /**
@@ -514,6 +516,94 @@ function SwitchRow({
 }
 
 /**
+ * This browser's enrollment, laid out like the permission row: the control
+ * sits at the row's right edge, and where there is nothing to do the sentence
+ * stands alone instead of being repeated as a control. A failure says what to
+ * do about it, with the browser's own words under it for whoever has to help.
+ */
+function DeviceRow({
+  delivery,
+  usable,
+  checking,
+}: {
+  delivery: NotificationDeliveryProps;
+  usable: boolean;
+  checking: boolean;
+}) {
+  const { t } = useLanguage();
+  const { device } = delivery;
+
+  let detail: string;
+  let control: ReactNode = null;
+  if (!device.supported) {
+    detail = t("preference.pushDeviceUnsupported");
+  } else if (!usable) {
+    detail = t("preference.pushDeviceUnavailable");
+  } else if (device.permission === "denied") {
+    detail = t("preference.pushDeviceBlocked");
+    control = (
+      <span className="nt-state">
+        <Icon name="lock" size={15} />
+        {t("preference.desktopNotificationsBlocked")}
+      </span>
+    );
+  } else if (device.status === "enrolled") {
+    detail = t("preference.pushDeviceEnrolled");
+    control = (
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        disabled={device.pending}
+        onClick={delivery.onDisableDevice}
+      >
+        {t("preference.pushDeviceDisable")}
+      </Button>
+    );
+  } else {
+    detail = device.pending
+      ? t("preference.pushDevicePending")
+      : device.status === "stale"
+        ? t("preference.pushDeviceStale")
+        : t("preference.pushDeviceIdle");
+    control = (
+      <Button
+        type="button"
+        size="sm"
+        disabled={device.pending || checking}
+        onClick={delivery.onEnableDevice}
+      >
+        {device.pending
+          ? t("preference.pushDevicePending")
+          : device.status === "stale"
+            ? t("preference.pushDeviceReplace")
+            : t("preference.pushDeviceEnable")}
+      </Button>
+    );
+  }
+
+  return (
+    <div className={control === null ? "frm-row nt-solo" : "frm-row"}>
+      <span className="frm-lab">
+        {t("preference.pushDevice")}
+        <span>{detail}</span>
+        {device.error === null ? null : (
+          <span className="frm-detail-error" role="alert">
+            {t(device.error)}
+          </span>
+        )}
+        {device.error === null || device.errorDetail === null ? null : (
+          <span className="nt-error-detail">
+            {t("preference.pushDeviceErrorDetail", { detail: device.errorDetail })}
+          </span>
+        )}
+      </span>
+      {control === null ? null : <div className="frm-ctl frm-switch nt-ctl">{control}</div>}
+    </div>
+  );
+}
+
+/**
  * Delivery over e-mail and Web Push. The two switches belong to the account;
  * the device row below them only enrolls the browser in front of the person.
  * Keeping them apart is what lets a phone and a laptop choose different
@@ -522,7 +612,7 @@ function SwitchRow({
 function DeliveryCard({ delivery }: { delivery: NotificationDeliveryProps }) {
   const { t } = useLanguage();
   const titleId = useId();
-  const { loading, loadFailed, device } = delivery;
+  const { loading, loadFailed } = delivery;
 
   const emailUsable = delivery.emailAvailable && delivery.emailVerified;
   const pushUsable = delivery.pushAvailable && delivery.pushKeyAvailable;
@@ -543,67 +633,6 @@ function DeliveryCard({ delivery }: { delivery: NotificationDeliveryProps }) {
       : !delivery.pushKeyAvailable
         ? t("preference.pushDeviceUnavailable")
         : t("preference.pushDetail");
-
-  let deviceDetail: string;
-  let control: ReactNode;
-  if (!device.supported) {
-    deviceDetail = t("preference.pushDeviceUnsupported");
-    control = (
-      <span className="nt-state">
-        <Icon name="monitor" size={15} />
-        {t("preference.pushDeviceUnsupported")}
-      </span>
-    );
-  } else if (!pushUsable) {
-    deviceDetail = t("preference.pushDeviceUnavailable");
-    control = (
-      <span className="nt-state">
-        <Icon name="lock" size={15} />
-        {t("preference.pushDeviceUnavailable")}
-      </span>
-    );
-  } else if (device.permission === "denied") {
-    deviceDetail = t("preference.pushDeviceBlocked");
-    control = (
-      <span className="nt-state">
-        <Icon name="lock" size={15} />
-        {t("preference.pushDeviceBlocked")}
-      </span>
-    );
-  } else if (device.status === "enrolled") {
-    deviceDetail = t("preference.pushDeviceEnrolled");
-    control = (
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        disabled={device.pending}
-        onClick={delivery.onDisableDevice}
-      >
-        {t("preference.pushDeviceDisable")}
-      </Button>
-    );
-  } else {
-    deviceDetail = device.pending
-      ? t("preference.pushDevicePending")
-      : device.status === "stale"
-        ? t("preference.pushDeviceStale")
-        : t("preference.pushDeviceIdle");
-    control = (
-      <Button
-        type="button"
-        size="sm"
-        disabled={device.pending || checking}
-        onClick={delivery.onEnableDevice}
-      >
-        {device.pending
-          ? t("preference.pushDevicePending")
-          : device.status === "stale"
-            ? t("preference.pushDeviceReplace")
-            : t("preference.pushDeviceEnable")}
-      </Button>
-    );
-  }
 
   return (
     <section className="sc" aria-labelledby={titleId}>
@@ -644,18 +673,7 @@ function DeliveryCard({ delivery }: { delivery: NotificationDeliveryProps }) {
             error={delivery.pushError}
             onChange={delivery.onPushChange}
           />
-          <div className="frm-row">
-            <span className="frm-lab">
-              {t("preference.pushDevice")}
-              <span>{deviceDetail}</span>
-              {device.error === null ? null : (
-                <span className="frm-detail-error" role="alert">
-                  {t(device.error)}
-                </span>
-              )}
-            </span>
-            <div className="frm-ctl">{control}</div>
-          </div>
+          <DeviceRow delivery={delivery} usable={pushUsable} checking={checking} />
         </div>
       </div>
     </section>

@@ -1365,6 +1365,16 @@
     margin-top: 2px;
   }
 
+  /* The browser's own words under a failure: there to be quoted, not read
+     first. Above `.frm-lab span`, which would make it a second sentence. */
+  .frm-lab .nt-error-detail {
+    font-family: var(--font-mono);
+    font-size: var(--text-12);
+    line-height: 1.4;
+    color: var(--text-faint);
+    overflow-wrap: anywhere;
+  }
+
   /* Under the table: how to read it, and the sound to hear. */
   .nt-stage-foot {
     display: flex;
