@@ -526,6 +526,153 @@ fn an_offer_of_the_media_server_larger_than_128_kib_closes_the_session() {
     }
 }
 
+fn publish_mic(net: &mut Net, i: usize) -> Result<(), ApiError> {
+    net.offer(i, |api| {
+        api.add_media(
+            MediaKind::Audio,
+            Direction::SendOnly,
+            Some("mic".into()),
+            None,
+            None,
+        )
+    })
+    .1
+}
+
+/// The most sections any offer of the media server to `i` had.
+fn most_sections(net: &Net, i: usize) -> usize {
+    offer_events(net, i)
+        .iter()
+        .map(|o| sdp_text::sections(o["payload"]["sdp"].as_str().unwrap()).len())
+        .max()
+        .unwrap_or(0)
+}
+
+#[test]
+fn a_camera_turned_on_and_off_all_evening_locks_nobody_out() {
+    let mut net = Net::offline();
+    let a = net.join(1);
+    let b = net.join(2);
+    net.publish(a, MediaKind::Audio, "mic-a");
+    net.publish(b, MediaKind::Audio, "mic-b");
+    let cam = net.publish(a, MediaKind::Video, "cam-a");
+
+    for start in 2..=60 {
+        let (_, off) = net.offer(a, |api| api.set_direction(cam, Direction::Inactive));
+        assert_eq!(off, Ok(()), "the camera going off before start {start}");
+        net.run_for(Duration::from_millis(20));
+        let (_, on) = net.offer(a, |api| api.set_direction(cam, Direction::SendOnly));
+        assert_eq!(on, Ok(()), "camera start {start}");
+        net.run_for(Duration::from_millis(20));
+    }
+    assert_eq!(net.client(a).closed, None);
+    assert_eq!(net.client(b).closed, None);
+    // B's own microphone, and A's voice and camera: never more.
+    assert_eq!(most_sections(&net, b), 3);
+
+    // A comes back with a new session, as the web client does, and
+    // publishes everything again.
+    let again = net.join(1);
+    assert_eq!(publish_mic(&mut net, again), Ok(()));
+    net.publish(again, MediaKind::Video, "cam-a");
+    net.run_for(Duration::from_millis(50));
+    assert_eq!(net.client(again).closed, None);
+    assert_eq!(net.client(b).closed, None);
+    let directory = &net.client(b).directory;
+    assert_eq!(directory.len(), 2, "{directory:?}");
+    assert!(directory.iter().all(|t| t["userId"] == uuid(1)));
+    assert_eq!(most_sections(&net, b), 3);
+}
+
+#[test]
+fn people_coming_and_going_never_lock_out_whoever_stays() {
+    let mut net = Net::offline();
+    let idler = net.join(1);
+    net.publish(idler, MediaKind::Audio, "mic-idler");
+
+    for n in 1..=60 {
+        let visitor = net.join(100 + n);
+        assert_eq!(publish_mic(&mut net, visitor), Ok(()), "visitor {n}");
+        net.run_for(Duration::from_millis(20));
+        assert_eq!(net.client(visitor).closed, None, "visitor {n}");
+        let session = net.clients[visitor].session_id.clone();
+        net.core.delete_session(net.now, &session);
+        net.run_for(Duration::from_millis(20));
+    }
+    assert_eq!(net.client(idler).closed, None);
+    // Its own microphone and the one visitor's at a time.
+    assert_eq!(most_sections(&net, idler), 2);
+
+    let newcomer = net.join(999);
+    assert_eq!(publish_mic(&mut net, newcomer), Ok(()));
+    net.run_for(Duration::from_millis(50));
+    assert_eq!(net.client(newcomer).closed, None);
+    assert_eq!(net.client(idler).closed, None);
+    let directory = &net.client(idler).directory;
+    assert_eq!(directory.len(), 1, "{directory:?}");
+    assert_eq!(directory[0]["userId"], uuid(999));
+    assert_eq!(most_sections(&net, idler), 2);
+}
+
+fn publish_sounds(net: &mut Net, i: usize, count: usize) -> Result<(), ApiError> {
+    net.offer(i, |api| {
+        for n in 0..count {
+            api.add_media(
+                MediaKind::Audio,
+                Direction::SendOnly,
+                Some(format!("s{n}")),
+                None,
+                None,
+            );
+        }
+    })
+    .1
+}
+
+#[test]
+fn a_receiver_takes_48_tracks_at_once_and_one_that_left_does_not_count() {
+    let mut net = Net::offline();
+    let receiver = net.join(100);
+    net.publish(receiver, MediaKind::Audio, "mic");
+    for n in 1..=6 {
+        let p = net.join(n);
+        let count = if n == 6 { 7 } else { 8 };
+        assert_eq!(publish_sounds(&mut net, p, count), Ok(()), "publisher {n}");
+    }
+
+    // The receiver has room for one more sound. A newcomer sends it, and a
+    // second one, which the receiver could not take, costs the newcomer its
+    // session.
+    let first = net.join(7);
+    assert_eq!(publish_sounds(&mut net, first, 1), Ok(()));
+    let refused = publish_sounds(&mut net, first, 1);
+    assert!(
+        matches!(refused, Err(ApiError::LimitExceeded(_))),
+        "{refused:?}"
+    );
+    net.run_for(Duration::from_millis(20));
+    assert_eq!(net.client(first).closed.as_deref(), Some("error"));
+
+    // The receiver's section of the sound that went is free, and the next
+    // newcomer's takes it.
+    let second = net.join(8);
+    assert_eq!(publish_sounds(&mut net, second, 1), Ok(()));
+    net.run_for(Duration::from_millis(20));
+    assert_eq!(net.client(second).closed, None);
+    assert_eq!(net.client(receiver).directory.len(), 48);
+    assert_eq!(most_sections(&net, receiver), 49);
+
+    // The room now publishes 49 tracks, more than anybody new could take.
+    let joined = net.core.create_session(net.now, ROOM, &uuid(9));
+    assert!(
+        matches!(joined, Err(ApiError::LimitExceeded(_))),
+        "{joined:?}"
+    );
+    net.run_for(Duration::from_millis(20));
+    assert_eq!(net.client(receiver).closed, None);
+    assert_eq!(net.client(second).closed, None);
+}
+
 #[test]
 fn sessions_closed_through_the_api_never_produce_a_closed_event() {
     let mut net = Net::offline();
@@ -922,7 +1069,7 @@ fn a_track_withdrawn_while_its_section_is_offered_is_made_inactive_next() {
 }
 
 #[test]
-fn a_track_sent_again_before_its_withdrawal_is_answered_gets_a_new_section() {
+fn a_track_sent_again_before_its_withdrawal_is_answered_takes_the_section_after_it() {
     let mut net = Net::offline();
     let a = net.join(1);
     let b = net.join(2);
@@ -952,26 +1099,25 @@ fn a_track_sent_again_before_its_withdrawal_is_answered_gets_a_new_section() {
     assert_eq!(net.core.answer(net.now, &session, &answer, id), Ok(()));
     net.pump();
 
-    // B is offered the camera again, on a section of its own, and the old
-    // one stays inactive.
+    // The answer settles the withdrawal, and the camera is offered again on
+    // the section that was just made inactive.
     let next = last_offer(&net, b);
     assert_eq!(next["payload"]["negotiationId"], id + 1);
     let directory = &net.client(b).directory;
     assert_eq!(directory.len(), 1, "{directory:?}");
     assert_eq!(directory[0]["userId"], uuid(1));
     assert_eq!(directory[0]["kind"], "video");
-    let second_on_b = directory[0]["mid"].as_str().unwrap();
-    assert_ne!(second_on_b, first_on_b);
-    let sdp = next["payload"]["sdp"].as_str().unwrap();
-    let direction = |mid: &str| {
-        sdp_text::sections(sdp)
-            .into_iter()
-            .find(|s| s.mid == mid)
+    assert_eq!(directory[0]["mid"], first_on_b.as_str());
+    let sections = sdp_text::sections(next["payload"]["sdp"].as_str().unwrap());
+    assert_eq!(sections.len(), 2);
+    assert_eq!(
+        sections
+            .iter()
+            .find(|s| s.mid == first_on_b)
             .unwrap()
-            .direction
-    };
-    assert_eq!(direction(&first_on_b), sdp_text::Direction::Inactive);
-    assert_eq!(direction(second_on_b), sdp_text::Direction::SendOnly);
+            .direction,
+        sdp_text::Direction::SendOnly
+    );
     assert!(net.client(b).answer_results.iter().all(Result::is_ok));
 }
 
@@ -1021,6 +1167,96 @@ fn a_track_sent_again_while_its_first_offer_is_pending_gets_a_new_section() {
     assert_eq!(videos[0]["userId"], uuid(1));
     assert_ne!(videos[0]["mid"], first_on_b.as_str());
     assert!(net.client(b).answer_results.iter().all(Result::is_ok));
+}
+
+fn offered_sdp(offer: &Value) -> &str {
+    offer["payload"]["sdp"].as_str().unwrap()
+}
+
+/// The SSRCs the section `mid` of a description declares.
+fn ssrcs_in(sdp: &str, mid: &str) -> Vec<u32> {
+    let mut sections: Vec<Vec<&str>> = Vec::new();
+    for line in sdp.lines() {
+        if line.starts_with("m=") {
+            sections.push(Vec::new());
+        }
+        if let Some(section) = sections.last_mut() {
+            section.push(line);
+        }
+    }
+    let wanted = format!("a=mid:{mid}");
+    let lines = sections
+        .into_iter()
+        .find(|lines| lines.contains(&wanted.as_str()))
+        .unwrap_or_else(|| panic!("no section {mid}"));
+    let mut found: Vec<u32> = lines
+        .iter()
+        .filter_map(|l| l.strip_prefix("a=ssrc:"))
+        .filter_map(|rest| rest.split(' ').next()?.parse().ok())
+        .collect();
+    found.dedup();
+    found
+}
+
+#[test]
+fn a_track_withdrawn_while_it_is_offered_on_a_reused_section_frees_it_again() {
+    let mut net = Net::offline();
+    let a = net.join(1);
+    let b = net.join(2);
+    net.publish(b, MediaKind::Audio, "mic-b");
+    let cam_a = net.publish(a, MediaKind::Video, "cam-a");
+    let section = net.client(b).directory[0]["mid"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    net.offer(a, |api| api.set_direction(cam_a, Direction::Inactive))
+        .1
+        .unwrap();
+    let sections = sdp_text::sections(offered_sdp(&last_offer(&net, b))).len();
+
+    // The camera is on for B only on an offer that times out, and is off
+    // again before that offer is rolled back.
+    net.clients[b].ignore_offers = true;
+    net.offer(a, |api| api.set_direction(cam_a, Direction::SendOnly))
+        .1
+        .unwrap();
+    assert_eq!(
+        last_offer(&net, b)["payload"]["tracks"][0]["mid"],
+        section.as_str()
+    );
+    net.offer(a, |api| api.set_direction(cam_a, Direction::Inactive))
+        .1
+        .unwrap();
+    net.run_for(Duration::from_millis(10_100));
+    net.clients[b].ignore_offers = false;
+    assert_eq!(net.client(b).closed, None);
+    let session = net.client(b).session_id.clone();
+    assert_eq!(net.core.directory(&session).unwrap().len(), 0);
+
+    // The section is as B has it: inactive, and without a stream.
+    net.publish(a, MediaKind::Audio, "mic-a");
+    let sdp = offered_sdp(&last_offer(&net, b)).to_string();
+    assert_eq!(sdp_text::sections(&sdp).len(), sections + 1);
+    let idle = sdp_text::sections(&sdp)
+        .into_iter()
+        .find(|s| s.mid == section)
+        .unwrap();
+    assert_eq!(idle.direction, sdp_text::Direction::Inactive);
+    assert!(ssrcs_in(&sdp, &section).is_empty(), "{sdp}");
+
+    // The next camera takes it.
+    net.offer(a, |api| api.set_direction(cam_a, Direction::SendOnly))
+        .1
+        .unwrap();
+    let sdp = offered_sdp(&last_offer(&net, b)).to_string();
+    assert_eq!(sdp_text::sections(&sdp).len(), sections + 1);
+    assert_eq!(
+        net.client(b).directory_entry(&section).unwrap()["userId"],
+        uuid(1)
+    );
+    assert_eq!(ssrcs_in(&sdp, &section).len(), 2);
+    assert!(net.client(b).answer_results.iter().all(Result::is_ok));
+    assert_eq!(net.client(b).closed, None);
 }
 
 /// The Opus parameters of one section of a description.

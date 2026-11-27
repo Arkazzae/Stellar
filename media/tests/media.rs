@@ -415,15 +415,191 @@ fn a_withdrawn_track_stops_and_leaves_the_directory() {
         [vec![4, 2]]
     );
 
-    // A share that starts again gets a new section; sections are not reused.
+    // A share that starts again takes the section that was just freed.
     let screen_again = net.publish(a, MediaKind::Video, "share-a2");
     net.run_for(Duration::from_millis(50));
-    let new_on_b = mid_from(&net, b, 1, "video");
-    assert_ne!(new_on_b, screen_on_b);
+    assert_eq!(mid_from(&net, b, 1, "video"), screen_on_b);
     send_video(&mut net, a, screen_again, &[8, 8]);
     net.run_for(Duration::from_millis(20));
-    assert_eq!(payloads(&net, b, &new_on_b), [vec![8, 8]]);
-    assert!(payloads(&net, b, &screen_on_b).is_empty());
+    assert_eq!(payloads(&net, b, &screen_on_b), [vec![8, 8]]);
+}
+
+/// Sends one packet of a sound or a picture, whichever `kind` says.
+fn send_on(net: &mut Net, i: usize, mid: Mid, kind: MediaKind, payload: &[u8]) {
+    match kind {
+        MediaKind::Audio => net.send_audio(i, mid, payload),
+        MediaKind::Video => send_video(net, i, mid, payload),
+    }
+}
+
+/// The mid of the section that carries the stream `stream` for client `i`.
+fn mid_of_stream(net: &Net, i: usize, stream: &str) -> String {
+    net.client(i)
+        .directory
+        .iter()
+        .find(|t| t["streamId"] == stream)
+        .and_then(|t| t["mid"].as_str())
+        .unwrap_or_else(|| panic!("client {i} has no {stream}"))
+        .to_string()
+}
+
+#[test]
+fn a_withdrawn_section_carries_the_next_track_of_its_kind_whoever_publishes_it() {
+    for (kind, other) in [
+        (MediaKind::Audio, MediaKind::Video),
+        (MediaKind::Video, MediaKind::Audio),
+    ] {
+        let name = if kind == MediaKind::Audio {
+            "audio"
+        } else {
+            "video"
+        };
+        let mut net = Net::new();
+        let a = net.join(1);
+        let b = net.join(2);
+        let c = net.join(3);
+        net.publish(b, MediaKind::Audio, "mic-b");
+        let track_a = net.publish(a, kind, "stream-a");
+        net.publish(c, other, "other-c");
+        net.connect_all();
+        net.run_for(Duration::from_millis(100));
+        let on_b = mid_from(&net, b, 1, name);
+        send_on(&mut net, a, track_a, kind, &[1]);
+        net.run_for(Duration::from_millis(20));
+        assert_eq!(payloads(&net, b, &on_b), [vec![1]]);
+
+        // A stops. A track of the other kind gets a section of its own.
+        net.offer(a, |api| api.set_direction(track_a, Direction::Inactive))
+            .1
+            .unwrap();
+        net.run_for(Duration::from_millis(50));
+        assert!(
+            net.client(b)
+                .directory
+                .iter()
+                .all(|t| t["userId"] != uuid(1))
+        );
+        net.publish(c, other, "other-c2");
+        net.run_for(Duration::from_millis(50));
+        assert_ne!(mid_of_stream(&net, b, "other-c2"), on_b);
+
+        // C's track of the same kind is on A's section, which names C and its
+        // stream, and nothing of A came after the withdrawal.
+        let track_c = net.publish(c, kind, "stream-c");
+        net.run_for(Duration::from_millis(50));
+        let entry = net.client(b).directory_entry(&on_b).cloned().unwrap();
+        assert_eq!(entry["userId"], uuid(3));
+        assert_eq!(entry["streamId"], "stream-c");
+        assert_eq!(entry["kind"], name);
+        let sdp = last_offer_sdp(&net, b);
+        let section = stellarr_media::sdp_text::sections(&sdp)
+            .into_iter()
+            .find(|s| s.mid == on_b)
+            .unwrap();
+        assert_eq!(
+            section.direction,
+            stellarr_media::sdp_text::Direction::SendOnly
+        );
+        assert_eq!(section.stream_id.as_deref(), Some("stream-c"));
+        for n in 2..=4 {
+            send_on(&mut net, c, track_c, kind, &[n]);
+            net.step(Duration::from_millis(20));
+        }
+        net.run_for(Duration::from_millis(50));
+        assert_eq!(
+            payloads(&net, b, &on_b),
+            [vec![1], vec![2], vec![3], vec![4]]
+        );
+
+        // C's packets come under an SSRC of their own, numbered on without a
+        // gap from the first.
+        let received = net.client(b).received_on(&on_b);
+        assert!(
+            received[1..]
+                .iter()
+                .all(|p| p.header.ssrc != received[0].header.ssrc)
+        );
+        let sequences: Vec<u64> = received[1..].iter().map(|p| *p.seq_no).collect();
+        assert!(sequences.windows(2).all(|w| w[1] == w[0] + 1));
+        assert_eq!(net.client(b).closed, None);
+        assert!(net.client(b).answer_results.iter().all(Result::is_ok));
+        if kind == MediaKind::Video {
+            // The first packet of the new track asked its publisher for a
+            // keyframe, as on a new section.
+            assert!(
+                net.client(c)
+                    .events
+                    .iter()
+                    .any(|e| matches!(e, Event::KeyframeRequest(_)))
+            );
+        }
+    }
+}
+
+#[test]
+fn a_reused_section_carries_its_new_track_across_a_rolled_back_offer_and_a_collision() {
+    let mut net = Net::new();
+    let a = net.join(1);
+    let b = net.join(2);
+    let c = net.join(3);
+    net.publish(b, MediaKind::Audio, "mic-b");
+    net.publish(c, MediaKind::Audio, "mic-c");
+    let cam_a = net.publish(a, MediaKind::Video, "cam-a");
+    net.connect_all();
+    net.run_for(Duration::from_millis(100));
+    let section = mid_from(&net, b, 1, "video");
+    send_video(&mut net, a, cam_a, &[1]);
+    net.run_for(Duration::from_millis(20));
+    assert_eq!(payloads(&net, b, &section), [vec![1]]);
+    net.offer(a, |api| api.set_direction(cam_a, Direction::Inactive))
+        .1
+        .unwrap();
+    net.run_for(Duration::from_millis(50));
+
+    // C's camera takes the section on an offer B does not answer. It times
+    // out and is made again.
+    net.clients[b].ignore_offers = true;
+    let cam_c = net.publish(c, MediaKind::Video, "cam-c");
+    let first = net.signals_of(b, "offer").len();
+    net.run_for(Duration::from_millis(10_100));
+    let offers = net.signals_of(b, "offer");
+    assert_eq!(offers.len(), first + 1);
+    let again = &offers.last().unwrap()["payload"];
+    assert_eq!(again["tracks"].as_array().unwrap().len(), 2);
+    assert!(
+        again["tracks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t["mid"] == section.as_str() && t["userId"] == uuid(3))
+    );
+
+    // B offers its own camera before it answers: the media server rolls its
+    // offer back, answers B, and offers C's camera again.
+    net.clients[b].ignore_offers = false;
+    net.publish(b, MediaKind::Video, "cam-b");
+    net.run_for(Duration::from_millis(100));
+    let entry = net.client(b).directory_entry(&section).cloned().unwrap();
+    assert_eq!(entry["userId"], uuid(3));
+    assert_eq!(entry["streamId"], "cam-c");
+    assert!(
+        net.client(b)
+            .directory
+            .iter()
+            .all(|t| t["userId"] != uuid(1))
+    );
+    for n in 7..=9 {
+        send_video(&mut net, c, cam_c, &[n]);
+        net.step(Duration::from_millis(20));
+    }
+    net.run_for(Duration::from_millis(50));
+    // A's packet from before its withdrawal, then C's, and nothing else.
+    assert_eq!(
+        payloads(&net, b, &section),
+        [vec![1], vec![7], vec![8], vec![9]]
+    );
+    assert_eq!(net.client(b).closed, None);
+    assert!(net.client(b).answer_results.iter().all(Result::is_ok));
 }
 
 #[test]
@@ -1030,4 +1206,57 @@ fn a_receiver_is_sent_nothing_until_it_asks() {
     net.step(Duration::from_millis(20));
     assert_eq!(payloads(&net, b, &audio_b), [vec![4]]);
     assert!(payloads(&net, b, &video_b).is_empty());
+}
+
+#[test]
+fn a_reused_section_is_only_forwarded_to_a_receiver_that_asks_for_its_new_track() {
+    let mut net = Net::new();
+    let a = net.join(1);
+    let b = net.join(2);
+    let c = net.join(3);
+    let d = net.join(4);
+    net.publish(b, MediaKind::Audio, "mic-b");
+    net.publish(c, MediaKind::Audio, "mic-c");
+    net.publish(d, MediaKind::Audio, "mic-d");
+    let cam_a = net.publish(a, MediaKind::Video, "cam-a");
+    net.connect_all();
+    net.run_for(Duration::from_millis(100));
+    let on_b = mid_from(&net, b, 1, "video");
+    let session_b = net.client(b).session_id.clone();
+
+    // B asks for A's camera and nothing else; D, as always, for everything.
+    net.clients[b].subscribe_to_all = false;
+    net.core
+        .set_subscriptions(net.now, &session_b, std::slice::from_ref(&on_b))
+        .unwrap();
+    send_video(&mut net, a, cam_a, &[1]);
+    net.run_for(Duration::from_millis(20));
+    assert_eq!(payloads(&net, b, &on_b), [vec![1]]);
+
+    net.offer(a, |api| api.set_direction(cam_a, Direction::Inactive))
+        .1
+        .unwrap();
+    net.run_for(Duration::from_millis(50));
+    let cam_c = net.publish(c, MediaKind::Video, "cam-c");
+    net.run_for(Duration::from_millis(50));
+    assert_eq!(mid_from(&net, b, 3, "video"), on_b);
+
+    // B asked for the camera of A, not for the one of C: nothing arrives
+    // until it asks again. D asked for all of them.
+    for n in 2..=3 {
+        send_video(&mut net, c, cam_c, &[n]);
+        net.step(Duration::from_millis(20));
+    }
+    assert_eq!(payloads(&net, b, &on_b), [vec![1]]);
+    assert_eq!(
+        payloads(&net, d, &mid_from(&net, d, 3, "video")),
+        [vec![1], vec![2], vec![3]]
+    );
+
+    net.core
+        .set_subscriptions(net.now, &session_b, std::slice::from_ref(&on_b))
+        .unwrap();
+    send_video(&mut net, c, cam_c, &[4]);
+    net.step(Duration::from_millis(20));
+    assert_eq!(payloads(&net, b, &on_b), [vec![1], vec![4]]);
 }
