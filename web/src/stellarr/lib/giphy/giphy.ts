@@ -306,7 +306,9 @@ export async function fetchGiphyGif(
   if (!ID_PATTERN.test(id)) throw new GiphyError("giphy.badId");
 
   const response = await getFromGiphy(id, { api_key: apiKey, rating: "pg-13" }, signal);
-  if (!response.ok) throw new GiphyError("giphy.gone");
+  if (!response.ok) {
+    throw new GiphyError(response.status === 429 ? "giphy.rateLimited" : "giphy.gone");
+  }
 
   const payload = (await response.json()) as unknown;
   const gif = isRecord(payload) ? parseGiphyGif(payload["data"]) : null;

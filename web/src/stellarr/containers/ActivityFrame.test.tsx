@@ -8,6 +8,16 @@ let locale = "pl";
 vi.mock("@/state/LanguageProvider", () => ({
   useLanguage: () => ({ locale, t: (key: string) => key }),
 }));
+// A search that GIPHY answers with nothing, so the page owes its mark.
+vi.mock("@/lib/activities/gifs", () => ({
+  createActivityGifs: ({ onUse }: { onUse(): void }) => ({
+    search: async () => {
+      onUse();
+      return { items: [], offset: 0, total: 0 };
+    },
+    load: async () => Promise.reject(Object.assign(new Error("No such GIF."), { code: "notFound" })),
+  }),
+}));
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 it.each(["https://game.test/play", "/_activity/lease/index.html"])("passes live context, players and usable portrait URLs to %s", async src => {
@@ -129,6 +139,25 @@ it("plays WebRTC tiles in the parent and drops a late capture after consent is w
     if (mediaDevices) Object.defineProperty(navigator, "mediaDevices", mediaDevices);
     else Reflect.deleteProperty(navigator, "mediaDevices");
   }
+});
+
+it("shows GIPHY's mark once the activity has used GIFs, and not before", async () => {
+  render(<ActivityFrame src="https://game.test/play" title="Prompts" permissions={["media.gifs"]}
+    room={async () => ({})} onLost={vi.fn()} />);
+  const frame = screen.getByTitle<HTMLIFrameElement>("Prompts");
+  const port = { postMessage: vi.fn(), close: vi.fn(), onmessage: null as null | ((event: unknown) => void) };
+  window.dispatchEvent(Object.assign(new Event("message"), {
+    source: frame.contentWindow, origin: "https://game.test", data: "stellarr:media:v1", ports: [port],
+  }));
+  expect(screen.queryByAltText("gif.poweredBy")).toBeNull();
+
+  await act(async () => {
+    port.onmessage?.({ data: { op: "gifSearch", id: 1, query: "cat" } });
+    await vi.waitFor(() => expect(port.postMessage).toHaveBeenCalledWith(
+      { op: "reply", id: 1, value: { items: [], offset: 0, total: 0 } }, []));
+  });
+
+  expect(screen.getByAltText("gif.poweredBy")).toBeVisible();
 });
 
 it("routes installed session traffic to the hub and forwards events only to their frame", async () => {

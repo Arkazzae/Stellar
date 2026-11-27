@@ -445,6 +445,7 @@ function ActivityCard({ entry, action, unsupported, reason, busy, live, onChoose
     entry.seats === null ? null : t(`activities.seats.${pluralForm(locale, entry.seats)}`, { count: entry.seats }),
     entry.permissions.includes("media.cameraTile") ? t("activities.factCamera") : null,
     entry.permissions.includes("media.microphoneLevel") ? t("activities.factMicrophoneLevel") : null,
+    entry.permissions.includes("media.gifs") ? t("activities.factGifs") : null,
   ].filter((fact): fact is string => fact !== null);
   const art = entry.cover ?? entry.icon;
 
