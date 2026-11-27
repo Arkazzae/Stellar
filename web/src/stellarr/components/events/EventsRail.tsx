@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from "react";
+import { useId, useRef, useState, type CSSProperties } from "react";
 
 import { useLayer } from "@stellarr/ui/behavior";
 import { Icon } from "@stellarr/icons";
@@ -21,14 +21,49 @@ export interface EventsRailProps {
   onCreate?: () => void;
 }
 
+/** Where the open list stands, in the window. */
+interface ListPlace {
+  left: number;
+  top: number;
+  /** As tall as it may grow before it scrolls. */
+  maxHeight: number;
+}
+
+/** As wide as the list is, which `.list` in the stylesheet says too. */
+const LIST_WIDTH = 340;
+const LIST_MAX_HEIGHT = 520;
+/** Between the list and the rail, and the list and the window's edges. */
+const GAP = 8;
+const EDGE = 12;
+/** A list lower than this would be cramped; it moves up instead. */
+const LIST_MIN_HEIGHT = 280;
+
+/**
+ * Beside the rail, level with the row, over the room: the list does not
+ * cover the channels it was opened from. It stays inside the window,
+ * moving up when the row is too low for it to fit.
+ */
+function placeBeside(row: Element): ListPlace {
+  // The rail as a whole, so the list starts past its edge and not over it.
+  const rail = (row.closest(".rail") ?? row).getBoundingClientRect();
+  const top = row.getBoundingClientRect().top;
+  const left = Math.max(EDGE, Math.min(rail.right + GAP, window.innerWidth - LIST_WIDTH - EDGE));
+  const raised = Math.max(EDGE, Math.min(top, window.innerHeight - LIST_MIN_HEIGHT - EDGE));
+  return {
+    left,
+    top: raised,
+    maxHeight: Math.min(LIST_MAX_HEIGHT, window.innerHeight - raised - EDGE),
+  };
+}
+
 /**
  * The row over the channels: how many events are coming, or that one runs
  * now. It opens the list of them, with "Nowe" for whoever may create one.
  */
 export function EventsRail({ events, now, zone, channels = {}, onOpen, onCreate }: EventsRailProps) {
   const { t } = useLanguage();
-  /** Where the row is, while its list is open: the list hangs under it, over the room. */
-  const [open, setOpen] = useState<DOMRect | null>(null);
+  /** Where the list stands while it is open. */
+  const [open, setOpen] = useState<ListPlace | null>(null);
   const listId = useId();
   const { upcoming, live } = railSummary(events, now);
 
@@ -42,8 +77,8 @@ export function EventsRail({ events, now, zone, channels = {}, onOpen, onCreate 
           aria-expanded={open !== null}
           aria-controls={open === null ? undefined : listId}
           onClick={(click) => {
-            const row = click.currentTarget.getBoundingClientRect();
-            setOpen((current) => (current === null ? row : null));
+            const place = placeBeside(click.currentTarget);
+            setOpen((current) => (current === null ? place : null));
           }}
         >
           <span className="glyph" aria-hidden="true">
@@ -62,7 +97,7 @@ export function EventsRail({ events, now, zone, channels = {}, onOpen, onCreate 
       {open === null ? null : (
         <EventsList
           id={listId}
-          anchor={open}
+          place={open}
           events={events}
           now={now}
           zone={zone}
@@ -88,14 +123,14 @@ export function EventsRail({ events, now, zone, channels = {}, onOpen, onCreate 
 
 interface EventsListProps extends Omit<EventsRailProps, "channels"> {
   id: string;
-  /** The row it opened from. */
-  anchor: DOMRect;
+  /** Where it stands, beside the row it opened from. */
+  place: ListPlace;
   channels: Readonly<Record<string, EventChannelNow>>;
   onClose(): void;
 }
 
 /** The coming and running events, soonest first; ended ones are left out. */
-function EventsList({ id, anchor, events, now, zone, channels, onOpen, onCreate, onClose }: EventsListProps) {
+function EventsList({ id, place, events, now, zone, channels, onOpen, onCreate, onClose }: EventsListProps) {
   const { t, locale } = useLanguage();
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
@@ -121,8 +156,8 @@ function EventsList({ id, anchor, events, now, zone, channels, onOpen, onCreate,
       ref={panel}
       id={id}
       className={css.list}
-      // Fixed, so the rail's scrolling does not clip a list wider than the rail.
-      style={{ left: anchor.left, top: anchor.bottom + 4 }}
+      // Fixed, so the rail's scrolling does not clip a list that stands outside it.
+      style={{ left: place.left, top: place.top, "--list-max-height": `${place.maxHeight}px` } as CSSProperties}
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
