@@ -41,7 +41,7 @@ Run `node smoke.mjs udp tcp` against a freshly built SFU to verify direct media 
 
 | ID | Verified behavior |
 | --- | --- |
-| `layers` | Two viewers subscribe to one simulcast camera. One switches 180p → 720p → 180p on the same MID while the other keeps decoding 180p. Both continue receiving audio. |
+| `layers` | Two viewers subscribe to one simulcast camera. One switches 180p → 720p → 180p on the same MID while the other keeps decoding 180p. Both continue receiving audio. The default uses VP8. Run `layers-h264`, `layers-vp9` and `layers-av1` to check the other codecs explicitly. |
 | `a` | Two-way audio forwarding without self-echo; audio-level RTP header extension delivery |
 | `b` | Immediate PLI keyframe request when a new participant joins an already-running camera stream |
 | `c` | Late third participant receives all four existing tracks attributed to the right `userId`, with directory delivered before `ontrack` |

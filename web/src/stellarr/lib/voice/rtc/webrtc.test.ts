@@ -1093,8 +1093,8 @@ describe("publishing on the one connection", () => {
       direction: "sendonly",
       streams: [voice],
       sendEncodings: [
-        expect.objectContaining({ rid: "thumb", maxBitrate: 200_000, maxFramerate: 15, scaleResolutionDownBy: 4 }),
-        expect.objectContaining({ rid: "main", maxBitrate: 1_500_000 }),
+        expect.objectContaining({ rid: "thumb", scalabilityMode: "L1T1", maxBitrate: 200_000, maxFramerate: 15, scaleResolutionDownBy: 4 }),
+        expect.objectContaining({ rid: "main", scalabilityMode: "L1T1", maxBitrate: 1_500_000 }),
       ],
     });
     await vi.waitFor(() => expect(realtime.mediaOfKind("offer")).toHaveLength(2));

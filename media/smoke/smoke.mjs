@@ -654,13 +654,13 @@ async function verifyDirectMedia(s, protocol, withVideo = false) {
   return { summary: `${protocol.toUpperCase()} ${summarise(results)}`, results };
 }
 
-function publishLayers(client) {
+function publishLayers(client, codec = "VP8") {
   return client.publish("camera", "video", {
     busy: { rgb: client.identity.rgb, width: 1280, height: 720, block: 16 },
-    codec: "VP8",
+    codec,
     encodings: [
-      { rid: "thumb", scaleResolutionDownBy: 4, maxFramerate: 15, maxBitrate: 200_000 },
-      { rid: "main", scaleResolutionDownBy: 1, maxFramerate: 30, maxBitrate: 1_500_000 },
+      { rid: "thumb", scalabilityMode: "L1T1", scaleResolutionDownBy: 4, maxFramerate: 15, maxBitrate: 200_000 },
+      { rid: "main", scalabilityMode: "L1T1", scaleResolutionDownBy: 1, maxFramerate: 30, maxBitrate: 1_500_000 },
     ],
   });
 }
@@ -791,9 +791,12 @@ async function measureGallery(s, count, layered = false) {
 }
 
 const SCENARIOS = {
-  async layers(s) {
+  "layers-h264": s => SCENARIOS.layers(s, "H264"),
+  "layers-vp9": s => SCENARIOS.layers(s, "VP9"),
+  "layers-av1": s => SCENARIOS.layers(s, "AV1"),
+  async layers(s, codec = "VP8") {
     const a = await s.join("A");
-    await publishLayers(a);
+    await publishLayers(a, codec);
     const b = await s.join("B");
     const c = await s.join("C");
     const clients = [a, b, c];
@@ -809,7 +812,7 @@ const SCENARIOS = {
       await waitFor(`${view.client.name} decoding ${height}p with uninterrupted audio`, async () => {
         const stats = await view.client.stats();
         const picture = stats.inbound[view.mid];
-        return picture?.frameHeight === height && picture.framesDecoded >= (start.inbound[view.mid]?.framesDecoded ?? 0) + 3 &&
+        return picture?.codec?.startsWith(`video/${codec}`) && picture.frameHeight === height && picture.framesDecoded >= (start.inbound[view.mid]?.framesDecoded ?? 0) + 3 &&
           view.audio.every(mid => stats.inbound[mid]?.packetsReceived > (start.inbound[mid]?.packetsReceived ?? 0));
       }, 20_000).catch(async error => {
         const source = (await a.stats()).encodings;
@@ -2424,7 +2427,8 @@ async function main() {
   const ids = Object.keys(SCENARIOS)
     .sort()
     .filter((id) =>
-      wanted.length > 0 ? wanted.includes(id) : id !== "gallery" && !(e2ee && id === "layers") && !id.startsWith("x") && !(e2ee && id === "i"),
+      wanted.length > 0 ? wanted.includes(id) : id !== "gallery" && !id.startsWith("layers-")
+        && !(e2ee && id === "layers") && !id.startsWith("x") && !(e2ee && id === "i"),
     );
   const out =
     process.env.STELLARR_SMOKE_OUT ?? mkdtempSync(join(tmpdir(), "stellarr-media-smoke-"));

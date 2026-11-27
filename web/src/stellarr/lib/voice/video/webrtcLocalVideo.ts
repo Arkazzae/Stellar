@@ -140,10 +140,12 @@ export class LocalCamera {
     if (!capture || link.cameraSender) return;
     try {
       const quality = this.env.settings().cameraQuality;
-      link.cameraSender = addSender(link, capture.video, this.env.voiceStream(), [
-        { rid: "thumb", ...thumbnailEncoding(capture.video, quality) },
-        { rid: "main", ...cameraEncoding(quality), scaleResolutionDownBy: 1 },
-      ]);
+      // Each RID needs an independent spatial stream even for SVC-capable codecs.
+      const encodings = [
+        { rid: "thumb", scalabilityMode: "L1T1", ...thumbnailEncoding(capture.video, quality) },
+        { rid: "main", scalabilityMode: "L1T1", ...cameraEncoding(quality), scaleResolutionDownBy: 1 },
+      ];
+      link.cameraSender = addSender(link, capture.video, this.env.voiceStream(), encodings);
       void tuneCameraSender(link.cameraSender, this.env.settings().cameraQuality);
     } catch {
       // A closing connection cannot take it; the rebuilt one will.
