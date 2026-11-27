@@ -89,6 +89,7 @@ export class TrackDirectory {
    * order while they fit. The directory itself keeps them all.
    */
   subscribedMids(preferences: VoiceReceivePreferences, held: (person: Participant) => boolean = () => false): string[] {
+    const { cameras } = preferences;
     const ranked: { rank: number; mid: string }[] = [];
     for (const entry of this.entries.values()) {
       const person = this.env.people.get(entry.userId);
@@ -100,7 +101,7 @@ export class TrackDirectory {
         if (watched) ranked.push({ rank: entry.kind === "video" ? 1 : 2, mid: entry.mid });
       } else if (entry.kind === "audio") {
         ranked.push({ rank: 0, mid: entry.mid });
-      } else if (preferences.cameras) {
+      } else if (cameras === true || (cameras !== false && cameras.has(entry.userId))) {
         ranked.push({ rank: 3, mid: entry.mid });
       }
     }

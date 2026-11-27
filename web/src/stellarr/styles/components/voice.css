@@ -453,7 +453,7 @@
     aspect-ratio:16 / 9;border-radius:var(--radius-md);
   }
   .voice-stage[data-layout="focus"] .tile:not(.is-focus) .t-name{font-size:var(--text-12)}
-  /* Hidden, not removed: a picture in the strip keeps playing when it returns. */
+  /* Keep the tiles mounted so showing the strip preserves their controls. */
   .voice-stage[data-layout="focus"][data-strip="hidden"] .tile:not(.is-focus){display:none}
 
   /* A tile's own click: the whole tile, under its menu and its controls. */

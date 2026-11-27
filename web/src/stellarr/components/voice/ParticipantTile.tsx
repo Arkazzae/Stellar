@@ -1,4 +1,4 @@
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useCallback, useContext, useEffect, useRef, useSyncExternalStore } from "react";
 
 import { Icon } from "@stellarr/icons";
 import { ActivityIcon } from "@/components/activities/ActivityIcon";
@@ -8,6 +8,8 @@ import { UserMenu } from "@/components/roster/UserMenu";
 import type { OpenProfile, PersonVM } from "@/components/view-models";
 import type { SoundboardLive, SoundboardPlay } from "@/ports";
 import { useLanguage } from "@/state/LanguageProvider";
+
+import { CameraTileContext } from "./useCameraTiles";
 
 export interface ParticipantTileProps {
   person: PersonVM;
@@ -90,6 +92,10 @@ export function ParticipantTile({
   onFocus,
   activity,
 }: ParticipantTileProps) {
+  const observe = useContext(CameraTileContext);
+  const cameraTile = useCallback((tile: HTMLDivElement | null) => {
+    if (tile && !local) return observe?.(tile, person.id);
+  }, [observe, local, person.id]);
   const video = useRef<HTMLVideoElement>(null);
   const menu = useContextMenu();
   const { t } = useLanguage();
@@ -139,7 +145,7 @@ export function ParticipantTile({
     .join(" ");
 
   return (
-    <div className={classes} onContextMenu={hasMenu ? menu.onContextMenu : undefined}>
+    <div ref={cameraTile} className={classes} onContextMenu={hasMenu ? menu.onContextMenu : undefined}>
       {hasMenu && menu.at !== null ? (
         <UserMenu
           at={menu.at}

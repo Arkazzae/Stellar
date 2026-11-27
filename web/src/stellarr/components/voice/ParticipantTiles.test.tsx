@@ -1,10 +1,11 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import type { PersonVM } from "@/components/view-models";
 import { renderWithConfirm } from "@/test/confirm";
 
+import { CameraTileContext, useCameraTiles } from "./useCameraTiles";
 import { ParticipantTiles } from "./ParticipantTiles";
 
 const ada: PersonVM = {
@@ -22,6 +23,53 @@ const ilya: PersonVM = {
 };
 
 describe("ParticipantTiles", () => {
+  it("requests each visible remote camera, including before its first frame", () => {
+    const changes = new Map<Element, (shown: boolean) => void>();
+    vi.stubGlobal("IntersectionObserver", class {
+      constructor(private notify: (entries: Pick<IntersectionObserverEntry, "isIntersecting" | "intersectionRatio">[]) => void) {}
+      observe(tile: Element) {
+        changes.set(tile, shown => this.notify([{ isIntersecting: shown, intersectionRatio: Number(shown) }]));
+      }
+      disconnect() {}
+    });
+    function Gallery({ duplicate }: { duplicate: boolean }) {
+      const { cameras, observe } = useCameraTiles();
+      return <CameraTileContext.Provider value={observe}>
+        <output>{[...cameras].join(",")}</output>
+        <ParticipantTiles people={[ada, ilya]} localPersonId={ada.id} />
+        {duplicate && <ParticipantTiles people={[ilya]} />}
+      </CameraTileContext.Provider>;
+    }
+    try {
+      const view = render(<Gallery duplicate />);
+      const [first, second] = screen.getAllByText("Ilya").map(label => changes.get(label.closest(".tile")!)!);
+      const cameraIds = view.container.querySelector("output");
+      expect(changes.size).toBe(2);
+      expect(cameraIds).toBeEmptyDOMElement();
+      act(() => { first!(true); second!(true); });
+      expect(cameraIds).toHaveTextContent("ilya");
+      act(() => first!(false));
+      expect(cameraIds).toHaveTextContent("ilya");
+      view.rerender(<Gallery duplicate={false} />);
+      expect(cameraIds).toBeEmptyDOMElement();
+      act(() => first!(true));
+      expect(cameraIds).toHaveTextContent("ilya");
+      const hidden = vi.spyOn(document, "hidden", "get");
+      try {
+        hidden.mockReturnValue(true);
+        fireEvent(document, new Event("visibilitychange"));
+        expect(cameraIds).toBeEmptyDOMElement();
+        hidden.mockReturnValue(false);
+        fireEvent(document, new Event("visibilitychange"));
+        expect(cameraIds).toHaveTextContent("ilya");
+      } finally {
+        hidden.mockRestore();
+      }
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("renders a labelled, muted local camera preview", () => {
     const stream = { id: "camera-ada" } as MediaStream;
 
