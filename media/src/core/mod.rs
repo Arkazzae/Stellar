@@ -7,6 +7,7 @@
 //! is what lets the tests drive whole conversations, ICE and DTLS included,
 //! deterministically and faster than real time.
 
+mod camera;
 mod downlink;
 #[cfg(test)]
 mod fault;
@@ -37,9 +38,17 @@ use crate::events::{CloseReason, EventBody, EventLog, Poll, SignalKind};
 use crate::sdp_text;
 use crate::stun;
 
+use camera::Layer;
 use downlink::{INITIAL_ESTIMATE_BPS, Wanted};
 use limits::TrackLimit;
 use session::{Counter, OutState, PendingOffer, PtCache, Published, RoomKey, Session, TrackKey};
+
+struct ReceiverChoice {
+    section: usize,
+    track: Wanted,
+    layer: Layer,
+    upgrade: u64,
+}
 
 /// The largest SDP of one signal, in either direction.
 pub const MAX_SDP_BYTES: usize = 128 * 1024;
@@ -175,6 +184,7 @@ pub struct ResetReply {
 pub struct Created {
     pub session_id: String,
     pub epoch: String,
+    pub camera_simulcast: bool,
 }
 
 /// One entry of a session's directory.
@@ -864,6 +874,7 @@ impl Core {
 
         self.run_work(now);
         Ok(Created {
+            camera_simulcast: true,
             session_id: id,
             epoch: self.epoch.clone(),
         })
@@ -896,6 +907,16 @@ impl Core {
         session_id: &str,
         mids: &[String],
     ) -> Result<(), ApiError> {
+        self.set_camera_subscriptions(now, session_id, mids, &[])
+    }
+
+    pub fn set_camera_subscriptions(
+        &mut self,
+        now: Instant,
+        session_id: &str,
+        mids: &[String],
+        thumbnails: &[String],
+    ) -> Result<(), ApiError> {
         let key = *self.by_id.get(session_id).ok_or(ApiError::UnknownSession)?;
         if mids.len() > MAX_SUBSCRIPTIONS {
             return Err(ApiError::InvalidRequest(format!(
@@ -917,11 +938,19 @@ impl Core {
             }
         }
 
+        let small: HashSet<_> = thumbnails.iter().cloned().collect();
+        if small.len() != thumbnails.len() || !small.is_subset(&next) {
+            return Err(ApiError::InvalidRequest(
+                "thumbnailMids must be a unique subset of mids.".into(),
+            ));
+        }
+
         let s = self
             .sessions
             .get_mut(&key)
             .expect("the session was looked up");
         let before = s.forwarded_mids();
+        s.thumbnail_mids = small;
         s.subscriptions = next;
         s.subscription_order = mids.to_vec();
         s.downlink.dirty = true;
@@ -934,32 +963,67 @@ impl Core {
 
     /// What receiver `key` asks for that is forwarding, in its order, and
     /// what each costs now.
-    fn wanted_of(&self, now: Instant, key: SessionKey) -> Vec<Wanted> {
+    fn wanted_of(&self, now: Instant, key: SessionKey) -> Vec<ReceiverChoice> {
         let Some(s) = self.sessions.get(&key) else {
             return Vec::new();
         };
-        let live: HashMap<Mid, &session::OutSection> = s
+        let live: HashMap<Mid, usize> = s
             .outs
             .iter()
-            .filter_map(|o| match o.state {
-                OutState::Live(mid) => Some((mid, o)),
+            .enumerate()
+            .filter_map(|(i, o)| match o.state {
+                OutState::Live(mid) => Some((mid, i)),
                 _ => None,
             })
             .collect();
+        let mut remaining = s.downlink.estimate().unwrap_or(u64::MAX);
         s.subscription_order
             .iter()
             .filter_map(|wanted| {
                 let mid = Mid::from(wanted.as_str());
-                let out = live.get(&mid)?;
-                let cost = self
+                let section = *live.get(&mid)?;
+                let out = &s.outs[section];
+                let track = self
                     .sessions
-                    .get(&out.source.session)
-                    .and_then(|p| p.published.iter().find(|t| t.mid == out.source.mid))
-                    .map_or(0, |t| t.meter.bps(now));
-                Some(Wanted {
-                    mid,
-                    kind: out.kind,
-                    cost,
+                    .get(&out.source.session)?
+                    .published
+                    .iter()
+                    .find(|t| t.mid == out.source.mid)?;
+                let main = track.meter.bps(now);
+                let thumbnail = track.thumbnail_meter.bps(now);
+                let small_tile = s.thumbnail_mids.contains(wanted);
+                let threshold = match out.camera.wanted {
+                    Layer::Main => remaining.saturating_add(remaining / 10),
+                    Layer::Thumbnail => remaining.saturating_sub(remaining / 7),
+                };
+                // Some senders suspend one RID under encoder or uplink pressure.
+                // Give a new publisher one measurement window to start its thumbnail.
+                let small = track.layered
+                    && if thumbnail == 0 && main > 0 && track.meter.has_full_window(now) {
+                        false
+                    } else {
+                        small_tile || (thumbnail > 0 && (main == 0 || main > threshold))
+                    };
+                let (layer, cost) = if small {
+                    (Layer::Thumbnail, thumbnail)
+                } else {
+                    (Layer::Main, main)
+                };
+                remaining = remaining.saturating_sub(cost);
+                let upgrade = if small && !small_tile {
+                    main.saturating_sub(cost)
+                } else {
+                    0
+                };
+                Some(ReceiverChoice {
+                    section,
+                    track: Wanted {
+                        mid,
+                        kind: out.kind,
+                        cost,
+                    },
+                    layer,
+                    upgrade,
                 })
             })
             .collect()
@@ -981,11 +1045,24 @@ impl Core {
     /// keyframe through the rate limit. A change of what is held back sends
     /// the receiver its directory.
     fn allocate_from(&mut self, now: Instant, key: SessionKey, before: HashSet<Mid>) {
-        let wanted = self.wanted_of(now, key);
+        let selections = self.wanted_of(now, key);
         let (mut ctx, sessions) = self.ctx();
         let Some(s) = sessions.get_mut(&key) else {
             return;
         };
+        let mut wanted = Vec::with_capacity(selections.len());
+        let mut next_upgrade = None;
+        for choice in selections {
+            let out = &mut s.outs[choice.section];
+            if out.camera.wanted != choice.layer {
+                out.camera.wanted = choice.layer;
+                s.downlink.dirty = true;
+            }
+            if choice.upgrade > 0 {
+                next_upgrade.get_or_insert(choice.upgrade);
+            }
+            wanted.push(choice.track);
+        }
         s.allocation_queued = false;
         let has_video = wanted.iter().any(|w| w.kind == MediaKind::Video);
         let changed = if s.downlink.needs_allocation(&wanted) {
@@ -999,6 +1076,9 @@ impl Core {
                 .collect();
             s.downlink.retain(|mid| live.contains(&mid));
             let changed = s.downlink.allocate(now, &wanted);
+            if s.downlink.held.is_empty() {
+                s.downlink.allocation.desired += next_upgrade.unwrap_or(0);
+            }
             let desired = s.downlink.allocation.desired;
             let minimum = s.downlink.allocation.minimum;
             // The estimator probes for what is wanted next, and while a
@@ -1061,6 +1141,7 @@ impl Core {
             };
             if before.contains(&mid) && !after.contains(&mid) {
                 out.rewrite.pause();
+                out.camera.pause();
             } else if !before.contains(&mid)
                 && after.contains(&mid)
                 && out.started
@@ -1446,8 +1527,16 @@ impl Core {
             let media = s.rtc.media(mid);
             let sending = media.is_some_and(|m| m.direction().is_receiving() && !m.disabled());
             let kind = media.map_or(MediaKind::Audio, |m| m.kind());
+            let layered = kind == MediaKind::Video
+                && media.is_some_and(|m| {
+                    matches!(m.rids_rx(), str0m::media::Rids::Specific(rids)
+                if rids.contains(&"thumb".into()) && rids.contains(&"main".into()))
+                });
             let stream_id = section.stream_id.clone().unwrap_or_default();
 
+            if let Some(track) = s.published_mut(mid) {
+                track.layered = layered;
+            }
             match (s.published_mut(mid), sending) {
                 (None, true) => {
                     s.published.push(Published {
@@ -1456,6 +1545,8 @@ impl Core {
                         stream_id,
                         keyframe: Default::default(),
                         meter: Default::default(),
+                        layered,
+                        thumbnail_meter: Default::default(),
                         limit: TrackLimit::new(kind),
                     });
                     added.push((mid, kind));
@@ -1474,6 +1565,7 @@ impl Core {
             }
         }
         s.published.retain(|t| !withdrawn.contains(&t.mid));
+        s.ssrc_mids.clear();
         let room = s.room;
         let others = self
             .rooms
@@ -2200,13 +2292,14 @@ impl Core {
 
         let sent = guard(|| {
             let mut api = p.rtc.direct_api();
-            match api.stream_rx_by_mid(mid, None) {
-                Some(stream) => {
+            let mut sent = false;
+            for rid in [None, Some("thumb".into()), Some("main".into())] {
+                if let Some(stream) = api.stream_rx_by_mid(mid, rid) {
                     stream.request_keyframe(kind);
-                    true
+                    sent = true;
                 }
-                None => false,
             }
+            sent
         });
         match sent {
             Ok(true) => {
@@ -2250,7 +2343,7 @@ impl Core {
                 ctx.drain(publisher, now);
             }
         }
-        let Some(mid) = mid else {
+        let Some((mid, layer)) = mid else {
             return;
         };
         let Some(publisher) = self.sessions.get_mut(&from) else {
@@ -2272,7 +2365,15 @@ impl Core {
             }
             return;
         }
-        track.meter.record(now, packet.payload.len());
+        let layer = layer.filter(|_| track.layered);
+        if track.layered && layer.is_none() {
+            return;
+        }
+        if layer == Some(Layer::Thumbnail) {
+            track.thumbnail_meter.record(now, packet.payload.len());
+        } else {
+            track.meter.record(now, packet.payload.len());
+        }
         let kind = track.kind;
         let Some(params) = publisher
             .rtc
@@ -2287,6 +2388,8 @@ impl Core {
         let room = publisher.room;
         let source = TrackKey { session: from, mid };
 
+        let keyframe =
+            layer.is_some() && camera::starts_keyframe(params.spec().codec, &packet.payload);
         let mut starts = false;
         let Core {
             sessions,
@@ -2318,6 +2421,8 @@ impl Core {
                 kind,
                 params,
                 generation_in,
+                layer,
+                keyframe,
                 packet,
                 now,
             );
@@ -2421,7 +2526,7 @@ impl Core {
 /// The mid of the section an incoming packet belongs to, and whether str0m
 /// had to be asked. str0m maps SSRCs to mids itself; the answer is cached
 /// because a packet does not always carry the mid header extension.
-fn mid_for_ssrc(s: &mut Session, packet: &RtpPacket) -> (Option<Mid>, bool) {
+fn mid_for_ssrc(s: &mut Session, packet: &RtpPacket) -> (Option<(Mid, Option<Layer>)>, bool) {
     let ssrc = packet.header.ssrc;
     if let Some((_, mid)) = s.ssrc_mids.iter().find(|(x, _)| *x == ssrc) {
         return (Some(*mid), false);
@@ -2430,7 +2535,7 @@ fn mid_for_ssrc(s: &mut Session, packet: &RtpPacket) -> (Option<Mid>, bool) {
         s.rtc
             .direct_api()
             .stream_rx(&ssrc)
-            .map(|stream| stream.mid())
+            .map(|stream| (stream.mid(), stream.rid().and_then(Layer::from_rid)))
     })
     .ok()
     .flatten() else {
@@ -2453,6 +2558,8 @@ fn forward_to(
     kind: MediaKind,
     params: PayloadParams,
     generation_in: u64,
+    layer: Option<Layer>,
+    keyframe: bool,
     packet: &RtpPacket,
     now: Instant,
 ) -> bool {
@@ -2463,7 +2570,9 @@ fn forward_to(
         return false;
     };
     if !s.forwards(mid) {
-        s.outs[idx].rewrite.skip(packet.header.ssrc, *packet.seq_no);
+        if layer.is_none() || layer == Some(s.outs[idx].camera.wanted) {
+            s.outs[idx].rewrite.skip(packet.header.ssrc, *packet.seq_no);
+        }
         return false;
     }
     if !s.rtc.is_connected() {
@@ -2477,6 +2586,12 @@ fn forward_to(
     }
 
     let out = &mut s.outs[idx];
+    if let Some(layer) = layer {
+        let (forward, request) = out.camera.accepts(layer, keyframe, now);
+        if !forward {
+            return request;
+        }
+    }
     let pt = match out.pt_cache {
         Some(c)
             if c.pt_in == params.pt()

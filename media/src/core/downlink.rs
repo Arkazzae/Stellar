@@ -146,6 +146,11 @@ impl RateMeter {
         self.current = Some(start + bucket * steps as u32);
     }
 
+    pub fn has_full_window(&self, now: Instant) -> bool {
+        self.first
+            .is_some_and(|first| now.saturating_duration_since(first) >= METER_WINDOW)
+    }
+
     /// Bits per second over the buckets that still fall in the window, or
     /// over the time since the first packet when that is shorter.
     pub fn bps(&self, now: Instant) -> u64 {
