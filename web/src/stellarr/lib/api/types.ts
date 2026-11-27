@@ -180,6 +180,7 @@ export const SERVER_PERMISSION_VALUES = [
   "sendMessages",
   "attachFiles",
   "addReactions",
+  "mentionEveryone",
   "connect",
   "createInvite",
   "viewChannel",
@@ -392,6 +393,14 @@ export interface Message {
   poll?: Poll;
   /** The event this message announces, as it was when the message was read. */
   event?: ServerEvent;
+  /**
+   * Set when the message calls on everyone who sees its channel. The server
+   * stamps it when an author who may do so posts `@everyone` or `@wszyscy`;
+   * anybody can type the word, so only the stamp highlights or rings.
+   */
+  mentionsEveryone?: true;
+  /** The same for `@here` or `@obecni`: those who were online. */
+  mentionsHere?: true;
   /**
    * Direct messages only: the end-to-end encrypted body, with `content` empty.
    * The friends adapter decrypts it and takes this field off, so nothing above

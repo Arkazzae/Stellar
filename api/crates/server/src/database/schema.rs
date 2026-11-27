@@ -23,10 +23,52 @@ const IMPLICIT_TABLE: &str = "CREATE TABLE sqlite_sequence(name,seq);\n";
 /// run; whatever writes data later has to write what they would have.
 const ONE_TIME_STEPS: [&str; 2] = ["ordinary-permissions", "view-channel"];
 
+/// One schema change. Every step has to be able to run again on a file that
+/// already has it: a file at version zero may have been brought up before, so
+/// statements say `IF NOT EXISTS` or change nothing the second time. SQLite
+/// cannot add a column only when it is missing, so a column is looked for
+/// first.
+enum Step {
+    Sql(&'static str),
+    /// A column of a table the file already has, and what goes with it.
+    Column {
+        table: &'static str,
+        column: &'static str,
+        definition: &'static str,
+        then: &'static str,
+    },
+}
+
+impl Step {
+    fn run(&self, connection: &Connection) -> rusqlite::Result<()> {
+        match self {
+            Step::Sql(sql) => connection.execute_batch(sql),
+            Step::Column {
+                table,
+                column,
+                definition,
+                then,
+            } => {
+                let present: bool = connection.query_row(
+                    "SELECT EXISTS (SELECT 1 FROM pragma_table_info(?1) WHERE \"name\" = ?2)",
+                    [table, column],
+                    |row| row.get(0),
+                )?;
+                if !present {
+                    connection.execute_batch(&format!(
+                        "ALTER TABLE \"{table}\" ADD COLUMN \"{column}\" {definition};"
+                    ))?;
+                }
+                connection.execute_batch(then)
+            }
+        }
+    }
+}
+
 /// Append each new schema change here. Version zero includes installations
 /// that already have some or all of the original additive tables.
-const MIGRATIONS: &[&str] = &[
-    concat!(
+const MIGRATIONS: &[Step] = &[
+    Step::Sql(concat!(
         include_str!("../discord_import/jobs.sql"),
         "\n",
         include_str!("../link_previews/imported.sql"),
@@ -34,20 +76,33 @@ const MIGRATIONS: &[&str] = &[
         include_str!("upload_limits.sql"),
         "\n",
         include_str!("../activities/schema.sql"),
-    ),
-    include_str!("../encryption/key_backups.sql"),
-    "CREATE TABLE IF NOT EXISTS AccountBoundEpochs (
+    )),
+    Step::Sql(include_str!("../encryption/key_backups.sql")),
+    Step::Sql(
+        "CREATE TABLE IF NOT EXISTS AccountBoundEpochs (
         EpochId TEXT PRIMARY KEY REFERENCES EncryptionEpochs(Id) ON DELETE CASCADE
     );",
-    "CREATE TABLE IF NOT EXISTS CodeRecoveryAccounts (
+    ),
+    Step::Sql(
+        "CREATE TABLE IF NOT EXISTS CodeRecoveryAccounts (
         UserId TEXT PRIMARY KEY REFERENCES Users(Id) ON DELETE CASCADE,
         ArchivedKeyId TEXT
     ); CREATE TABLE IF NOT EXISTS RetiredPinAccounts (UserId TEXT PRIMARY KEY);
     CREATE TABLE IF NOT EXISTS RecoveryCodeUpgradeScrub (Pending INTEGER);",
-    include_str!("realtime_changes.sql"),
-    include_str!("../scheduled/schema.sql"),
-    include_str!("../polls/schema.sql"),
-    include_str!("../server_events/schema.sql"),
+    ),
+    Step::Sql(include_str!("realtime_changes.sql")),
+    Step::Sql(include_str!("../scheduled/schema.sql")),
+    Step::Sql(include_str!("../polls/schema.sql")),
+    Step::Sql(include_str!("../server_events/schema.sql")),
+    // The groups a message calls on, as bits (1 everyone, 2 those online),
+    // stamped by the server when an author who may call on them posts it;
+    // see `messages::mentions`.
+    Step::Column {
+        table: "Messages",
+        column: "GroupMention",
+        definition: "INTEGER NOT NULL DEFAULT 0",
+        then: include_str!("../messages/group_mentions.sql"),
+    },
 ];
 
 /// Sets the journal mode, which the database file remembers, and gives an
@@ -92,8 +147,8 @@ pub fn prepare(connection: &mut Connection) -> Result<(), DbError> {
         }
     }
     if !pending.is_empty() {
-        for sql in pending {
-            transaction.execute_batch(sql)?;
+        for step in pending {
+            step.run(&transaction)?;
         }
         transaction.pragma_update(None, "user_version", MIGRATIONS.len() as i64)?;
     }

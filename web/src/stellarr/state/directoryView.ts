@@ -54,6 +54,12 @@ export interface DirectoryView {
    * override can say otherwise, and taking one's own reaction back needs nothing.
    */
   canAddReactions: boolean;
+  /**
+   * May call on a channel's whole audience with `@everyone` or `@here`,
+   * server-wide. The server decides per channel, where an override can say
+   * otherwise; this only decides whether the composer offers the words.
+   */
+  canMentionEveryone: boolean;
   canModerateMembers: boolean;
   canManageBans: boolean;
   /** May create the server's events. */
@@ -294,6 +300,7 @@ export function createDirectoryViewDeriver(): DirectoryViewDeriver {
       canManageChannels: permissions.includes("manageChannels"),
       canManageMessages: permissions.includes("manageMessages"),
       canAddReactions: permissions.includes("addReactions"),
+      canMentionEveryone: permissions.includes("mentionEveryone"),
       canModerateMembers: permissions.includes("moderateMembers"),
       canManageBans: permissions.includes("manageBans"),
       canCreateEvents: permissions.includes("createEvents"),

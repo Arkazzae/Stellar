@@ -269,6 +269,33 @@ impl World {
         id
     }
 
+    /// A message in the channel stamped as calling on `groups`, with the
+    /// owed notices of those it names and of those its groups alone reach.
+    pub async fn group_mention(
+        &self,
+        author: Id,
+        content: &str,
+        groups: i64,
+        named: &[Id],
+        grouped: &[Id],
+    ) -> Id {
+        let (id, channel) = (Id::random(), self.channel);
+        let content = content.to_string();
+        let (named, grouped) = (named.to_vec(), grouped.to_vec());
+        self.write(move |tx| {
+            let now = Timestamp::now();
+            tx.execute(
+                "INSERT INTO \"Messages\" (\"Id\", \"ChannelId\", \"AuthorId\", \"IsSystem\", \"Content\", \"CreatedAt\", \"GroupMention\")
+                 VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6)",
+                params![id, channel, author, content, now, groups],
+            )?;
+            crate::delivery::outbox::enqueue_mentions(tx, id, named, now)?;
+            crate::delivery::outbox::enqueue_group_mentions(tx, id, grouped, now)
+        })
+        .await;
+        id
+    }
+
     /// A conversation of two people, a message of the first, and the notice
     /// the second is owed.
     pub async fn direct_message(&self, author: Id, peer: Id) -> (Id, Id) {

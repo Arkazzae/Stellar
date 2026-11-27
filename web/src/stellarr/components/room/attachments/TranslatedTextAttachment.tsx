@@ -5,6 +5,7 @@ import { type InterfaceLocale, type TranslationTargetLanguage, type Translator }
 import { documentLocale, translateForDocument } from "@/i18n/defaultLocale";
 import { useTranslatedContent } from "@/lib/chatTranslation/useTranslatedContent";
 
+import type { GroupMention } from "@/lib/messages/groupMentions";
 import { inlineSource } from "@/lib/messages/inline";
 import {
   inlineDescendants,
@@ -38,8 +39,8 @@ function isTranslatable(text: string): boolean {
 }
 
 /**
- * Parses the translation with the mentions and emoji of the original, so they
- * stay resolved, and keeps the "(edited)" mark the translator never saw.
+ * Parses the translation with the mentions, groups and emoji of the original,
+ * so they stay resolved, and keeps the "(edited)" mark the translator never saw.
  */
 function translatedNodesOf(
   nodes: readonly InlineNode[],
@@ -48,8 +49,10 @@ function translatedNodesOf(
   const descendants = inlineDescendants(nodes);
   const emoji = new Map<string, string>();
   const mentions = new Map<string, MentionTarget>();
+  const groups = new Set<GroupMention>();
   for (const node of descendants) {
     if (node.kind === "emoji") emoji.set(node.shortcode, node.src);
+    if (node.kind === "group-mention") groups.add(node.group);
     if (node.kind === "mention") {
       mentions.set(node.username.toLocaleLowerCase(), {
         userId: node.userId,
@@ -60,11 +63,13 @@ function translatedNodesOf(
     }
   }
 
-  // Only the mentions and emoji the original resolved can resolve again, so
-  // an escaped `\\@name` written back as `@name` cannot start calling anyone.
+  // Only the mentions, groups and emoji the original resolved can resolve
+  // again, so an escaped `\\@name` written back as `@name` cannot start
+  // calling anyone.
   const parsed = parseInline(translated, {
     ...(emoji.size > 0 ? { emoji } : {}),
     ...(mentions.size > 0 ? { mentions } : {}),
+    ...(groups.size > 0 ? { groups } : {}),
   });
   const edit = nodes.find((node) => node.kind === "edited");
   return edit === undefined ? parsed : [...parsed, edit];

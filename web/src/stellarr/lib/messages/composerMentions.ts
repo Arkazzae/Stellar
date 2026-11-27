@@ -1,12 +1,17 @@
 import type { InterfaceLocale } from "@/i18n";
 
 import type { TextEdit } from "./composerText";
+import { GROUP_MENTION_WORDS, GROUP_MENTIONS, groupWordFor, type GroupMention } from "./groupMentions";
 
 export interface MentionCandidate {
   id: string;
+  /** What is written after the `@`: a username, or a group's word. */
   username: string;
+  /** A member's name, or what calling on a group does. */
   displayName: string;
   avatarUrl?: string;
+  /** Set on `@everyone` and `@here`, which call on a channel rather than a member. */
+  group?: GroupMention;
 }
 
 /** The `@name` being typed at the caret. */
@@ -31,17 +36,43 @@ export function activeMention(text: string, caret: number): ActiveMention | null
   return { start, end: caret, query, key: `${start}:${query}` };
 }
 
-/** Usernames that start with the query come first, then display-name matches. */
+/**
+ * The entries for calling on the whole channel, one per group, each writing the
+ * group's word in the reader's language. Both languages' words work whichever
+ * is written; offering one keeps the list short.
+ */
+export function groupMentionCandidates(
+  locale: InterfaceLocale,
+  describe: (group: GroupMention) => string,
+): MentionCandidate[] {
+  return GROUP_MENTIONS.map((group) => ({
+    id: `group:${group}`,
+    username: groupWordFor(group, locale),
+    displayName: describe(group),
+    group,
+  }));
+}
+
+/**
+ * Groups whose word, in either language, starts with the query come first;
+ * then usernames that start with it, then display-name matches.
+ */
 export function matchMentions(
   candidates: readonly MentionCandidate[],
   query: string,
   locale: InterfaceLocale,
+  groups: readonly MentionCandidate[] = [],
 ): MentionCandidate[] {
   const needle = query.toLocaleLowerCase();
   const startsWith = (candidate: MentionCandidate) =>
     candidate.username.toLocaleLowerCase().startsWith(needle);
+  const groupMatches = groups.filter(
+    (candidate) =>
+      candidate.group !== undefined &&
+      GROUP_MENTION_WORDS[candidate.group].some((word) => word.startsWith(query.toLowerCase())),
+  );
 
-  return candidates
+  const members = candidates
     .filter(
       (candidate) =>
         startsWith(candidate) || candidate.displayName.toLocaleLowerCase().includes(needle),
@@ -50,8 +81,8 @@ export function matchMentions(
       (left, right) =>
         Number(startsWith(right)) - Number(startsWith(left)) ||
         left.username.localeCompare(right.username, locale),
-    )
-    .slice(0, MAX_SUGGESTIONS);
+    );
+  return [...groupMatches, ...members].slice(0, MAX_SUGGESTIONS);
 }
 
 /** Replaces the typed `@query` with `@username`, followed by a space if none follows. */

@@ -3,7 +3,7 @@ import { useCallback, useState } from "react";
 import { avatarColor } from "@/design/identity";
 import type { Translator } from "@/i18n";
 import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from "@/lib/auth/passwordStrength";
-import { isValidUsername, suggestUsername, USERNAME_MAX_LENGTH } from "@/lib/auth/username";
+import { isReservedUsername, isValidUsername, suggestUsername, USERNAME_MAX_LENGTH } from "@/lib/auth/username";
 
 import { AuthField, PasswordField } from "./AuthField";
 import styles from "./AuthControls.module.css";
@@ -66,6 +66,11 @@ export function accountProblem(
   }
   if (!isValidUsername(values.username.trim())) {
     return { field: "username", message: t("auth.register.usernameInvalid") };
+  }
+  // Saying so before sending tells nobody about an account: the words that
+  // call on a channel are nobody's.
+  if (isReservedUsername(values.username.trim())) {
+    return { field: "username", message: t("auth.register.usernameTaken") };
   }
   if (!/^[^\s@]+@[^\s@]+$/.test(values.email.trim())) {
     return { field: "email", message: t("auth.register.emailInvalid") };

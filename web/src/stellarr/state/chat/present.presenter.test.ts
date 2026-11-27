@@ -151,6 +151,26 @@ describe("createTranscriptPresenter", () => {
     expect(untouchedGroup).toBe(initialSecond);
   });
 
+  it("draws a group's pill by the message's stamp, and drops it when an edit takes the stamp away", () => {
+    const present = createTranscriptPresenter();
+    const view = context();
+    const pillsOf = (sections: Sections) =>
+      bodiesOf(sections)
+        .flatMap((body) => body.parts)
+        .flatMap((part) => (part.kind === "text" ? part.nodes : []))
+        .filter((node) => node.kind === "group-mention");
+    const stamped = message("m1", 1, { content: "@everyone @here", mentionsEveryone: true, mentionsHere: true });
+
+    expect(pillsOf(present(transcriptOf([stamped]), view))).toHaveLength(2);
+
+    // The edit keeps the words but the server stamped it with one group only.
+    const { mentionsEveryone: _dropped, ...rest } = stamped;
+    const edited = { ...rest, editedAt: at(2) };
+    expect(pillsOf(present(transcriptOf([edited]), view))).toEqual([
+      { kind: "group-mention", text: "@here", group: "here" },
+    ]);
+  });
+
   it("keeps a settled message's old id out of every row", () => {
     const present = createTranscriptPresenter();
     const view = context();

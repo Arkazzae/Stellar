@@ -1,3 +1,5 @@
+import { isGroupWord } from "@/lib/messages/groupMentions";
+
 /** The login rules the server checks, so the form can say them before it does. */
 export const USERNAME_MIN_LENGTH = 3;
 export const USERNAME_MAX_LENGTH = 32;
@@ -27,6 +29,16 @@ export function suggestUsername(displayName: string): string {
     .replace(/^[._-]+/, "")
     .slice(0, USERNAME_MAX_LENGTH)
     .replace(/[._-]+$/, "");
+}
+
+/**
+ * Whether `username` is a word that calls on a whole channel: `everyone`,
+ * `here` or their Polish words, in any case. The server keeps them for that
+ * and answers one asked for as a login somebody has. An account that took one
+ * before it was reserved keeps it, but is never called by it.
+ */
+export function isReservedUsername(username: string): boolean {
+  return isGroupWord(username);
 }
 
 /** Whether the server will take `username` as a login: 3 to 32 letters, digits, ".", "-" or "_". */

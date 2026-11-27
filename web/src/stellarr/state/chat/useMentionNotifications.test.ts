@@ -119,6 +119,37 @@ describe("useMentionNotifications", () => {
     expect(showMessageNotification).not.toHaveBeenCalled();
   });
 
+  it("pops up a call on everyone only when the server stamped it", () => {
+    const { deliver } = setup();
+
+    deliver(message("@wszyscy spotkanie za 5 minut"));
+    expect(showMessageNotification).not.toHaveBeenCalled();
+
+    deliver({ ...message("@wszyscy spotkanie za 5 minut"), mentionsEveryone: true });
+    expect(showMessageNotification).toHaveBeenCalledOnce();
+    expect(vi.mocked(showMessageNotification).mock.calls[0]![0].body).toBe("@wszyscy spotkanie za 5 minut");
+  });
+
+  it("leaves a call on those here to whoever does not appear offline", () => {
+    const { deliver, view, chat } = setup({ selfPresence: "offline" });
+
+    deliver({ ...message("@here"), mentionsHere: true });
+    expect(showMessageNotification).not.toHaveBeenCalled();
+
+    view.rerender({
+      chat,
+      selfId: "u-ada",
+      selfUsername: "ada",
+      selfPresence: "dnd",
+      preferences,
+      channelName: () => "projekt",
+      openChannel: vi.fn(),
+      t,
+    });
+    deliver({ ...message("@here"), mentionsHere: true });
+    expect(showMessageNotification).toHaveBeenCalledOnce();
+  });
+
   it("reads the newest preferences without subscribing again", () => {
     const { deliver, view, chat } = setup();
 

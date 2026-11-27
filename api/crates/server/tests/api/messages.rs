@@ -1182,7 +1182,7 @@ fn the_cost_of_a_post_in_statements_does_not_grow_with_what_the_server_holds() {
             for mentions in [false, true] {
                 db.execute_batch("BEGIN IMMEDIATE").unwrap();
                 log.lock().unwrap().clear();
-                let posted = post(&db, &messages, Id::parse(&instance).unwrap(), &submission("hello", mentions)).map_err(|_| ()).unwrap();
+                let posted = post(&db, &messages, &stellarr_api::events::Unconnected, Id::parse(&instance).unwrap(), &submission("hello", mentions)).map_err(|_| ()).unwrap();
                 assert!(matches!(posted, Posted::Stored(_)));
                 if std::env::var("SHOW_STATEMENTS").is_ok() {
                     for line in log.lock().unwrap().iter() {

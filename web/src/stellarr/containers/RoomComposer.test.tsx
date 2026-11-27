@@ -49,6 +49,7 @@ const room = vi.hoisted(() => ({
     canModerateMembers: boolean;
     canManageBans: boolean;
     canCreateEvents?: boolean;
+    canMentionEveryone?: boolean;
   },
   admin: { supported: { moderation: true }, kick: vi.fn(), ban: vi.fn() },
   scheduled: { subscribe: () => () => {}, getSnapshot: () => NO_SCHEDULED },
@@ -109,6 +110,23 @@ beforeEach(() => {
   vi.mocked(readGiphyConfig).mockResolvedValue({ enabled: true, apiKey: "key" });
   giphyChoice.set(true);
   giphyChoice.accountRead();
+});
+
+describe("RoomComposer's call on the whole channel", () => {
+  it("is offered in the reader's language to whoever may make it", async () => {
+    room.directory = { ...room.directory, canMentionEveryone: true };
+
+    const props = await renderComposer();
+
+    expect(props.groupMentions).toEqual([
+      { id: "group:everyone", username: "wszyscy", displayName: "composer.groupMention.everyone", group: "everyone" },
+      { id: "group:here", username: "obecni", displayName: "composer.groupMention.here", group: "here" },
+    ]);
+  });
+
+  it("is not offered to anyone else", async () => {
+    expect((await renderComposer()).groupMentions).toBeUndefined();
+  });
 });
 
 describe("RoomComposer's GIF button", () => {

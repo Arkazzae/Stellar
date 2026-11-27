@@ -98,6 +98,7 @@ HTTP routes and hub methods that need a server permission evaluate it in their S
   - **Superuser (1):** `administrator`
   - **Visibility (1):** `viewChannel` (see [Private channels](#private-channels))
   - **Management (8):** `manageServer`, `manageChannels`, `manageRoles`, `manageMembers`, `manageMessages`, `moderateMembers`, `manageBans`, `viewAuditLog`
+  - **Channel-wide calls (1):** `mentionEveryone`, decided with the author's effective permissions in the channel when a message is posted. The post stamps `Messages.GroupMention` (bit 1 `@everyone`/`@wszyscy`, bit 2 `@here`/`@obecni`), which the message DTO carries as `mentionsEveryone` / `mentionsHere`; clients highlight and ring by the stamp alone. An edit can only clear bits whose word it removed. The four words are reserved usernames.
   - **Ordinary member actions (5):** Default on a new server's base role; each has a single admission point returning a localized `403` naming `permission`:
 
 | Permission | Enforced at | Permitted without the bit |

@@ -13,8 +13,9 @@ export interface MentionListProps {
 }
 
 /**
- * The members offered after typing `@`. Focus never leaves the textarea: the
- * list is a combobox popup, navigated from the field with the arrow keys, so
+ * The members offered after typing `@`, after `@everyone` and `@here` for
+ * whoever may call on the channel. Focus never leaves the textarea: the list
+ * is a combobox popup, navigated from the field with the arrow keys, so
  * pressing an option must not blur it.
  */
 export function MentionList({
@@ -37,13 +38,27 @@ export function MentionList({
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => onChoose(candidate)}
         >
-          <span className="mention-avatar" aria-hidden="true">
-            {candidate.displayName.trim().slice(0, 2).toLocaleUpperCase()}
-          </span>
-          <span className="mention-copy">
-            <b>{candidate.displayName}</b>
-            <small>@{candidate.username}</small>
-          </span>
+          {candidate.group === undefined ? (
+            <>
+              <span className="mention-avatar" aria-hidden="true">
+                {candidate.displayName.trim().slice(0, 2).toLocaleUpperCase()}
+              </span>
+              <span className="mention-copy">
+                <b>{candidate.displayName}</b>
+                <small>@{candidate.username}</small>
+              </span>
+            </>
+          ) : (
+            // A group has no face: the word is what is written, and the line
+            // under it says what writing it does.
+            <>
+              <span className="mention-avatar" aria-hidden="true">@</span>
+              <span className="mention-copy">
+                <b>@{candidate.username}</b>
+                <small>{candidate.displayName}</small>
+              </span>
+            </>
+          )}
         </button>
       ))}
     </div>

@@ -309,7 +309,8 @@ fn announce(
         poll: None,
         event: Some(event.id),
     };
-    match post::post(db, messages, event.server, &submission)? {
+    // The card has no words, so it calls on nobody and needs no one's presence.
+    match post::post(db, messages, &crate::events::Unconnected, event.server, &submission)? {
         Posted::Stored(stored) => Ok(*stored),
         Posted::Replayed(_) => Err(ApiError::internal("an announcement was taken for a retry").into()),
     }

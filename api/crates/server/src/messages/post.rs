@@ -12,13 +12,13 @@ use super::dto::{self, ChannelReadDto, MessageDto};
 use super::mentions::{self, Mentioning};
 use super::{Reason, Stop, content_limit, field_problem, trimmed, units};
 use crate::auth::Caller;
-use crate::events::{Audience, Event};
+use crate::events::{Audience, Event, Presence};
 use crate::http::{ApiError, ApiResult, Json, Path, json_response};
 use crate::inbox::{self, Entry};
 use crate::link_previews::PreviewRequest;
 use crate::permissions::authorization::{Held, held_in_channel};
 use crate::permissions::membership::ActiveServer;
-use crate::permissions::privileges::{ATTACH_FILES, MANAGE_CHANNELS, SEND_MESSAGES};
+use crate::permissions::privileges::{ATTACH_FILES, MANAGE_CHANNELS, MENTION_EVERYONE, SEND_MESSAGES};
 use crate::permissions::visibility::{self, ChannelKind, ChannelPlace};
 use crate::scheduled::Claim;
 use crate::state::AppState;
@@ -74,10 +74,12 @@ pub struct Stored {
 /// Everything a post asks of the database, in the transaction it is given:
 /// the admission, the checks that follow, the message with its attachments,
 /// the author's read marker, and the inbox entries and deliveries of the
-/// mentions.
+/// mentions. `presence` says who is online, for a message that calls on
+/// those who are.
 pub fn post(
     db: &Connection,
     messages: &Messages,
+    presence: &dyn Presence,
     server: Id,
     submission: &Submission,
 ) -> Result<Posted, Stop> {
@@ -110,11 +112,20 @@ pub fn post(
         return Err(Stop::refused(Reason::Withdrawn, ApiError::conflict()));
     }
 
+    // The groups the message calls on are stamped with it here, from what
+    // its author holds in the channel, so that no reader has to trust the
+    // words: without the permission they are plain text.
+    let names = stellarr_mentions::extract_normalized_usernames(&submission.content);
+    let groups = if held.has(MENTION_EVERYONE) {
+        mentions::groups_in(&names)
+    } else {
+        0
+    };
     let id = submission.client_id.unwrap_or_else(Id::random);
     db.prepare_cached(
         "INSERT INTO \"Messages\" (\"Id\", \"ChannelId\", \"AuthorId\", \"IsSystem\", \"Content\", \"CreatedAt\", \"EditedAt\",
-             \"PinnedAt\", \"ReplyToMessageId\")
-         VALUES (?1, ?2, ?3, 0, ?4, ?5, NULL, NULL, ?6)",
+             \"PinnedAt\", \"ReplyToMessageId\", \"GroupMention\")
+         VALUES (?1, ?2, ?3, 0, ?4, ?5, NULL, NULL, ?6, ?7)",
     )?
     .execute(params![
         id,
@@ -122,7 +133,8 @@ pub fn post(
         author,
         submission.content,
         now,
-        submission.reply_to
+        submission.reply_to,
+        groups
     ])?;
     for (attachment, _) in &attachments {
         db.prepare_cached(
@@ -145,7 +157,7 @@ pub fn post(
         Some(_) => None,
     };
     let author_name: String = crate::instance::users::User::display_name(db, author)?;
-    let mentioned = mentions::notify(
+    let told = mentions::notify(
         db,
         &Mentioning {
             server,
@@ -154,12 +166,16 @@ pub fn post(
             author_name: &author_name,
             content: &submission.content,
             created_at: now,
+            names: &names,
+            groups,
+            presence,
         },
     )?;
     // External deliveries are rows like the inbox entries, written before the
     // commit. No provider is contacted here; the dispatcher does that after it
     // can see the stored message.
-    crate::delivery::outbox::enqueue_mentions(db, id, mentioned.iter().map(|n| n.user), now)?;
+    crate::delivery::outbox::enqueue_mentions(db, id, told.named.iter().copied(), now)?;
+    crate::delivery::outbox::enqueue_group_mentions(db, id, told.grouped.iter().copied(), now)?;
 
     let message = dto::load(db, messages, &[id], Some(author))?
         .into_iter()
@@ -168,7 +184,7 @@ pub fn post(
     Ok(Posted::Stored(Box::new(Stored {
         message,
         read,
-        mentions: mentioned,
+        mentions: told.entries,
     })))
 }
 
@@ -560,10 +576,7 @@ pub async fn create(
         event: None,
     };
 
-    let outcome = state
-        .post_queue()
-        .submit(state.database(), messages, server, submission)
-        .await;
+    let outcome = state.post_queue().submit(&state, server, submission).await;
     let stored = match outcome {
         Ok(Posted::Replayed(message)) => return Ok(json_response(StatusCode::OK, &*message)),
         Ok(Posted::Stored(stored)) => *stored,

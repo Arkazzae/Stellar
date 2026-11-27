@@ -23,6 +23,7 @@ const PERMISSION_LABEL: Record<ServerPermission, MessageKey> = {
   sendMessages: "settings.permission.sendMessages",
   attachFiles: "settings.permission.attachFiles",
   addReactions: "settings.permission.addReactions",
+  mentionEveryone: "settings.permission.mentionEveryone",
   connect: "settings.permission.connect",
   createInvite: "settings.permission.createInvite",
   viewChannel: "settings.permission.viewChannel",

@@ -48,6 +48,7 @@ const allPermissions = [
   "sendMessages",
   "attachFiles",
   "addReactions",
+  "mentionEveryone",
   "connect",
   "createInvite",
   "viewChannel",
@@ -699,7 +700,7 @@ describe("UsersPage roles", () => {
   it("lists each role with its members, permission count and kind", async () => {
     await openRoles();
 
-    expect(within(rowOf("Właściciel")).getByText("17 uprawnień")).toBeTruthy();
+    expect(within(rowOf("Właściciel")).getByText("18 uprawnień")).toBeTruthy();
     expect(within(rowOf("Właściciel")).getByText("Systemowa")).toBeTruthy();
     expect(within(rowOf("Moderator")).getByText("2 uprawnień")).toBeTruthy();
     expect(within(rowOf("Moderator")).getByText("Własna")).toBeTruthy();

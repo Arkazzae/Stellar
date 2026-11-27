@@ -56,6 +56,7 @@ Every server has an immutable **Owner** role at the top and an implicit **Member
 | **Visibility** | `viewChannel` | Controls whether a channel exists for a member. Missing `viewChannel` clears all effective permissions at that channel to zero. |
 | **Member actions** | `sendMessages`, `attachFiles`, `addReactions`, `connect`, `createInvite` | Enabled by default on a new server's base role (`Member`). Covers posting/replying, file & voice uploads, adding reactions, joining voice seats, and creating invites. |
 | **Management** | `manageServer`, `manageChannels`, `manageRoles`, `manageMembers`, `manageMessages`, `moderateMembers`, `manageBans`, `viewAuditLog` | Controls server settings/emojis/soundboard/invites, channel layout, roles & overrides, member roles & kicks, message deletion/pins, voice kicks/moves, bans, and audit logs. |
+| **Channel-wide calls** | `mentionEveryone` | `@everyone` / `@wszyscy` notifies every member who can view the channel, `@here` / `@obecni` those of them who are online. Off on the base role, overridable per channel and section, implied by `administrator` and the Owner role. Without it the words are plain text. Such a call reaches the inbox, the in-app sound and pop-up, and push, never e-mail; somebody also named by username is told as for any mention. |
 
 ### Override resolution order
 

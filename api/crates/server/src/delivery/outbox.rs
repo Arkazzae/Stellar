@@ -1,7 +1,8 @@
 //! The rows that say "this person is owed a notification about this message".
 //!
-//! A route that stores a message calls [`enqueue_mentions`] (a post in a
-//! channel) or [`enqueue_direct_message`] (a post in a conversation) inside the
+//! A route that stores a message calls [`enqueue_mentions`] and
+//! [`enqueue_group_mentions`] (a post in a channel) or
+//! [`enqueue_direct_message`] (a post in a conversation) inside the
 //! transaction that stores it, after the message and its inbox entries are
 //! written. Nothing is contacted here: the worker reads the rows after the
 //! commit.
@@ -86,7 +87,24 @@ pub fn enqueue_mentions(
     // In the order of the people's ids, so that the rows are always written in
     // the same order for the same message.
     for recipient in distinct {
-        enqueue(db, Kind::Mention, message, recipient, created_at)?;
+        enqueue(db, Kind::Mention, message, recipient, created_at, true)?;
+    }
+    Ok(())
+}
+
+/// Queues what a channel message that calls on a group asked for from
+/// `recipients`, who are in the group and not named. They are told by push
+/// alone: a call to a whole channel is not worth a letter, so no mail row is
+/// written. The kind is a mention's, so a push opens the message as one does.
+pub fn enqueue_group_mentions(
+    db: &Connection,
+    message: Id,
+    recipients: impl IntoIterator<Item = Id>,
+    created_at: Timestamp,
+) -> rusqlite::Result<()> {
+    let distinct: BTreeSet<Id> = recipients.into_iter().collect();
+    for recipient in distinct {
+        enqueue(db, Kind::Mention, message, recipient, created_at, false)?;
     }
     Ok(())
 }
@@ -99,7 +117,7 @@ pub fn enqueue_direct_message(
     recipient: Id,
     created_at: Timestamp,
 ) -> rusqlite::Result<()> {
-    enqueue(db, Kind::DirectMessage, message, recipient, created_at)
+    enqueue(db, Kind::DirectMessage, message, recipient, created_at, true)
 }
 
 /// Queues a push notice about a server event, `event` being its source. A
@@ -122,8 +140,9 @@ fn enqueue(
     message: Id,
     recipient: Id,
     created_at: Timestamp,
+    by_mail: bool,
 ) -> rusqlite::Result<()> {
-    deliver(db, kind, message, recipient, created_at, created_at.plus(LIFETIME), true)
+    deliver(db, kind, message, recipient, created_at, created_at.plus(LIFETIME), by_mail)
 }
 
 fn deliver(

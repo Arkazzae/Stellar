@@ -67,6 +67,10 @@ fn validate(request: &RegisterRequest, messages: &Messages) -> Result<Errors, Ap
     let length = stellarr_unicode::utf16::length(username);
     if !(3..=32).contains(&length) || !username.chars().all(is_username_char) {
         errors.push(("username".into(), vec![messages.get(MessageKey::UsernameInvalid, &[])?]));
+    } else if crate::messages::mentions::is_group_name(&crate::instance::names::to_upper(username)) {
+        // The words that call on a whole channel are nobody's name, and one
+        // asked for is answered as a name somebody has.
+        errors.push(("username".into(), vec![messages.get(MessageKey::UsernameTaken, &[])?]));
     }
     let display_name = request.display_name.as_deref().unwrap_or("").trim();
     if !(1..=64).contains(&stellarr_unicode::utf16::length(display_name)) {
@@ -628,6 +632,30 @@ mod tests {
         // A letter that would become two stays as it is, and the dotless i is
         // not capitalized at all.
         assert_eq!(crate::instance::names::to_upper("straße bıll"), "STRAßE BıLL");
+    }
+
+    #[test]
+    fn the_words_that_call_on_a_channel_are_taken_in_any_case() {
+        let messages = Messages::new(stellarr_messages::Language::English);
+        let request = |username: &str| RegisterRequest {
+            username: Some(username.to_string()),
+            display_name: Some("Maya".into()),
+            email: Some("maya@example.test".into()),
+            password: Some("a long enough password".into()),
+            invite_code: None,
+            initial_server: None,
+            setup_code: None,
+            external: false,
+        };
+        let taken = messages.get(MessageKey::UsernameTaken, &[]).unwrap();
+        for word in ["everyone", "Wszyscy", "HERE", "obecni"] {
+            let errors = validate(&request(word), &messages).unwrap();
+            assert_eq!(errors, vec![("username".to_string(), vec![taken.clone()])], "{word}");
+        }
+        // A name that only begins with one is a name like any other.
+        for name in ["everyone2", "hereford", "obecnie"] {
+            assert!(validate(&request(name), &messages).unwrap().is_empty(), "{name}");
+        }
     }
 
     #[test]

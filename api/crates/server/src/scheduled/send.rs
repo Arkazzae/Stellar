@@ -158,10 +158,7 @@ async fn to_channel(state: &AppState, scheduled: &Scheduled, channel: Id) -> Res
         poll: None,
         event: None,
     };
-    let posted = state
-        .post_queue()
-        .submit(state.database(), *state.messages(), server, submission)
-        .await?;
+    let posted = state.post_queue().submit(state, server, submission).await?;
     match posted {
         Posted::Stored(stored) => {
             // The message is out whatever happens to the news of it.

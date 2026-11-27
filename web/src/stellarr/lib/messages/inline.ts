@@ -8,6 +8,7 @@
  * React escapes on output.
  */
 
+import { groupOfWord, type GroupMention } from "./groupMentions";
 import { readInline, type Span } from "./inlineGrammar";
 
 /** A run inside a text body. `text` is literal; React escapes it. */
@@ -24,6 +25,12 @@ export type InlineNode =
       displayName: string;
       self: boolean;
     }
+  /**
+   * `@everyone`, `@here` or their Polish words, in a message the server
+   * stamped as calling on that group. It names nobody, so it opens no profile;
+   * the same word in a message without the stamp stays text.
+   */
+  | { kind: "group-mention"; text: string; group: GroupMention }
   /**
    * One of the server's own emoji, written `:code:` in the body.
    *
@@ -56,6 +63,11 @@ export interface ParseInlineOptions {
   emoji?: ReadonlyMap<string, string>;
   /** Lower-cased username to the member a mention resolves to. */
   mentions?: ReadonlyMap<string, MentionTarget>;
+  /**
+   * The groups the server stamped the message as calling on. A group's word
+   * becomes a pill only for these; it never resolves to a member.
+   */
+  groups?: ReadonlySet<GroupMention>;
 }
 
 /* ---------------------------------------------------- literal text recognisers */
@@ -166,12 +178,19 @@ function linkify(nodes: readonly InlineNode[]): InlineNode[] {
   });
 }
 
-/** Resolves real members only; any other `@word` remains ordinary text. */
+/**
+ * Resolves real members, and the groups the message was stamped with; any
+ * other `@word` remains ordinary text. A group's word is nobody's name, even an
+ * account's that took it before it was reserved.
+ */
 function mentionify(
   nodes: InlineNode[],
   mentions: ReadonlyMap<string, MentionTarget> | undefined,
+  groups: ReadonlySet<GroupMention> | undefined,
 ): InlineNode[] {
-  if (mentions === undefined || mentions.size === 0) return nodes;
+  if ((mentions === undefined || mentions.size === 0) && (groups === undefined || groups.size === 0)) {
+    return nodes;
+  }
 
   return replaceInText(nodes, MENTION_RUN, (match, text) => {
     // "mail@example.com" and "@ada.x" are not a mention of "ada".
@@ -180,19 +199,37 @@ function mentionify(
     if (before !== undefined && USERNAME_CHARACTER.test(before)) return undefined;
     if (after !== undefined && USERNAME_CHARACTER.test(after)) return undefined;
 
-    const target = mentions.get((match[1] ?? "").toLocaleLowerCase());
-    if (target === undefined) return undefined;
-    return {
-      node: {
-        kind: "mention",
-        text: match[0],
-        userId: target.userId,
-        username: target.username,
-        displayName: target.displayName,
-        self: target.self === true,
-      },
-      length: match[0].length,
-    };
+    const word = match[1] ?? "";
+    const group = groupOfWord(word);
+    if (group !== undefined) {
+      return groups?.has(group) === true
+        ? { node: { kind: "group-mention", text: match[0], group }, length: match[0].length }
+        : undefined;
+    }
+    const target = mentions?.get(word.toLocaleLowerCase());
+    if (target !== undefined) {
+      return {
+        node: {
+          kind: "mention",
+          text: match[0],
+          userId: target.userId,
+          username: target.username,
+          displayName: target.displayName,
+          self: target.self === true,
+        },
+        length: match[0].length,
+      };
+    }
+    // A sentence often ends on a group's word, and a full stop is a character
+    // of names: as the server reads it, `@wszyscy.` calls the group and its
+    // dots stay text, while `@wszyscy.x` calls nobody. Only groups are read
+    // this way, after members: a username may end with a dot, and a member
+    // called `wszyscy.` keeps their pill.
+    const bare = word.replace(/\.+$/, "");
+    const ending = bare === word ? undefined : groupOfWord(bare);
+    if (ending === undefined || groups?.has(ending) !== true) return undefined;
+    const typed = match[0].slice(0, bare.length + 1);
+    return { node: { kind: "group-mention", text: typed, group: ending }, length: typed.length };
   });
 }
 
@@ -246,7 +283,7 @@ function nodesOf(spans: readonly Span[], options: ParseInlineOptions): InlineNod
   const flush = () => {
     if (plain.length === 0) return;
     const linked = linkify([{ kind: "text", text: plain }]);
-    emojify(mentionify(linked, options.mentions), options.emoji).forEach(append);
+    emojify(mentionify(linked, options.mentions, options.groups), options.emoji).forEach(append);
     plain = "";
   };
 
@@ -384,6 +421,7 @@ export function inlineSource(nodes: readonly InlineNode[]): string {
         );
         break;
       case "mention":
+      case "group-mention":
         source.push(node.text);
         break;
       case "emoji":

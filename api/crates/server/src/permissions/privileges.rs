@@ -27,9 +27,13 @@ pub const VIEW_CHANNEL: i64 = 1 << 14;
 pub const CREATE_EVENTS: i64 = 1 << 15;
 /// Managing everybody's events on the server.
 pub const MANAGE_EVENTS: i64 = 1 << 16;
+/// Calling on a channel's whole audience at once with `@everyone` or `@here`.
+/// It is decided in the channel the message is posted to, so an override can
+/// give or take it there; without it the words are plain text and tell nobody.
+pub const MENTION_EVERYONE: i64 = 1 << 17;
 pub const NONE: i64 = 0;
 /// Every permission there is.
-pub const ALL: i64 = 0x1_ffff;
+pub const ALL: i64 = 0x3_ffff;
 /// The permissions that are the server's alone, which no channel or section
 /// override can give or take: what an administrator is, and what events
 /// allow, since an event belongs to the server rather than to a channel.
@@ -44,7 +48,7 @@ pub const OVERRIDABLE: i64 = ALL & !SERVER_ONLY;
 
 /// In the order lists are written in. The newer names come after the older
 /// ones, so a list a client already knows keeps its order.
-const NAMES: [(i64, &str); 17] = [
+const NAMES: [(i64, &str); 18] = [
     (MANAGE_SERVER, "manageServer"),
     (MANAGE_CHANNELS, "manageChannels"),
     (MANAGE_ROLES, "manageRoles"),
@@ -62,6 +66,7 @@ const NAMES: [(i64, &str); 17] = [
     (VIEW_CHANNEL, "viewChannel"),
     (CREATE_EVENTS, "createEvents"),
     (MANAGE_EVENTS, "manageEvents"),
+    (MENTION_EVERYONE, "mentionEveryone"),
 ];
 
 /// The wire name of one permission; none for a mask that is not exactly one
@@ -114,7 +119,7 @@ pub fn is_overridable(allow: i64, deny: i64) -> bool {
 mod tests {
     use super::*;
 
-    const ALL_NAMES: [&str; 17] = [
+    const ALL_NAMES: [&str; 18] = [
         "manageServer",
         "manageChannels",
         "manageRoles",
@@ -132,6 +137,7 @@ mod tests {
         "viewChannel",
         "createEvents",
         "manageEvents",
+        "mentionEveryone",
     ];
 
     #[test]
@@ -157,10 +163,11 @@ mod tests {
     #[test]
     fn the_constants_are_the_ones_stored_rows_have() {
         // `Member` and `Owner` are stored as permission masks 24064 and
-        // 131071; owners made before events were stored as 32767, and the
-        // events migration gives them the two bits since.
+        // 262143; owners made before events were stored as 32767, and the
+        // events migration gives them the two bits since, as the migration of
+        // group mentions gives owners and administrators the one after.
         assert_eq!(BASE_ROLE_DEFAULTS, 24064);
-        assert_eq!(ALL, 131_071);
+        assert_eq!(ALL, 262_143);
     }
 
     #[test]
@@ -183,5 +190,19 @@ mod tests {
         );
         assert!(!is_overridable(NONE, MANAGE_EVENTS));
         assert!(!is_overridable(1 << 20, NONE));
+    }
+
+    #[test]
+    fn mentioning_everyone_is_a_channel_permission_that_plain_members_lack() {
+        assert_eq!(name_of(MENTION_EVERYONE), Some("mentionEveryone"));
+        assert_eq!(parse_names(["mentionEveryone"]), Some(MENTION_EVERYONE));
+        assert!(is_overridable(MENTION_EVERYONE, NONE));
+        assert!(is_overridable(NONE, MENTION_EVERYONE));
+        assert_eq!(OVERRIDABLE & MENTION_EVERYONE, MENTION_EVERYONE);
+        assert_eq!(BASE_ROLE_DEFAULTS & MENTION_EVERYONE, NONE);
+        assert!(contains(ALL, MENTION_EVERYONE));
+        // The newest name is the last one, so a list a client knows keeps
+        // its order.
+        assert_eq!(to_names(ALL).last(), Some(&"mentionEveryone"));
     }
 }
