@@ -9,20 +9,42 @@ import {
 } from "@/state/hooks";
 
 /**
+ * Kicking and banning as the member menu offers them: who may, and the deeds
+ * the question card runs. The composer's /kick and /ban ask through the same
+ * cards with these, so the two doors cannot disagree about who may do what.
+ * Both halves are needed: the member must hold the permission, and the
+ * adapter must have a persisted endpoint behind it.
+ */
+export function useMemberModeration() {
+  const { members, canModerateMembers, canManageBans } = useDirectory();
+  const { admin } = usePorts();
+  return {
+    canKick: canModerateMembers && admin.supported.moderation,
+    canBan: canManageBans && admin.supported.moderation,
+    // Each deed hands its promise back, so the question card waits for the
+    // server and says so when it refuses.
+    onKick: (userId: string) => admin.kick(userId),
+    onBan: (userId: string, reason: string) =>
+      admin.ban(userId, reason.length === 0 ? undefined : reason),
+    usernameOf: (userId: string) => members.find((member) => member.id === userId)?.username,
+  };
+}
+
+/**
  * What a right-click on a person does wherever people are listed.
  *
  * The profile card, a message, the listener's own strip in the current call and
  * moderation are the same everywhere; the roster adds the friendship items on
- * top. Moderation needs both halves: the member must hold the permission, and
- * the adapter must have a persisted endpoint behind it.
+ * top; moderation is `useMemberModeration`'s.
  *
  * The listener's strip is read from the call when the menu asks, and the open
  * menu watches it, so the lists that offer this menu do not render for every
  * snapshot of the call.
  */
 export function useMemberMenu(): UserMenuActions {
-  const { voiceChannels, members, canModerateMembers, canManageBans } = useDirectory();
+  const { voiceChannels } = useDirectory();
   const { admin } = usePorts();
+  const moderation = useMemberModeration();
   const voice = useVoiceLive();
   const profile = useProfile();
   const friends = useFriends();
@@ -43,8 +65,8 @@ export function useMemberMenu(): UserMenuActions {
     participantSuppressionOf: voice.participantSuppressionOf,
     onParticipantSuppressionChange: voice.setParticipantSuppression,
     watchParticipants: voice.subscribe,
-    canKick: canModerateMembers && admin.supported.moderation,
-    canBan: canManageBans && admin.supported.moderation,
+    canKick: moderation.canKick,
+    canBan: moderation.canBan,
     ...(admin.kickFromChannel === undefined
       ? {}
       : {
@@ -54,11 +76,9 @@ export function useMemberMenu(): UserMenuActions {
             if (seat !== undefined) await admin.kickFromChannel?.(seat.id, userId);
           },
         }),
-    // Each deed hands its promise back, so the question card waits for the
-    // server and says so when it refuses.
-    onKick: (userId) => admin.kick(userId),
-    onBan: (userId, reason) => admin.ban(userId, reason.length === 0 ? undefined : reason),
-    usernameOf: (userId) => members.find((member) => member.id === userId)?.username,
+    onKick: moderation.onKick,
+    onBan: moderation.onBan,
+    usernameOf: moderation.usernameOf,
     developerMode: preferences.developerMode,
   };
 }
