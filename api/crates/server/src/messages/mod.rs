@@ -63,6 +63,28 @@ pub enum Stop {
     Answer(ApiError),
     /// The author must wait this many whole seconds.
     SlowMode(i64),
+    /// A refusal that a caller other than the route needs to tell apart, with
+    /// the answer the route gives for it: a scheduled message that is refused
+    /// when its time comes is marked failed with the reason.
+    Refused(Reason, ApiError),
+}
+
+/// What a refused post ran into, where the answer alone does not say: a 404
+/// is given both for a channel that is gone and for one the author no longer
+/// sees.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reason {
+    /// The channel or conversation is not there.
+    Gone,
+    /// The author may not post there: they do not see the channel or lack a
+    /// permission in it, or a block or the peer's settings keep them out.
+    NoAccess,
+    /// The message it answers is not there.
+    ReplyGone,
+    /// The conversation is encrypted, and the message is not.
+    Encrypted,
+    /// The scheduled message was edited or removed while it was being sent.
+    Withdrawn,
 }
 
 impl Stop {
@@ -70,10 +92,14 @@ impl Stop {
         Stop::Answer(ApiError::not_found())
     }
 
+    pub fn refused(reason: Reason, answer: ApiError) -> Stop {
+        Stop::Refused(reason, answer)
+    }
+
     /// The answer to the client, in the language of the instance.
     pub fn into_response(self, messages: &Messages) -> Response {
         match self {
-            Stop::Answer(error) => error.into_response(),
+            Stop::Answer(error) | Stop::Refused(_, error) => error.into_response(),
             Stop::SlowMode(seconds) => {
                 let built = (|| -> Result<Problem, MissingValue> {
                     Ok(Problem::new(StatusCode::TOO_MANY_REQUESTS)
