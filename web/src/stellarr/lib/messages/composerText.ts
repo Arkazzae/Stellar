@@ -231,6 +231,32 @@ export function toggleMarker(
   };
 }
 
+/**
+ * Puts `words` at `at` as a spoiler, spaced from the words around it as an
+ * emoji is, with the caret after it. With no words it leaves an empty pair
+ * with the caret inside, as the formatting button does.
+ */
+export function insertSpoiler(text: string, at: number, words: string): TextEdit {
+  const content = words.trim();
+  const point = Math.max(0, Math.min(at, text.length));
+  if (content === "") return toggleMarker(text, point, point, "||");
+  const before = text.slice(0, point);
+  const after = text.slice(point);
+  const lead = before.length > 0 && !/\s$/.test(before) ? " " : "";
+  const trail = /^\s/.test(after) ? "" : " ";
+  const from = before.length + lead.length;
+  // Wrapped by the same rule as a selection, so a bar in the words is escaped
+  // instead of closing the spoiler early.
+  const wrapped = toggleMarker(
+    `${before}${lead}${content}${trail}${after}`,
+    from,
+    from + content.length,
+    "||",
+  );
+  const caret = wrapped.selectionEnd + "||".length + trail.length;
+  return { text: wrapped.text, selectionStart: caret, selectionEnd: caret };
+}
+
 /** The body of a message sent in code mode. */
 export function fencedCode(language: string, source: string): string {
   const used = new Set<number>();

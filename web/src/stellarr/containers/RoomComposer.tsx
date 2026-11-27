@@ -1,7 +1,9 @@
-import { useCallback, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
 
+import { banPerson, kickPerson, personSubject } from "@/components/confirmations";
+import { useConfirm, usePrompt } from "@/components/primitives/confirmContext";
 import { draftScope } from "@/lib/platform/drafts";
-import { Composer } from "@/components/room/composer/Composer";
+import { Composer, type ComposerCommandHost } from "@/components/room/composer/Composer";
 import { useGifsEnabled, useGiphyAccess } from "@/hooks/useGifsEnabled";
 import type { Translator } from "@/i18n";
 import { captureMicrophone, MicCaptureError } from "@/lib/voice/capture/micPipeline";
@@ -13,7 +15,10 @@ import {
   useLanguage,
   usePorts,
   useSession,
+  useUi,
 } from "@/state/hooks";
+
+import { useMemberModeration } from "./useMemberMenu";
 
 interface RoomComposerProps {
   channelName: string;
@@ -38,6 +43,10 @@ export function RoomComposer({ channelName, threadRootId }: RoomComposerProps) {
   const { emoji: customEmoji } = useEmoji();
   const { locale, t } = useLanguage();
   const ports = usePorts();
+  const ui = useUi();
+  const moderation = useMemberModeration();
+  const confirm = useConfirm();
+  const prompt = usePrompt();
 
   // The device settings the call also runs on, so a recording uses the
   // microphone and processing the reader chose.
@@ -69,6 +78,48 @@ export function RoomComposer({ channelName, threadRootId }: RoomComposerProps) {
   const inThread = threadRootId !== null;
   const reply = chat.replyingTo;
 
+  // As in the member menu, nobody kicks or bans themselves.
+  const selfId = user?.id;
+  const others = useMemo(
+    () => members.filter((member) => member.id !== selfId),
+    [members, selfId],
+  );
+
+  /*
+   * Where the commands lead from a channel or a thread. The pinned list opens
+   * as the header's button opens it, closing the thread it would sit beside.
+   * Kicking and banning ask the same question cards the member menu does,
+   * with the same deeds, and only for someone who may.
+   */
+  const commandHost: ComposerCommandHost = {
+    openPinned: () => {
+      chat.closeThread();
+      if (ui.channelPanel !== "pinned") ui.toggleChannelPanel("pinned");
+    },
+    openStatus: ui.revealAccountPanel,
+    people: others,
+    ...(moderation.canKick
+      ? {
+          kick: (person) => {
+            void confirm({
+              ...kickPerson(t, personSubject(person)),
+              run: async () => moderation.onKick(person.id),
+            });
+          },
+        }
+      : {}),
+    ...(moderation.canBan
+      ? {
+          ban: (person, reason) => {
+            void prompt({
+              ...banPerson(t, personSubject(person), reason),
+              run: async (answer) => moderation.onBan(person.id, answer),
+            });
+          },
+        }
+      : {}),
+  };
+
   return (
     <Composer
       key={scope}
@@ -89,6 +140,7 @@ export function RoomComposer({ channelName, threadRootId }: RoomComposerProps) {
       onTyping={chat.notifyTyping}
       customEmoji={customEmoji}
       mentionCandidates={members}
+      commandHost={commandHost}
       {...(gifsOffered && giphyAccess === "on" ? { onGif: chat.sendGif } : {})}
       locale={locale}
       t={t}

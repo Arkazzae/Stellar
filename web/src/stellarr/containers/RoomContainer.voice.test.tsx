@@ -20,6 +20,8 @@ import {
   t,
 } from "@/test/roomFakes";
 
+import { ConfirmProvider } from "@/components/primitives/ConfirmDialog";
+
 import { RoomContainer } from "./RoomContainer";
 
 const mocks = vi.hoisted(() => ({
@@ -32,6 +34,8 @@ const mocks = vi.hoisted(() => ({
   joinFromPopoutLink: vi.fn(),
   profile: { toggle: vi.fn() },
   ports: {
+    // The composer's commands ask whether moderation has an endpoint.
+    admin: { supported: { moderation: false } },
     typing: { onTypingChanged: () => () => {}, typingIn: () => NOBODY },
     voiceSettings: { subscribe: () => () => {}, getSnapshot: () => ({}), update: vi.fn() },
     soundboard: {
@@ -142,7 +146,7 @@ describe("RoomContainer in a call", () => {
   it("shows the stage with the people in the call and the controls under it", () => {
     inCall();
 
-    const { container } = render(<RoomContainer />);
+    const { container } = render(<RoomContainer />, { wrapper: ConfirmProvider });
 
     const { call, text } = views(container);
     expect(call).toHaveClass("active");
@@ -156,7 +160,7 @@ describe("RoomContainer in a call", () => {
   it("keeps the transcript on screen, and the stage out of sight, in a text channel", () => {
     mocks.voice = fakeVoice({ people: [MAJA] });
 
-    const { container } = render(<RoomContainer />);
+    const { container } = render(<RoomContainer />, { wrapper: ConfirmProvider });
 
     const { call, text } = views(container);
     expect(text).toHaveClass("active");
@@ -167,7 +171,7 @@ describe("RoomContainer in a call", () => {
   it("names the room after the call and shows the voice channel's topic", () => {
     inCall();
 
-    render(<RoomContainer />);
+    render(<RoomContainer />, { wrapper: ConfirmProvider });
 
     expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("Salon");
     expect(screen.getByText("Daily sync")).toBeInTheDocument();
@@ -175,7 +179,7 @@ describe("RoomContainer in a call", () => {
 
   it("falls back to the channel's name, then the text channel's, for an untitled call", () => {
     inCall({ call: null });
-    const view = render(<RoomContainer />);
+    const view = render(<RoomContainer />, { wrapper: ConfirmProvider });
     expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("Salon");
 
     mocks.voice = fakeVoice({ channelId: "ch-unknown" });
@@ -194,7 +198,7 @@ describe("RoomContainer in a call", () => {
       thread: { rootId: "m-1", initialExpanded: false, openRevision: 1 },
     });
 
-    const { container } = render(<RoomContainer />);
+    const { container } = render(<RoomContainer />, { wrapper: ConfirmProvider });
     const payload = { dataTransfer: { types: ["Files"], files: [new File(["a"], "a.txt")] } };
     fireEvent.dragEnter(window, payload);
     fireEvent.drop(window, payload);
@@ -211,7 +215,7 @@ describe("RoomContainer in a call", () => {
   it("lets a popped-out window dial the call its address names", () => {
     inCall();
 
-    render(<RoomContainer />);
+    render(<RoomContainer />, { wrapper: ConfirmProvider });
 
     expect(mocks.joinFromPopoutLink).toHaveBeenCalledWith(
       mocks.ui.joinVoiceChannel, mocks.directory.server.id, mocks.directory.channels,
@@ -223,7 +227,7 @@ describe("RoomContainer in a call", () => {
     const requestFullscreen = vi.fn();
     HTMLElement.prototype.requestFullscreen = requestFullscreen;
     inCall();
-    const { container } = render(<RoomContainer />);
+    const { container } = render(<RoomContainer />, { wrapper: ConfirmProvider });
 
     await user.click(screen.getByRole("button", { name: t("voiceBar.fullscreen") }));
 
@@ -245,7 +249,7 @@ describe("RoomContainer with an activity on the channel", () => {
   it("joins what runs in one click from outside, and gives it the stage once inside", () => {
     inCall();
     mocks.activities = { ...mocks.activities, live: new Map([["ch-salon", synctube]]) };
-    const { container, rerender } = render(<RoomContainer />);
+    const { container, rerender } = render(<RoomContainer />, { wrapper: ConfirmProvider });
 
     expect(screen.queryByRole("button", { name: "Aktywności" })).toBeNull();
     expect(within(views(container).call).getByRole("img", { name: "W SyncTube" })).toBeInTheDocument();
@@ -267,7 +271,7 @@ describe("RoomContainer with an activity on the channel", () => {
 
   it("opens the picker from the bar while nothing runs", () => {
     inCall();
-    render(<RoomContainer />);
+    render(<RoomContainer />, { wrapper: ConfirmProvider });
 
     fireEvent.click(screen.getByRole("button", { name: "Aktywności" }));
     expect(mocks.activities.openPicker).toHaveBeenCalledWith({ scope: "voice", channelId: "ch-salon", change: false });
@@ -278,7 +282,7 @@ describe("RoomContainer call controls", () => {
   it("drives the call from the control bar", async () => {
     const user = userEvent.setup();
     inCall();
-    render(<RoomContainer />);
+    render(<RoomContainer />, { wrapper: ConfirmProvider });
 
     await user.click(screen.getByRole("button", { name: t("voice.microphone") }));
     await user.click(screen.getByRole("button", { name: t("voiceBar.cameraStart") }));
@@ -296,7 +300,7 @@ describe("RoomContainer call controls", () => {
   it("offers an invitation only to someone who can manage the server", async () => {
     const user = userEvent.setup();
     inCall();
-    const view = render(<RoomContainer />);
+    const view = render(<RoomContainer />, { wrapper: ConfirmProvider });
     expect(screen.queryByRole("button", { name: t("voiceBar.inviteChannel") })).toBeNull();
 
     mocks.directory = fakeDirectory({ canManageServer: true });
@@ -310,7 +314,7 @@ describe("RoomContainer call controls", () => {
     const user = userEvent.setup();
     const open = vi.spyOn(window, "open").mockReturnValue(null);
     inCall();
-    render(<RoomContainer />);
+    render(<RoomContainer />, { wrapper: ConfirmProvider });
 
     await user.click(screen.getByRole("button", { name: t("voiceBar.popOut") }));
 

@@ -332,7 +332,8 @@
 }
 
 /* At high page zoom the code header and a separate row of actions can use up
-   the room. Put the disclosure beside the field as in the text composer. */
+   the room. Put the disclosure beside the field, with the actions in a tray
+   above it. */
 @media (max-height: 300px) and (max-width: 767px),
   (max-height: 300px) and (pointer: coarse) {
   .box {

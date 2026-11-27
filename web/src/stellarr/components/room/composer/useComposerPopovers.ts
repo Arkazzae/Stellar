@@ -3,8 +3,8 @@ import { useRef, useState } from "react";
 import { useDismissible } from "./useDismissible";
 
 /**
- * The three things that open over the composer: the emoji picker, the
- * formatting bar and, on a phone, the tray that holds the actions. Each one
+ * Three things that open over the composer: the emoji picker, the formatting
+ * bar and, in code mode on a phone, the tray that holds its actions. Each one
  * closes on a press elsewhere and on Escape, returning focus to its button.
  */
 export function useComposerPopovers() {

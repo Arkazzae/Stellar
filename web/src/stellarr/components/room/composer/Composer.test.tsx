@@ -14,7 +14,7 @@ const baseProps = {
 };
 
 describe("Composer attachments", () => {
-  it("keeps the complete attachment toolbar behind one mobile disclosure", async () => {
+  it("keeps code mode's actions, the file plus among them, behind one mobile disclosure", async () => {
     const user = userEvent.setup();
     render(
       <Composer
@@ -27,27 +27,24 @@ describe("Composer attachments", () => {
       />,
     );
 
+    // Writing text, the plus on the left leads to files and the rest; the
+    // toolbar beside the field has no plus of its own.
+    const toolbar = screen.getByRole("toolbar", { name: "Więcej opcji wiadomości" });
+    expect(toolbar).toContainElement(screen.getByRole("button", { name: "Formatowanie" }));
+    expect(screen.queryByRole("button", { name: "Dodaj załącznik" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Więcej opcji wiadomości" })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Wyślij jako kod" }));
     const more = screen.getByRole("button", { name: "Więcej opcji wiadomości" });
     expect(more).toHaveAttribute("aria-expanded", "false");
 
     await user.click(more);
 
     expect(more).toHaveAttribute("aria-expanded", "true");
-    const toolbar = screen.getByRole("toolbar", { name: "Więcej opcji wiadomości" });
-    expect(toolbar).toContainElement(
-      screen.getByRole("button", { name: "Wyślij jako kod" }),
-    );
-    expect(toolbar).toContainElement(
-      screen.getByRole("button", { name: "Przeglądaj GIF-y" }),
-    );
-    expect(toolbar).toContainElement(screen.getByRole("button", { name: "Emoji" }));
-    expect(toolbar).toContainElement(
-      screen.getByRole("button", { name: "Dodaj załącznik" }),
-    );
-    expect(toolbar).not.toContainElement(screen.getByRole("button", { name: "Formatowanie" }));
-    expect(toolbar).toContainElement(
-      screen.getByRole("button", { name: "Nagraj wiadomość głosową" }),
-    );
+    for (const name of ["Wyślij jako kod", "Przeglądaj GIF-y", "Dodaj załącznik", "Nagraj wiadomość głosową"]) {
+      expect(toolbar).toContainElement(screen.getByRole("button", { name }));
+    }
+    expect(screen.queryByRole("button", { name: "Formatowanie" })).toBeNull();
 
     await user.keyboard("{Escape}");
     expect(more).toHaveAttribute("aria-expanded", "false");
@@ -69,6 +66,31 @@ describe("Composer attachments", () => {
     expect(onAttach).toHaveBeenCalledWith([audio]);
   });
 
+  it("opens the file picker for any kind of file from /plik and from code mode's plus", async () => {
+    const user = userEvent.setup();
+    const onAttach = vi.fn();
+    const { container } = render(
+      <Composer {...baseProps} chips={[]} onAttach={onAttach} />,
+    );
+
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+    const click = vi.spyOn(input!, "click");
+    const field = screen.getByRole("combobox");
+
+    await user.type(field, "/plik{Enter}");
+
+    expect(click).toHaveBeenCalledTimes(1);
+    // The way in for anything, not for one kind of file.
+    expect(input!.accept).toContain("image/*");
+    expect(input!.accept).toContain(".docx");
+    // The command leaves nothing behind to be sent.
+    expect(field).toHaveValue("");
+
+    await user.click(screen.getByRole("button", { name: "Wyślij jako kod" }));
+    await user.click(screen.getByRole("button", { name: "Dodaj załącznik" }));
+    expect(click).toHaveBeenCalledTimes(2);
+  });
+
   it("adds files pasted with Ctrl+V to the attachment queue", () => {
     const onAttach = vi.fn();
     render(<Composer {...baseProps} chips={[]} onAttach={onAttach} />);
@@ -76,7 +98,7 @@ describe("Composer attachments", () => {
       type: "image/png",
     });
 
-    fireEvent.paste(screen.getByRole("textbox"), {
+    fireEvent.paste(screen.getByRole("combobox"), {
       clipboardData: { files: [screenshot] },
     });
 
@@ -95,7 +117,7 @@ describe("Composer attachments", () => {
     );
 
     expect(screen.getByRole("button", { name: /Poczekaj na przesłanie/i })).toBeDisabled();
-    await user.type(screen.getByRole("textbox"), "zobacz");
+    await user.type(screen.getByRole("combobox"), "zobacz");
     expect(onSubmit).not.toHaveBeenCalled();
 
     rerender(
@@ -116,7 +138,7 @@ describe("Composer attachments", () => {
       finish = resolve;
     }));
     render(<Composer {...baseProps} chips={[]} onSubmit={onSubmit} />);
-    const field = screen.getByRole("textbox");
+    const field = screen.getByRole("combobox");
 
     await user.type(field, "pierwsza");
     await user.click(screen.getByRole("button", { name: "Wyślij" }));
@@ -155,7 +177,7 @@ describe("Composer formatting", () => {
   it("wraps the selection from the formatting bar and unwraps it on a second press", async () => {
     const user = userEvent.setup();
     render(<Composer {...baseProps} chips={[]} />);
-    const field = screen.getByRole("textbox");
+    const field = screen.getByRole("combobox");
     await user.type(field, "tajny plan");
     (field as HTMLTextAreaElement).setSelectionRange(0, 5);
 
@@ -173,7 +195,7 @@ describe("Composer formatting", () => {
   it("bolds with Ctrl+B and puts the caret between an empty pair", async () => {
     const user = userEvent.setup();
     render(<Composer {...baseProps} chips={[]} />);
-    const field = screen.getByRole("textbox") as HTMLTextAreaElement;
+    const field = screen.getByRole("combobox") as HTMLTextAreaElement;
     await user.click(field);
     await user.keyboard("{Control>}b{/Control}");
     expect(field).toHaveValue("****");
@@ -196,12 +218,12 @@ describe("Composer field sizing", () => {
       <Composer {...baseProps} chips={[]} recordingScope="channel:thread:root" />,
     );
 
-    expect(screen.getByRole("textbox")).toHaveStyle({ height: "132px" });
+    expect(screen.getByRole("combobox")).toHaveStyle({ height: "132px" });
 
     measuredHeight = 36;
     rerender(<Composer {...baseProps} chips={[]} recordingScope="channel" />);
 
-    expect(screen.getByRole("textbox")).toHaveStyle({ height: "36px" });
+    expect(screen.getByRole("combobox")).toHaveStyle({ height: "36px" });
   });
 });
 
@@ -352,7 +374,7 @@ describe("Composer voice messages", () => {
       />,
     );
 
-    await user.type(screen.getByRole("textbox"), "zapisany szkic");
+    await user.type(screen.getByRole("combobox"), "zapisany szkic");
     expect(screen.getByRole("button", { name: "Nagraj wiadomość głosową" }))
       .toBeDisabled();
   });
@@ -481,7 +503,7 @@ describe("Composer code messages", () => {
     const user = userEvent.setup();
     render(<Composer {...baseProps} chips={[]} />);
 
-    await user.click(screen.getByRole("textbox"));
+    await user.click(screen.getByRole("combobox"));
     await user.paste("const room = createRoom();\nroom.join();\nroom.connect();");
 
     expect(screen.getByRole("button", { name: "Wyślij jako kod" })).toHaveAttribute(
@@ -561,29 +583,11 @@ describe("Composer GIF browser", () => {
 });
 
 describe("Composer emoji", () => {
-  it("opens the file picker from the plus in the toolbar", async () => {
-    const user = userEvent.setup();
-    const onAttach = vi.fn();
-    const { container } = render(
-      <Composer {...baseProps} chips={[]} onAttach={onAttach} />,
-    );
-
-    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
-    const click = vi.spyOn(input!, "click");
-
-    await user.click(screen.getByRole("button", { name: "Dodaj załącznik" }));
-
-    expect(click).toHaveBeenCalled();
-    // The plus is the way in for anything, not for one kind of file.
-    expect(input!.accept).toContain("image/*");
-    expect(input!.accept).toContain(".docx");
-  });
-
   it("inserts a picked emoji where the caret is, not at the end", async () => {
     const user = userEvent.setup();
     render(<Composer {...baseProps} chips={[]} />);
 
-    const field = screen.getByRole("textbox") as HTMLTextAreaElement;
+    const field = screen.getByRole("combobox") as HTMLTextAreaElement;
     await user.type(field, "ala ma kota");
     // Between "ala" and " ma kota".
     field.setSelectionRange(3, 3);
@@ -598,7 +602,7 @@ describe("Composer emoji", () => {
   it("keeps the software keyboard closed while a finger browses emoji", () => {
     render(<Composer {...baseProps} chips={[]} />);
 
-    const field = screen.getByRole("textbox");
+    const field = screen.getByRole("combobox");
     const trigger = screen.getByRole("button", { name: "Emoji" });
     fireEvent.pointerDown(trigger, { pointerType: "touch" });
     fireEvent.click(trigger, { detail: 1 });
@@ -648,7 +652,7 @@ describe("Composer emoji", () => {
 
     // Grabbed before the picker opens: its search box is a textbox too, and
     // the panel deliberately stays open after a pick.
-    const field = screen.getByRole("textbox");
+    const field = screen.getByRole("combobox");
     await user.click(screen.getByRole("button", { name: "Emoji" }));
     await user.click(screen.getByRole("option", { name: ":mushris:" }));
 

@@ -1,0 +1,616 @@
+/*
+ * The composer's commands: the list over the field with its hint, the
+ * command being given its arguments in the field, and the phone's sheet.
+ *
+ * Beside the composer rather than in the app's stylesheet, as the code mode's
+ * styles are, so they arrive with the signed-in app and stay off the first
+ * page's budget. The surfaces are the people list's after "@": the same lift,
+ * edge and rows, because the two lists answer the same field.
+ */
+
+/* ----------------------------------------------------------------- pop -- */
+
+/* Spans the box, so the hint can tell how much room there is beside the list,
+   and lets presses through everywhere it draws nothing. */
+.pop {
+  container: commands / inline-size;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 44;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.pop > * {
+  pointer-events: auto;
+}
+
+.card {
+  width: min(440px, 100%);
+  max-height: min(420px, calc(100dvh - 160px));
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-pop);
+  animation: rise var(--dur-base) var(--ease-standard);
+}
+
+.list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.caption {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 8px 10px 4px;
+  font-size: var(--text-12);
+  font-weight: 600;
+  color: var(--text-faint);
+}
+
+.caption span {
+  font-weight: 400;
+}
+
+/* ----------------------------------------------------------------- row -- */
+
+.row {
+  width: 100%;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  text-align: left;
+}
+
+.row[aria-selected="true"] {
+  background: var(--surface-overlay);
+  color: var(--text);
+}
+
+.row[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.icon {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: var(--surface-overlay);
+  color: var(--text-muted);
+}
+
+.row[aria-selected="true"] .icon {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.gifGlyph {
+  font-size: var(--text-10);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.name {
+  flex: none;
+  font-size: var(--text-14);
+  font-weight: 550;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.name mark,
+.alias mark {
+  background: transparent;
+  color: var(--accent-text);
+  font-weight: 650;
+}
+
+.alias {
+  flex: none;
+  font-size: var(--text-12);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.summary {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-13);
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.argList {
+  flex: none;
+  font-size: var(--text-12);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 4px;
+  padding: 8px 10px 6px;
+  border-top: 1px solid var(--line-subtle);
+  font-size: var(--text-12);
+  color: var(--text-faint);
+}
+
+.keys kbd {
+  margin-right: 3px;
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface-pop);
+  font: inherit;
+  font-size: var(--text-11);
+  color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------- hint -- */
+
+/* Bottom-aligned with the list, then moved up to the selected row by the
+   offset the list measures, so it never reaches past either end of it. */
+.hint {
+  width: 300px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-pop);
+  transform: translateY(var(--hint-shift, 0px));
+  transition: transform var(--dur-fast) var(--ease-standard);
+  animation: slideOut var(--dur-base) var(--ease-standard);
+}
+
+.hint p,
+.hint dl {
+  margin: 0;
+  font-size: var(--text-13);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.hint .syntax {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  font-size: var(--text-15);
+  font-weight: 650;
+  color: var(--text);
+}
+
+.syntax span {
+  font-size: var(--text-13);
+  font-weight: 450;
+  color: var(--text-faint);
+}
+
+.hint dl {
+  display: grid;
+  gap: 6px;
+}
+
+.hint dl > div {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+}
+
+.hint dt {
+  font-weight: 550;
+  color: var(--text);
+}
+
+.hint dd {
+  margin: 0;
+  color: var(--text-faint);
+}
+
+.hint .example {
+  padding-top: 10px;
+  border-top: 1px solid var(--line-subtle);
+  font-size: var(--text-12);
+  color: var(--text-faint);
+}
+
+.example code {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--surface-overlay);
+  font-family: var(--font-mono);
+  font-size: var(--text-12);
+  color: var(--text-muted);
+}
+
+.hint .where {
+  font-size: var(--text-12);
+  color: var(--text-faint);
+}
+
+.hint .blocked {
+  font-size: var(--text-12);
+  color: var(--warn-text);
+}
+
+.argumentHint {
+  width: min(360px, 100%);
+  transform: none;
+}
+
+/* Beside a list that already fills the narrow column the hint has no room;
+   the row's own line says enough there. */
+@container commands (max-width: 759px) {
+  .card + .hint {
+    display: none;
+  }
+}
+
+/* The command word being typed, as the list it opened is coloured: the field
+   holds nothing else while the list follows it. */
+.typedCommand {
+  color: var(--accent-text);
+  font-weight: 550;
+}
+
+/* ----------------------------------------------------------- arguments -- */
+
+.args {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: var(--text-15);
+}
+
+.commandName {
+  color: var(--accent-text);
+  font-weight: 550;
+}
+
+/* Tinted from the text rather than set on a surface: the focused box takes
+   the overlay surface itself, and a chip on it in the same colour vanished. */
+.arg {
+  display: inline-flex;
+  align-items: stretch;
+  height: 28px;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--text) 8%, transparent);
+  font-size: var(--text-13);
+  cursor: text;
+}
+
+.arg i {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px 0 9px;
+  background: color-mix(in oklab, var(--text) 6%, transparent);
+  color: var(--text-faint);
+  font-style: normal;
+}
+
+/* As wide as what is in it; `size` stands in where the browser cannot fit
+   a field to its text, and counts wider letters than the font has. */
+.arg input {
+  min-width: 4ch;
+  field-sizing: content;
+  padding: 0 9px 0 7px;
+  background: none;
+  border: 0;
+  outline: 0;
+  color: var(--text);
+  font: inherit;
+}
+
+.arg input::placeholder {
+  color: var(--text-faint);
+}
+
+.current {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* The way out of a command, where the other actions were. */
+.cancel {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--text-faint);
+}
+
+.cancel:hover {
+  background: var(--surface-overlay);
+  color: var(--text);
+}
+
+/* The send button's place and look; with a required argument still empty it
+   stays where it is, dimmed, instead of collapsing as an empty draft's does. */
+.run:disabled {
+  max-width: 34px;
+  margin-left: 2px;
+  opacity: 0.45;
+  transform: none;
+  pointer-events: none;
+}
+
+/* --------------------------------------------------------------- sheet -- */
+
+.sheetLayer {
+  position: fixed;
+  inset: 0;
+  z-index: 92;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-top: max(12px, env(safe-area-inset-top));
+  background: var(--scrim);
+}
+
+.sheet {
+  width: min(520px, 100%);
+  max-height: calc(100dvh - 48px);
+  display: flex;
+  flex-direction: column;
+  padding: 6px 8px max(16px, env(safe-area-inset-bottom));
+  background: var(--surface-pop);
+  border-top: 1px solid var(--line-subtle);
+  border-radius: 18px 18px 0 0;
+  box-shadow: var(--elev-drawer);
+  outline: none;
+  animation: rise var(--dur-base) var(--ease-standard);
+}
+
+.grab {
+  align-self: center;
+  width: 64px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.grab span {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line-strong);
+}
+
+.find {
+  height: 44px;
+  margin: 0 6px 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-field);
+  color: var(--text-faint);
+}
+
+.find:focus-within {
+  border-color: var(--line-strong);
+}
+
+.find input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  outline: 0;
+  color: var(--text);
+  /* Safari zooms a focused field below 16px. */
+  font: inherit;
+  font-size: var(--text-16);
+}
+
+.sheetBody {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* The tiles share the row however many there are, and wrap past four. */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  gap: 6px;
+  padding: 4px 6px 8px;
+}
+
+.tile {
+  min-height: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 4px;
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-field);
+  font-size: var(--text-13);
+  font-weight: 500;
+  color: var(--text);
+}
+
+.tile:active {
+  background: var(--surface-overlay);
+}
+
+.tileIcon {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--surface-overlay);
+  color: var(--text-muted);
+}
+
+.sheetRow {
+  width: 100%;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px;
+  border-radius: var(--radius-md);
+  color: var(--text);
+  text-align: left;
+}
+
+.sheetRow:active {
+  background: var(--surface-overlay);
+}
+
+.sheetRow .icon {
+  width: 32px;
+  height: 32px;
+}
+
+.sheetRow .name {
+  font-size: var(--text-15);
+}
+
+.tile:disabled,
+.sheetRow:disabled {
+  opacity: 0.5;
+}
+
+.empty {
+  margin: 0;
+  padding: 20px 12px;
+  text-align: center;
+  font-size: var(--text-13);
+  color: var(--text-faint);
+}
+
+/* --------------------------------------------------------------- narrow -- */
+
+/* A phone's row has room for one chip or two: they stay on one line that
+   scrolls, so the field keeps its height, and the focused one scrolls into
+   view by itself. The inline padding keeps the current chip's ring whole. */
+@media (max-width: 767px) {
+  .args {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-inline: 4px;
+    scrollbar-width: none;
+  }
+
+  .args > * {
+    flex: none;
+  }
+}
+
+/* ------------------------------------------------------------- touch -- */
+
+@media (pointer: coarse) {
+  .row {
+    min-height: 48px;
+  }
+
+  /* No keyboard to press them with. */
+  .keys {
+    display: none;
+  }
+
+  .arg {
+    height: 36px;
+  }
+
+  .arg input {
+    /* Safari zooms a focused field below 16px. */
+    font-size: var(--text-16);
+  }
+
+  .cancel {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* As large a target as the enabled send button is on touch
+     (responsive.css), so the row does not shift when it turns on. */
+  .run:disabled {
+    max-width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes slideOut {
+  from {
+    opacity: 0;
+    translate: -6px 0;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .hint,
+  .sheet {
+    animation: none;
+  }
+
+  .hint {
+    transition: none;
+  }
+}

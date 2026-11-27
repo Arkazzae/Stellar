@@ -12,19 +12,40 @@ import { type InterfaceLocale, type Translator } from "@/i18n";
 import { documentLocale, translateForDocument } from "@/i18n/defaultLocale";
 import type { CustomEmoji, OpenVoiceMessageCapture } from "@/ports";
 
+import { AUTO_LANGUAGE } from "@/components/room/code/CodeLanguagePicker";
 import { ComposerChips, type ComposerChip } from "./ComposerChips";
 import { ComposerReplyBar } from "./ComposerBars";
 import { ComposerCodeHead, ComposerCodeLayers, composerCodeStyles as codeCss } from "./ComposerCode";
 import { ComposerFormatPanel } from "./ComposerFormatPanel";
+import { CommandArgs } from "./CommandArgs";
+import { CommandList, commandOptionId } from "./CommandList";
+import { CommandSheet, type SheetEntry, type SheetGroup } from "./CommandSheet";
+import {
+  COMMANDS,
+  argumentsComplete,
+  type CommandContext,
+  type CommandInput,
+  type ComposerCommand,
+} from "./commandRegistry";
+import commandCss from "./ComposerCommands.module.css";
+import { codeLanguageNamed } from "@/lib/messages/codeLanguages";
+import { namesCommand } from "@/lib/messages/composerCommands";
 import { insertMention, type MentionCandidate } from "@/lib/messages/composerMentions";
-import { insertEmojiAt, toggleMarker } from "@/lib/messages/composerText";
+import { insertEmojiAt, insertSpoiler, toggleMarker } from "@/lib/messages/composerText";
 import { EmojiPicker } from "@/components/emoji/EmojiPicker";
-import { GifBrowser } from "./GifBrowser";
+import { GifBrowser, type GifBrowserHandle } from "./GifBrowser";
 import { MentionList, mentionOptionId } from "./MentionList";
 import { CODE_MESSAGE_MAX_LENGTH } from "@/lib/messages/messageLimits";
 import { useAutosizedField } from "./useAutosizedField";
+import {
+  commandInput,
+  useComposerCommands,
+  type CommandBase,
+  type CommandItem,
+} from "./useComposerCommands";
 import { useComposerDraft } from "./useComposerDraft";
 import { useComposerPopovers } from "./useComposerPopovers";
+import { useDismissible } from "./useDismissible";
 import { useMentionSuggestions } from "./useMentionSuggestions";
 import { VoiceRecorder } from "./VoiceRecorder";
 import { indentCode, type RangeEdit } from "./codeEditing";
@@ -62,9 +83,9 @@ const MAX_ATTACHMENTS = 10;
 const CODE_FIELD_MAX_HEIGHT = 250;
 
 /**
- * What the plus accepts: everything the composer can queue. The narrower lists
- * on the document and picture buttons are shortcuts to one kind, not the only
- * way in.
+ * What the file picker accepts: everything the composer can queue. The
+ * narrower lists on the document and picture buttons are shortcuts to one
+ * kind, not the only way in.
  */
 const ANY_ATTACHMENT = [
   "image/*",
@@ -79,6 +100,25 @@ const ANY_ATTACHMENT = [
   ".pptx",
 ].join(",");
 
+const NO_INPUT: CommandInput = commandInput({ text: {}, people: {} });
+const NO_PEOPLE: readonly MentionCandidate[] = [];
+
+/**
+ * What the commands reach outside the composer. Each one left out hides its
+ * command, so a host offers only what exists where it is and what the person
+ * may do there.
+ */
+export interface ComposerCommandHost {
+  openPinned?(): void;
+  openStatus?(): void;
+  /** Asks on the question card; the command never kicks by itself. */
+  kick?(person: MentionCandidate): void;
+  /** Asks on the question card, with the reason in its field. */
+  ban?(person: MentionCandidate, reason: string): void;
+  /** Who a person argument offers; the host leaves out whoever cannot be chosen. */
+  people?: readonly MentionCandidate[];
+}
+
 export interface ComposerProps {
   draftScope?: string;
   restoringFiles?: boolean;
@@ -92,9 +132,10 @@ export interface ComposerProps {
   /** Changing this scope cancels an open microphone capture. */
   recordingScope?: string | null;
   /**
-   * False disables the attachment controls and says why on hover, rather than
-   * removing them: a private message has nowhere to upload to yet, and a
-   * control that queues a file nothing will ever send is the worse lie.
+   * False disables the attachment controls that stay on screen (code mode's
+   * plus, the microphone) and says why on hover: a place with nowhere to
+   * upload to should not queue a file nothing will ever send. The /file
+   * command, which is only a way in, is not offered at all.
    */
   attachmentsSupported?: boolean;
   chips: ComposerChip[];
@@ -120,6 +161,8 @@ export interface ComposerProps {
   mentionCandidates?: readonly MentionCandidate[];
   openVoiceMessageMicrophone?: OpenVoiceMessageCapture;
   onSendVoice?(file: File, durationSeconds: number): Promise<void>;
+  /** The commands that lead out of the composer. */
+  commandHost?: ComposerCommandHost;
   locale?: InterfaceLocale;
   t?: Translator;
 }
@@ -145,16 +188,28 @@ export function Composer({
   mentionCandidates = [],
   openVoiceMessageMicrophone,
   onSendVoice,
+  commandHost,
   locale = documentLocale(),
   t = translateForDocument,
 }: ComposerProps) {
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [observedScope, setObservedScope] = useState(recordingScope);
+  /**
+   * The phone's sheet, while it is open. Its entries are made when it opens,
+   * for the draft it opened on: nothing can change under a modal sheet.
+   */
+  const [sheet, setSheet] = useState<{ tiles: SheetEntry[]; groups: SheetGroup[] } | null>(null);
+  const sheetOpen = sheet !== null;
 
   const field = useRef<HTMLTextAreaElement | null>(null);
   const filePicker = useRef<HTMLInputElement | null>(null);
+  const commandTrigger = useRef<HTMLButtonElement | null>(null);
+  const commandPop = useRef<HTMLDivElement | null>(null);
+  const gifBrowser = useRef<GifBrowserHandle | null>(null);
   const mobileActionsId = useId();
   const mentionListId = useId();
+  const commandListId = useId();
+  const commandHintId = useId();
   const codeHelpId = useId();
   const codeCounterId = useId();
   /**
@@ -174,6 +229,8 @@ export function Composer({
    * by hand after each insert.
    */
   const caret = useRef<number | null>(null);
+  /** The same caret as state, for the command list, which follows it. */
+  const [caretAt, setCaretAt] = useState(0);
 
   const {
     emojiOpen,
@@ -219,19 +276,10 @@ export function Composer({
     locale,
     t,
   });
-  useAutosizedField(
-    field,
-    text,
-    recordingScope,
-    codeMode ? CODE_FIELD_MAX_HEIGHT : undefined,
-  );
 
-  const mentions = useMentionSuggestions({
-    text,
-    candidates: mentionCandidates,
-    locale,
-    enabled: !codeMode,
-  });
+  const voiceUnavailable =
+    onSendVoice === undefined || openVoiceMessageMicrophone === undefined;
+  const attachmentsFull = chips.length >= MAX_ATTACHMENTS;
 
   // A recording belongs to the room in which it started. Adjusted during
   // render so the old room's microphone never survives into the new room for
@@ -250,9 +298,6 @@ export function Composer({
     if (answering !== null) field.current?.focus();
   }, [answering]);
 
-  const voiceUnavailable =
-    onSendVoice === undefined || openVoiceMessageMicrophone === undefined;
-
   /** Focuses the field and selects once the new text has been rendered into it. */
   const selectLater = (from: number, to = from) => {
     requestAnimationFrame(() => {
@@ -263,8 +308,116 @@ export function Composer({
     });
   };
 
+  const openPicker = (accept: string) => {
+    const picker = filePicker.current;
+    if (picker === null || onAttach === undefined) return;
+    picker.accept = accept;
+    picker.click();
+  };
+
+  const switchCodeMode = (enabled: boolean) => {
+    setCodeMode(enabled);
+    // Neither panel has anything to offer a code block.
+    setFormatOpen(false);
+    if (enabled) setEmojiOpen(false);
+    setMobileActionsOpen(false);
+    releaseTab.current = false;
+  };
+
+  /**
+   * The question card gives the focus back to whatever had it when it opened.
+   * A command's fields leave as it runs, so the field takes the focus once it
+   * is back on the page, and only then is the card asked for.
+   */
+  const askAfterFrame = (ask: () => void) => {
+    requestAnimationFrame(() => {
+      field.current?.focus();
+      ask();
+    });
+  };
+
+  const host = commandHost ?? {};
+  const { openPinned, openStatus, kick, ban } = host;
+
+  /** What the commands can do, for the draft a command would leave behind. */
+  const contextFor = (base: CommandBase): CommandContext => ({
+    openFilePicker:
+      attachmentsSupported && onAttach !== undefined ? () => openPicker(ANY_ATTACHMENT) : undefined,
+    fileBlocked: attachmentsFull ? "composer.attachmentLimit" : undefined,
+    openGifs: onGif === undefined ? undefined : (query) => gifBrowser.current?.open(query),
+    recordVoice: attachmentsSupported && !voiceUnavailable ? () => setVoiceOpen(true) : undefined,
+    // Judged on the draft the command leaves: the "/voice" being typed is not
+    // a message that would have to go first.
+    voiceBlocked: sending
+      ? "composer.sending"
+      : chips.length > 0 || base.text.trim() !== ""
+        ? "composer.voiceMustBeSeparate"
+        : undefined,
+    enterCode: (language) => {
+      // A name it does not know is left to the automatic guess rather than
+      // turned into plain text.
+      setCodeLanguage(codeLanguageNamed(language) ?? AUTO_LANGUAGE);
+      switchCodeMode(true);
+      selectLater(base.caret);
+    },
+    insertSpoiler: (words) => {
+      const edit = insertSpoiler(base.text, base.caret, words);
+      setText(edit.text);
+      trackCaret(edit.selectionStart);
+      selectLater(edit.selectionStart, edit.selectionEnd);
+    },
+    openPinned:
+      openPinned === undefined
+        ? undefined
+        : () => {
+            openPinned();
+            selectLater(base.caret);
+          },
+    openStatus,
+    kick: kick === undefined ? undefined : (person) => askAfterFrame(() => kick(person)),
+    ban: ban === undefined ? undefined : (person, reason) => askAfterFrame(() => ban(person, reason)),
+  });
+
+  const commands = useComposerCommands({
+    text,
+    caret: caretAt,
+    enabled: !codeMode,
+    contextFor,
+    t,
+  });
+  const active = commands.active;
+  useAutosizedField(
+    field,
+    text,
+    recordingScope,
+    codeMode ? CODE_FIELD_MAX_HEIGHT : undefined,
+    active !== null,
+  );
+  const activeInput = active === null ? null : commandInput(active);
+  const activeReady =
+    active !== null && activeInput !== null && argumentsComplete(active.command, activeInput);
+
+  const mentions = useMentionSuggestions({
+    text,
+    candidates: mentionCandidates,
+    locale,
+    enabled: !codeMode && active === null,
+  });
+  // One list at a time over the field; the commands are what it was opened for.
+  const mentionsShown = mentions.open && !commands.open;
+
+  // A list opened from the plus closes on a press beside it, and on Escape
+  // from wherever the focus is, handing it back to the field.
+  useDismissible(commands.mode === "plus", {
+    isInside: (target) =>
+      [commandTrigger, commandPop, field].some((part) => part.current?.contains(target) === true),
+    onDismiss: () => commands.close(),
+    returnFocusTo: field,
+  });
+
   const trackCaret = (position: number) => {
     caret.current = position;
+    setCaretAt(position);
     mentions.track(position);
   };
 
@@ -277,11 +430,133 @@ export function Composer({
     selectLater(edit.selectionEnd);
   };
 
-  const openPicker = (accept: string) => {
-    const picker = filePicker.current;
-    if (picker === null || onAttach === undefined) return;
-    picker.accept = accept;
-    picker.click();
+  /** Leaves the draft as the command found it, then does what the command is for. */
+  const runCommand = (command: ComposerCommand, input: CommandInput, base: CommandBase) => {
+    setText(base.text);
+    trackCaret(base.caret);
+    // In the same task as the key or the press: a file picker opened any
+    // later is refused for want of a gesture.
+    command.run(contextFor(base), input);
+  };
+
+  /** Puts a command in the field to be given its arguments. */
+  const beginCommand = (command: ComposerCommand, name: string, base: CommandBase, how: "plus" | "slash") => {
+    commands.begin(command, name, base, how);
+    setText(base.text);
+    trackCaret(base.caret);
+  };
+
+  /**
+   * Enter runs the selected command, or gives it its arguments. Tab does the
+   * same for a command with arguments; for one without, it completes the
+   * typed name, so Enter is what runs it.
+   */
+  const chooseCommand = (item: CommandItem, how: "use" | "complete") => {
+    const base = commands.base;
+    if (item.blocked !== undefined || base === null) return;
+    if (item.command.args.length > 0) {
+      beginCommand(item.command, item.name, base, commands.mode ?? "plus");
+      return;
+    }
+    if (how === "complete" && commands.slash !== null) {
+      const typed = `/${item.name}`;
+      setText(`${typed}${text.slice(commands.slash.end)}`);
+      trackCaret(typed.length);
+      selectLater(typed.length);
+      return;
+    }
+    commands.close();
+    runCommand(item.command, NO_INPUT, base);
+  };
+
+  const runActive = () => {
+    if (active === null || activeInput === null || !activeReady) return;
+    commands.end();
+    runCommand(active.command, activeInput, active.base);
+  };
+
+  /**
+   * Out of the command and back to writing. From Escape or Backspace a typed
+   * command stays as text, to be edited or sent as it is; the cancel button,
+   * or a command chosen from the plus, leaves the draft as it was.
+   */
+  const leaveCommand = (keepTyped: boolean) => {
+    if (active === null) return;
+    commands.end();
+    if (keepTyped && active.from === "slash") {
+      const typed = `/${active.name}`;
+      setText(active.base.text === "" ? typed : `${typed} ${active.base.text}`);
+      trackCaret(typed.length);
+      selectLater(typed.length);
+      return;
+    }
+    setText(active.base.text);
+    trackCaret(active.base.caret);
+    selectLater(active.base.caret);
+  };
+
+  /**
+   * A space after a whole command name, typed at the end of the draft, takes
+   * the command up as if it had been chosen, so the arguments can be written
+   * straight after it, unless Escape put the list away on that word.
+   */
+  const takeTypedCommand = (value: string, at: number): boolean => {
+    if (codeMode || composing || active !== null || at !== value.length) return false;
+    const typed = /^\/(\S+) $/.exec(value);
+    // Escape on the word said it is text: the space after it is just a space.
+    if (typed === null || commands.dismissed === value.slice(0, -1)) return false;
+    const word = typed[1] ?? "";
+    const base: CommandBase = { text: "", caret: 0 };
+    const context = contextFor(base);
+    const command = COMMANDS.find((entry) => {
+      if (entry.args.length === 0) return false;
+      const availability = entry.available(context);
+      return (
+        availability.shown &&
+        availability.blocked === undefined &&
+        namesCommand(word, { name: t(entry.name), alias: entry.alias })
+      );
+    });
+    if (command === undefined) return false;
+    beginCommand(command, t(command.name), base, "slash");
+    return true;
+  };
+
+  /** On the phone's row the formatting button is not drawn: it lives in the sheet. */
+  const compactRow = () => {
+    const format = formatTrigger.current;
+    return format !== null && window.getComputedStyle(format).display === "none";
+  };
+
+  const onCommandsButton = () => {
+    if (sheetOpen) {
+      setSheet(null);
+      return;
+    }
+    if (commands.mode === "plus") {
+      commands.close();
+      field.current?.focus();
+      return;
+    }
+    // Pressed while a command is being given its arguments: back to the
+    // draft, and the list to choose another.
+    const from: CommandBase =
+      active !== null
+        ? active.base
+        : { text, caret: caret.current ?? field.current?.selectionStart ?? text.length };
+    if (active !== null) {
+      commands.end();
+      setText(from.text);
+      trackCaret(from.caret);
+    }
+    if (compactRow()) {
+      setSheet(sheetContent(from));
+      return;
+    }
+    commands.openFromPlus(from);
+    setFormatOpen(false);
+    // The list is the field's popup and is driven from it.
+    selectLater(from.caret);
   };
 
   const insertEmoji = (glyph: string, restoreFocus: boolean) => {
@@ -304,15 +579,6 @@ export function Composer({
     caret.current = edit.selectionEnd;
     setFormatOpen(false);
     selectLater(edit.selectionStart, edit.selectionEnd);
-  };
-
-  const switchCodeMode = (enabled: boolean) => {
-    setCodeMode(enabled);
-    // Neither panel has anything to offer a code block.
-    setFormatOpen(false);
-    if (enabled) setEmojiOpen(false);
-    setMobileActionsOpen(false);
-    releaseTab.current = false;
   };
 
   /**
@@ -382,7 +648,30 @@ export function Composer({
       onCodeKeyDown(event);
       return;
     }
-    if (mentions.open) {
+    if (commands.open) {
+      const plainTab =
+        event.key === "Tab" && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey;
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        commands.step(event.key === "ArrowDown" ? 1 : -1);
+        return;
+      }
+      if ((event.key === "Enter" && !event.shiftKey) || plainTab) {
+        if (event.nativeEvent.isComposing) return;
+        event.preventDefault();
+        const item = commands.selected;
+        if (item !== undefined) chooseCommand(item, plainTab ? "complete" : "use");
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        // The list takes this Escape, so nothing beneath it acts on it too.
+        event.stopPropagation();
+        commands.close();
+        return;
+      }
+    }
+    if (mentionsShown) {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
         mentions.step(event.key === "ArrowDown" ? 1 : -1);
@@ -420,9 +709,64 @@ export function Composer({
     event.currentTarget.form?.requestSubmit();
   };
 
+  /**
+   * The phone's sheet: tiles, then the commands for the message and the
+   * server, each where the registry places it. Formatting is among the
+   * message's, because its button is not in the phone's row.
+   */
+  const sheetContent = (base: CommandBase): { tiles: SheetEntry[]; groups: SheetGroup[] } => {
+    const context = contextFor(base);
+    const entry = (command: ComposerCommand): SheetEntry[] => {
+      const availability = command.available(context);
+      if (!availability.shown) return [];
+      const name = t(command.name);
+      return [
+        {
+          id: command.id,
+          label: t(command.label),
+          detail: `/${name}`,
+          icon: command.icon,
+          names: [name, command.alias, t(command.label)],
+          disabled: availability.blocked !== undefined,
+          // A tap is the whole choice: only what cannot run without its
+          // arguments (who to remove) asks for them in the field.
+          onSelect: () => {
+            if (command.args.some((arg) => !arg.optional)) beginCommand(command, name, base, "plus");
+            else runCommand(command, NO_INPUT, base);
+          },
+        },
+      ];
+    };
+    const rows = (group: ComposerCommand["group"]) =>
+      COMMANDS.filter((command) => command.sheet === "row" && command.group === group).flatMap(entry);
+    const formatting: SheetEntry = {
+      id: "format",
+      label: t("composer.format"),
+      detail: t("composer.commands.formatDetail"),
+      icon: "textFormat",
+      names: [t("composer.format")],
+      onSelect: () => setFormatOpen(true),
+    };
+    const [first, ...rest] = rows("message");
+    return {
+      tiles: COMMANDS.filter((command) => command.sheet === "tile").flatMap(entry),
+      groups: [
+        {
+          id: "message",
+          label: t("composer.commands.group.message"),
+          entries: first === undefined ? [formatting] : [first, formatting, ...rest],
+        },
+        {
+          id: "server",
+          label: t("composer.commands.group.server"),
+          entries: rows("server"),
+        },
+      ],
+    };
+  };
+
   const prompt = placeholder ?? t("composer.toChannel", { channel: channelName });
   const noAttachments = t("composer.noPrivateAttachments");
-  const attachmentsFull = chips.length >= MAX_ATTACHMENTS;
   const voiceTitle = !attachmentsSupported
     ? noAttachments
     : hasPayload
@@ -430,14 +774,26 @@ export function Composer({
       : voiceUnavailable
         ? t("composer.recordingUnavailable")
         : undefined;
-  const hasMentionCandidates = mentionCandidates.length > 0;
   const selectedMention = mentions.selected;
+  const selectedCommand = commands.selected;
   const codeLines = codeMode && text.length <= CODE_MESSAGE_MAX_LENGTH ? countLines(text) : 0;
   // A paste of thousands of lines can be edited directly in the textarea.
   const highlightCode = codeLines > 0 && codeLines <= 5_000;
+  const commandsOpenedHere = commands.mode === "plus" || sheetOpen;
 
   return (
-    <form className="composer" onSubmit={submit}>
+    <form
+      className="composer"
+      onSubmit={(event) => {
+        // The send button stands for the command while one is in the field.
+        if (active !== null) {
+          event.preventDefault();
+          runActive();
+          return;
+        }
+        void submit(event);
+      }}
+    >
       {/* On top of the box rather than inside it: the field keeps its own
           height and the answer stays visible while a long message is typed. */}
       {replyingTo === null ? null : (
@@ -477,8 +833,26 @@ export function Composer({
           />
         </div>
       ) : (
-        <div className={codeMode ? `composer-box ${codeCss.box}` : "composer-box"}>
-          {mentions.open ? (
+        <div
+          className={codeMode ? `composer-box ${codeCss.box}` : "composer-box"}
+          // The phone's row keys on these: the plus is the commands', and the
+          // microphone gives way to send once there is something to send.
+          data-commands={codeMode ? undefined : ""}
+          data-payload={hasPayload ? "" : undefined}
+        >
+          {active !== null ? null : commands.open ? (
+            <CommandList
+              ref={commandPop}
+              id={commandListId}
+              hintId={commandHintId}
+              items={commands.items}
+              grouped={commands.grouped}
+              selectedIndex={commands.selectedIndex}
+              onChoose={(item) => chooseCommand(item, "use")}
+              onHover={commands.select}
+              t={t}
+            />
+          ) : mentionsShown ? (
             <MentionList
               id={mentionListId}
               label={t("composer.mentionPeople")}
@@ -489,7 +863,7 @@ export function Composer({
           ) : null}
           {codeMode ? (
             // Code mode turns the box itself into an editor, with its head
-            // inside it; formatting has nothing to mark up in a code block.
+            // inside it; there is no command to give a code block.
             <ComposerCodeHead
               language={codeLanguage}
               onLanguageChange={setCodeLanguage}
@@ -508,26 +882,42 @@ export function Composer({
               t={t}
             />
           ) : (
-            // The left slot shapes the text being written; attaching lives
-            // with the other additions on the right, behind the plus.
+            // The left slot is the way to everything the message can carry
+            // or lead to: files, GIFs, code, the server's own actions.
             <button
-              ref={formatTrigger}
+              ref={commandTrigger}
               type="button"
               className="comp-lead"
-              aria-label={t("composer.format")}
-              aria-haspopup="true"
-              aria-expanded={formatOpen}
-              title={t("composer.format")}
-              onClick={() => setFormatOpen((open) => !open)}
+              aria-label={t("composer.commands.open")}
+              aria-haspopup={sheetOpen ? "dialog" : "listbox"}
+              aria-expanded={commandsOpenedHere}
+              aria-controls={commands.mode === "plus" && commands.open ? commandListId : undefined}
+              title={t("composer.commands.open")}
+              onClick={onCommandsButton}
             >
-              <Icon name="textFormat" size={18} />
+              <Icon name={commandsOpenedHere ? "x" : "plus"} size={18} />
             </button>
+          )}
+          {active === null ? null : (
+            <CommandArgs
+              active={active}
+              people={host.people ?? NO_PEOPLE}
+              locale={locale}
+              onText={commands.setArgument}
+              onPerson={commands.setPerson}
+              onFocusArgument={commands.focusArgument}
+              onRun={runActive}
+              onBack={() => leaveCommand(true)}
+              t={t}
+            />
           )}
           {/* One wrapper in both modes, so the textarea stays the same element,
               with its focus and undo history, when code mode is switched. Out
-              of code mode it draws no box of its own. */}
+              of code mode it draws no box of its own. While a command is in
+              the field it waits, hidden, with the draft the command leaves. */}
           <div
             className={codeMode ? codeCss.field : codeCss.plainField}
+            hidden={active !== null}
             data-composing={codeMode && composing ? "" : undefined}
             data-plain-code={codeMode && !highlightCode ? "" : undefined}
             style={
@@ -542,6 +932,11 @@ export function Composer({
             <textarea
               readOnly={loadingDraft}
               ref={field}
+              className={
+                commands.open && commands.slash !== null && text === `/${commands.query}`
+                  ? commandCss.typedCommand
+                  : undefined
+              }
               rows={1}
               value={text}
               placeholder={codeMode ? t("composer.codePlaceholder") : prompt}
@@ -551,20 +946,29 @@ export function Composer({
               spellCheck={codeMode ? false : undefined}
               autoCapitalize={codeMode ? "off" : undefined}
               autoCorrect={codeMode ? "off" : undefined}
-              role={hasMentionCandidates ? "combobox" : undefined}
-              aria-autocomplete={hasMentionCandidates ? "list" : undefined}
-              aria-expanded={hasMentionCandidates ? mentions.open : undefined}
-              aria-controls={mentions.open ? mentionListId : undefined}
+              // Outside code mode the field always offers a list: the
+              // commands after a slash, and people after "@".
+              role={codeMode ? undefined : "combobox"}
+              aria-autocomplete={codeMode ? undefined : "list"}
+              aria-expanded={codeMode ? undefined : commands.open || mentionsShown}
+              aria-controls={
+                commands.open ? commandListId : mentionsShown ? mentionListId : undefined
+              }
               aria-activedescendant={
-                mentions.open && selectedMention !== undefined
-                  ? mentionOptionId(mentionListId, selectedMention)
-                  : undefined
+                commands.open && selectedCommand !== undefined
+                  ? commandOptionId(commandListId, selectedCommand)
+                  : mentionsShown && selectedMention !== undefined
+                    ? mentionOptionId(mentionListId, selectedMention)
+                    : undefined
               }
               onChange={(event) => {
-                setText(event.target.value);
-                trackCaret(event.target.selectionStart);
+                const value = event.target.value;
+                const at = event.target.selectionStart;
                 clearSendError();
                 onTyping?.();
+                if (takeTypedCommand(value, at)) return;
+                setText(value);
+                trackCaret(at);
               }}
               onSelect={(event) => trackCaret(event.currentTarget.selectionStart)}
               onPaste={(event) => {
@@ -584,24 +988,44 @@ export function Composer({
               }}
             />
           </div>
-          <button
-            ref={mobileActionsTrigger}
-            type="button"
-            className="attach comp-mobile-more"
-            aria-label={t("composer.moreActions")}
-            aria-controls={mobileActionsId}
-            aria-expanded={mobileActionsOpen}
-            onClick={() => setMobileActionsOpen((open) => !open)}
-          >
-            <Icon name={mobileActionsOpen ? "x" : "plus"} size={18} />
-          </button>
+          {/* Code mode keeps the phone's disclosure for its own row; outside
+              it, the plus and the sheet hold what the disclosure held. */}
+          {codeMode ? (
+            <button
+              ref={mobileActionsTrigger}
+              type="button"
+              className="attach comp-mobile-more"
+              aria-label={t("composer.moreActions")}
+              aria-controls={mobileActionsId}
+              aria-expanded={mobileActionsOpen}
+              onClick={() => setMobileActionsOpen((open) => !open)}
+            >
+              <Icon name={mobileActionsOpen ? "x" : "plus"} size={18} />
+            </button>
+          ) : null}
           <div
             ref={mobileActions}
             id={mobileActionsId}
-            className={mobileActionsOpen ? "comp-actions mobile-open" : "comp-actions"}
+            className={codeMode && mobileActionsOpen ? "comp-actions mobile-open" : "comp-actions"}
             role="toolbar"
             aria-label={t("composer.moreActions")}
+            hidden={active !== null}
           >
+            {/* Formatting shapes the words being written; a code block has none. */}
+            {codeMode ? null : (
+              <button
+                ref={formatTrigger}
+                type="button"
+                className="attach comp-format"
+                aria-label={t("composer.format")}
+                aria-haspopup="true"
+                aria-expanded={formatOpen}
+                title={t("composer.format")}
+                onClick={() => setFormatOpen((open) => !open)}
+              >
+                <Icon name="textFormat" size={18} />
+              </button>
+            )}
             <button
               type="button"
               className="attach comp-code-trigger"
@@ -612,27 +1036,31 @@ export function Composer({
             >
               <Icon name="code" size={18} />
             </button>
-            <button
-              type="button"
-              className="attach comp-x"
-              aria-label={t("composer.addAttachment")}
-              disabled={!attachmentsSupported || attachmentsFull}
-              title={
-                attachmentsFull
-                  ? t("composer.attachmentLimit")
-                  : attachmentsSupported
-                    ? t("composer.addAttachment")
-                    : noAttachments
-              }
-              onClick={() => {
-                setMobileActionsOpen(false);
-                openPicker(ANY_ATTACHMENT);
-              }}
-            >
-              <Icon name="plus" size={18} />
-            </button>
+            {/* In code mode the plus stays here, for files only: the slot on
+                the left is the code's, and a slash there is code. */}
+            {codeMode ? (
+              <button
+                type="button"
+                className="attach comp-x"
+                aria-label={t("composer.addAttachment")}
+                disabled={!attachmentsSupported || attachmentsFull}
+                title={
+                  attachmentsFull
+                    ? t("composer.attachmentLimit")
+                    : attachmentsSupported
+                      ? t("composer.addAttachment")
+                      : noAttachments
+                }
+                onClick={() => {
+                  setMobileActionsOpen(false);
+                  openPicker(ANY_ATTACHMENT);
+                }}
+              >
+                <Icon name="plus" size={18} />
+              </button>
+            ) : null}
             {onGif === undefined ? null : (
-              <GifBrowser onSelect={onGif} />
+              <GifBrowser ref={gifBrowser} onSelect={onGif} />
             )}
             {/* Not in code mode, as drawn: an emoji is not code. */}
             {codeMode ? null : (
@@ -659,7 +1087,7 @@ export function Composer({
             )}
             <button
               type="button"
-              className="attach comp-x"
+              className="attach comp-x comp-voice"
               aria-label={t("composer.recordVoice")}
               disabled={!attachmentsSupported || hasPayload || sending || voiceUnavailable}
               title={voiceTitle}
@@ -671,29 +1099,53 @@ export function Composer({
               <Icon name="mic" size={18} />
             </button>
           </div>
-          {/* Disabled is not only a guard: `.send:disabled` collapses the button
-              to zero width, which is how the empty composer looks. */}
-          <button
-            type="submit"
-            className={
-              sending
-                ? "send sending"
-                : hasPayload && attachmentsBlocked
-                  ? "send waiting"
-                  : "send"
-            }
-            disabled={!canSend}
-            aria-label={
-              sending
-                ? t("composer.sending")
-                : attachmentsBlocked
-                  ? t("composer.waitForAttachments")
-                  : t("composer.send")
-            }
-            aria-busy={sending}
-          >
-            <Icon name="send" size={15} />
-          </button>
+          {active !== null ? (
+            <>
+              <button
+                type="button"
+                className={commandCss.cancel}
+                aria-label={t("composer.commands.cancel")}
+                title={t("composer.commands.cancel")}
+                onClick={() => leaveCommand(false)}
+              >
+                <Icon name="x" size={16} />
+              </button>
+              {/* The send button's place: it runs the command, or asks first. */}
+              <button
+                type="submit"
+                className={`send ${commandCss.run}`}
+                disabled={!activeReady}
+                aria-label={t("composer.commands.run")}
+                title={t("composer.commands.run")}
+              >
+                <Icon name="send" size={15} />
+              </button>
+            </>
+          ) : (
+            // Disabled is not only a guard: `.send:disabled` collapses the
+            // button to zero width, which is how the empty composer looks.
+            <button
+              type="submit"
+              className={
+                sending
+                  ? "send sending"
+                  : hasPayload && attachmentsBlocked
+                    ? "send waiting"
+                    : "send"
+              }
+              disabled={!canSend}
+              aria-label={
+                sending
+                  ? t("composer.sending")
+                  : attachmentsBlocked
+                    ? t("composer.waitForAttachments")
+                    : t("composer.send")
+              }
+              aria-busy={sending}
+            >
+              <Icon name="send" size={15} />
+            </button>
+          )}
         </div>
       )}
       {/* Outside `.composer-box`, so they are positioned against the form that
@@ -724,6 +1176,15 @@ export function Composer({
           />
         </div>
       ) : null}
+      {sheet === null ? null : (
+        <CommandSheet
+          tiles={sheet.tiles}
+          groups={sheet.groups}
+          returnFocusTo={commandTrigger}
+          onClose={() => setSheet(null)}
+          t={t}
+        />
+      )}
       {sendError === null ? null : (
         <p className="composer-error" role="alert">
           {sendError}

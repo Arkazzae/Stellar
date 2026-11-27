@@ -16,7 +16,7 @@ const baseProps: ComposerProps = {
 function setup(props: Partial<ComposerProps> = {}) {
   const user = userEvent.setup();
   const view = render(<Composer {...baseProps} {...props} />);
-  return { user, ...view, field: screen.getByRole("textbox") as HTMLTextAreaElement };
+  return { user, ...view, field: screen.getByRole("combobox") as HTMLTextAreaElement };
 }
 
 describe("Composer replying", () => {
@@ -109,28 +109,46 @@ describe("Composer sending", () => {
 });
 
 describe("Composer attachments", () => {
-  it("disables the attachment controls and says why when nothing can be uploaded", () => {
-    setup({
+  it("offers no file and says why the controls that remain are off when nothing can be uploaded", async () => {
+    const { user, field } = setup({
       attachmentsSupported: false,
       onAttach: vi.fn(),
       openVoiceMessageMicrophone: vi.fn(),
       onSendVoice: vi.fn(),
     });
 
+    await user.type(field, "/");
+    expect(screen.getByRole("option", { name: /^\/kod/ })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /^\/plik/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Nagraj wiadomość głosową" })).toBeDisabled();
+
+    await user.keyboard("{Escape}");
+    await user.clear(field);
+    await user.click(screen.getByRole("button", { name: "Wyślij jako kod" }));
     const reason = "Załączniki w wiadomościach prywatnych nie są jeszcze dostępne";
     expect(screen.getByRole("button", { name: "Dodaj załącznik" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Dodaj załącznik" })).toHaveAttribute("title", reason);
-    expect(screen.getByRole("button", { name: "Nagraj wiadomość głosową" })).toBeDisabled();
   });
 
-  it("stops accepting files at ten", () => {
+  it("stops accepting files at ten, and says so beside /plik", async () => {
     const chips = Array.from({ length: 10 }, (_, index) => ({
       id: `c-${index}`,
       name: `file-${index}.txt`,
       status: "ready" as const,
     }));
-    setup({ chips, onAttach: vi.fn() });
+    const { user, field, container } = setup({ chips, onAttach: vi.fn() });
+    const click = vi.spyOn(container.querySelector<HTMLInputElement>('input[type="file"]')!, "click");
 
+    await user.type(field, "/plik");
+    const row = screen.getByRole("option", { name: /plik/ });
+    expect(row).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByText("Wiadomość może zawierać maksymalnie 10 załączników")).toBeInTheDocument();
+    await user.keyboard("{Enter}");
+    expect(click).not.toHaveBeenCalled();
+
+    await user.keyboard("{Escape}");
+    await user.clear(field);
+    await user.click(screen.getByRole("button", { name: "Wyślij jako kod" }));
     expect(screen.getByRole("button", { name: "Dodaj załącznik" })).toBeDisabled();
   });
 
@@ -138,7 +156,7 @@ describe("Composer attachments", () => {
     const onAttach = vi.fn();
     setup({ onAttach });
 
-    fireEvent.paste(screen.getByRole("textbox"), { clipboardData: { files: [] } });
+    fireEvent.paste(screen.getByRole("combobox"), { clipboardData: { files: [] } });
 
     expect(onAttach).not.toHaveBeenCalled();
   });
@@ -167,8 +185,9 @@ describe("Composer popovers", () => {
     expect(screen.queryByRole("toolbar", { name: "Formatowanie" })).toBeNull();
   });
 
-  it("folds the mobile tray when a press lands outside it", async () => {
+  it("folds code mode's mobile tray when a press lands outside it", async () => {
     const { user } = setup();
+    await user.click(screen.getByRole("button", { name: "Wyślij jako kod" }));
     const more = screen.getByRole("button", { name: "Więcej opcji wiadomości" });
 
     await user.click(more);
@@ -178,50 +197,53 @@ describe("Composer popovers", () => {
     expect(more).toHaveAttribute("aria-expanded", "false");
   });
 
-  describe("with the mobile tray opened over the picker from the keyboard", () => {
-    async function openTrayOverPicker() {
+  describe("with the command list opened over the picker from the keyboard", () => {
+    const commands = () => screen.queryByRole("listbox", { name: "Komendy" });
+
+    async function openListOverPicker() {
       const { user } = setup();
-      const more = screen.getByRole("button", { name: "Więcej opcji wiadomości" });
+      const plus = screen.getByRole("button", { name: "Komendy i dodawanie" });
       await user.click(screen.getByRole("button", { name: "Emoji" }));
-      // The keyboard reaches the tray button by Tab and presses it: the focus is
-      // on the button, not in the picker's search field, and no pointer is
-      // involved, so the picker stays open.
-      more.focus();
-      fireEvent.click(more, { detail: 0 });
-      expect(more).toHaveAttribute("aria-expanded", "true");
+      // The keyboard reaches the plus and presses it: no pointer is involved,
+      // so the picker stays open under the list.
+      plus.focus();
+      fireEvent.click(plus, { detail: 0 });
+      expect(plus).toHaveAttribute("aria-expanded", "true");
+      expect(commands()).toBeInTheDocument();
       expect(screen.getByRole("dialog", { name: "Szukaj emoji" })).toBeInTheDocument();
-      return { user, more };
+      return { user, plus };
     }
 
-    it("closes the tray on one Escape and the picker on the next", async () => {
-      const { user, more } = await openTrayOverPicker();
+    it("closes the list on one Escape, handing the focus to the field, and the picker on the next", async () => {
+      const { user } = await openListOverPicker();
 
       await user.keyboard("{Escape}");
-      expect(more).toHaveAttribute("aria-expanded", "false");
+      expect(commands()).toBeNull();
+      expect(screen.getByRole("combobox")).toHaveFocus();
       expect(screen.getByRole("dialog", { name: "Szukaj emoji" })).toBeInTheDocument();
 
       await user.keyboard("{Escape}");
       expect(screen.queryByRole("dialog", { name: "Szukaj emoji" })).toBeNull();
     });
 
-    it("closes the tray on a press outside both and the picker on the next", async () => {
-      const { user, more } = await openTrayOverPicker();
+    it("closes the list on a press outside both and the picker on the next", async () => {
+      const { user } = await openListOverPicker();
 
       await user.click(document.body);
-      expect(more).toHaveAttribute("aria-expanded", "false");
+      expect(commands()).toBeNull();
       expect(screen.getByRole("dialog", { name: "Szukaj emoji" })).toBeInTheDocument();
 
       await user.click(document.body);
       expect(screen.queryByRole("dialog", { name: "Szukaj emoji" })).toBeNull();
     });
 
-    it("closes the tray, and leaves the picker open, on a press inside the picker", async () => {
-      const { more } = await openTrayOverPicker();
+    it("closes the list, and leaves the picker open, on a press inside the picker", async () => {
+      await openListOverPicker();
 
       fireEvent.pointerDown(
         screen.getByRole("dialog", { name: "Szukaj emoji" }).querySelector(".emo-pick")!,
       );
-      expect(more).toHaveAttribute("aria-expanded", "false");
+      expect(commands()).toBeNull();
       expect(screen.getByRole("dialog", { name: "Szukaj emoji" })).toBeInTheDocument();
     });
   });

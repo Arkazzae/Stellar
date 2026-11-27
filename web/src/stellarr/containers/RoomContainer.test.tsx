@@ -22,6 +22,8 @@ import {
   t,
 } from "@/test/roomFakes";
 
+import { ConfirmProvider } from "@/components/primitives/ConfirmDialog";
+
 import { RoomContainer } from "./RoomContainer";
 
 type ThreadPanelStubProps = TranscriptProps & {
@@ -44,6 +46,8 @@ const mocks = vi.hoisted(() => {
     preferences: { developerMode: false },
     profile: { toggle: vi.fn() },
     ports: {
+      // The composer's commands ask whether moderation has an endpoint.
+      admin: { supported: { moderation: false } },
       voiceSettings: { subscribe: () => () => {}, getSnapshot: () => deviceSettings },
       chat: { listIndexed: async () => ({ messages: [], nextCursor: null }) },
       typing: { onTypingChanged: () => () => {}, typingIn: () => nobody },
@@ -151,7 +155,7 @@ const seenPanel = () => mocks.seen.panel!;
 
 describe("RoomContainer text room", () => {
   it("shows the active channel's transcript, composer and header", () => {
-    render(<RoomContainer />);
+    render(<RoomContainer />, { wrapper: ConfirmProvider });
 
     expect(screen.getByRole("log", { name: t("room.messagesOn", { channel: "general" }) }))
       .toBeInTheDocument();
@@ -168,7 +172,7 @@ describe("RoomContainer text room", () => {
     mocks.ui = fakeUi({ activeTextChannelId: null });
     mocks.chat = fakeChat({ channelId: null });
 
-    render(<RoomContainer />);
+    render(<RoomContainer />, { wrapper: ConfirmProvider });
 
     expect(screen.getByRole("log", { name: t("room.messagesOn", { channel: "" }) }))
       .toBeInTheDocument();
@@ -177,7 +181,7 @@ describe("RoomContainer text room", () => {
 
   it("sends what the composer submits through the chat", async () => {
     const user = userEvent.setup();
-    render(<RoomContainer />);
+    render(<RoomContainer />, { wrapper: ConfirmProvider });
 
     await user.click(screen.getByRole("button", { name: "submit" }));
 
@@ -189,7 +193,7 @@ describe("RoomContainer text room", () => {
     mocks.chat = fakeChat({
       replyingTo: { id: "m-1", authorId: "u-ada", authorName: "Ada", preview: "Lunch?" },
     });
-    render(<RoomContainer />);
+    render(<RoomContainer />, { wrapper: ConfirmProvider });
 
     expect(mocks.seen.composers.at(-1)?.replyingTo).toEqual({
       id: "m-1",
@@ -206,7 +210,7 @@ describe("RoomContainer text room", () => {
     mocks.preferences = { developerMode: true };
     mocks.chat = fakeChat({ hasOlder: true, firstUnreadGroupId: "g-9", ownSendToken: 4 });
 
-    render(<RoomContainer />);
+    render(<RoomContainer />, { wrapper: ConfirmProvider });
 
     expect(seenTranscript()).toMatchObject({
       canModerate: true,
@@ -221,7 +225,7 @@ describe("RoomContainer text room", () => {
   });
 
   it("opens a profile from an author", () => {
-    render(<RoomContainer />);
+    render(<RoomContainer />, { wrapper: ConfirmProvider });
     const anchor = document.createElement("button");
 
     seenTranscript().onOpenAuthor?.("u-ada", anchor);
@@ -232,7 +236,7 @@ describe("RoomContainer text room", () => {
 
 describe("RoomContainer translation", () => {
   it("leaves translation off until the language settings turn it on", () => {
-    const view = render(<RoomContainer />);
+    const view = render(<RoomContainer />, { wrapper: ConfirmProvider });
 
     expect(seenTranscript().translation).toMatchObject({
       enabled: false,
@@ -255,7 +259,7 @@ describe("RoomContainer translation", () => {
 
   it("gives an open thread the same translation settings as the channel", () => {
     mocks.language = fakeLanguage({ chatTranslationEnabled: true });
-    render(<RoomContainer />);
+    render(<RoomContainer />, { wrapper: ConfirmProvider });
 
     expect(seenThread().translation).toBe(seenTranscript().translation);
   });
@@ -274,7 +278,7 @@ describe("RoomContainer thread", () => {
       replyingTo: { id: "m-1", authorId: "u-ada", authorName: "Ada", preview: "Lunch?" },
     });
 
-    render(<RoomContainer />);
+    render(<RoomContainer />, { wrapper: ConfirmProvider });
 
     const panel = screen.getByRole("complementary", { name: "thread-stub" });
     expect(within(panel).getByRole("form", { name: "composer-stub" })).toBeInTheDocument();
@@ -288,7 +292,7 @@ describe("RoomContainer thread", () => {
 
   it("opens in the layout the opener asked for and remembers the reader's change", () => {
     mocks.chat = fakeChat({ thread });
-    const { container } = render(<RoomContainer />);
+    const { container } = render(<RoomContainer />, { wrapper: ConfirmProvider });
     const room = container.querySelector("main")!;
 
     expect(room).toHaveClass("thread-panel-open", "thread-panel-expanded");
@@ -302,7 +306,7 @@ describe("RoomContainer thread", () => {
 
   it("closes through the chat", () => {
     mocks.chat = fakeChat({ thread });
-    render(<RoomContainer />);
+    render(<RoomContainer />, { wrapper: ConfirmProvider });
 
     seenThread().onClose();
 
@@ -313,7 +317,7 @@ describe("RoomContainer thread", () => {
 describe("RoomContainer channel panel", () => {
   it("is closed until the ui opens it, on the tab the ui last showed", () => {
     mocks.ui = fakeUi({ channelPanelTab: "links" });
-    const view = render(<RoomContainer />);
+    const view = render(<RoomContainer />, { wrapper: ConfirmProvider });
 
     expect(screen.getByTestId("channel-panel")).toHaveAttribute("data-open", "false");
     expect(screen.getByTestId("channel-panel")).toHaveAttribute("data-tab", "links");
@@ -329,7 +333,7 @@ describe("RoomContainer channel panel", () => {
   it("is toggled by the header on the tab it last showed, closing any thread", async () => {
     const user = userEvent.setup();
     mocks.ui = fakeUi({ channelPanelTab: "media" });
-    render(<RoomContainer />);
+    render(<RoomContainer />, { wrapper: ConfirmProvider });
 
     await user.click(screen.getByRole("button", { name: t("room.channelPanel") }));
 
@@ -339,7 +343,7 @@ describe("RoomContainer channel panel", () => {
 
   it("lets a pin scroll the transcript once the transcript has lent its scroll", () => {
     const jump = vi.fn();
-    render(<RoomContainer />);
+    render(<RoomContainer />, { wrapper: ConfirmProvider });
 
     seenPanel().onOpenPin?.("m-7");
     expect(jump).not.toHaveBeenCalled();
@@ -359,7 +363,7 @@ describe("RoomContainer attachments", () => {
   }
 
   it("attaches files dropped on the room", () => {
-    render(<RoomContainer />);
+    render(<RoomContainer />, { wrapper: ConfirmProvider });
     const files = [new File(["a"], "a.txt"), new File(["b"], "b.txt")];
 
     drop(files);
@@ -369,7 +373,7 @@ describe("RoomContainer attachments", () => {
 
   it("ignores a drop when there is no text channel to attach to", () => {
     mocks.ui = fakeUi({ activeTextChannelId: null });
-    render(<RoomContainer />);
+    render(<RoomContainer />, { wrapper: ConfirmProvider });
 
     drop([new File(["a"], "a.txt")]);
 
@@ -377,7 +381,7 @@ describe("RoomContainer attachments", () => {
   });
 
   it("opens an image from a message in the viewer and closes it again", () => {
-    render(<RoomContainer />);
+    render(<RoomContainer />, { wrapper: ConfirmProvider });
     expect(screen.queryByRole("dialog")).toBeNull();
 
     act(() =>
@@ -396,7 +400,7 @@ describe("RoomContainer attachments", () => {
   });
 
   it("shares one set of attachment callbacks with the transcript, thread and panel", () => {
-    render(<RoomContainer />);
+    render(<RoomContainer />, { wrapper: ConfirmProvider });
 
     expect(seenThread().attachments).toBe(seenTranscript().attachments);
     expect(seenPanel().callbacks).toBe(seenTranscript().attachments);

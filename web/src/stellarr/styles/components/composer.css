@@ -207,9 +207,9 @@
     width:100%;margin:0 2px 2px;color:var(--danger-text);
     font-size:var(--text-12);line-height:1.45;
   }
-  /* glif po lewej stronie pola — jak w oryginale */
-  /* The same round target and the same hover/press as `.attach`, because it is
-     the same kind of thing: a button in the composer box. It keeps its own
+  /* The plus on the left of the field, which opens the commands. The same
+     round target and the same hover/press as `.attach`, because it is the same
+     kind of thing: a button in the composer box. It keeps its own
      `:focus-within` colour below — the field it focuses is what lights it. */
   .comp-lead{
     width:30px;height:30px;border-radius:50%;
@@ -221,6 +221,7 @@
   .comp-lead:active:not(:disabled){background:var(--surface-raised);color:var(--text)}
   .comp-lead:disabled{opacity:.55;cursor:not-allowed}
   .composer-box:focus-within .comp-lead{color:var(--text-muted)}
+  .comp-lead[aria-expanded="true"]{background:var(--surface-overlay);color:var(--text)}
   .composer textarea{
     flex:1;min-width:0;background:none;border:none;resize:none;color:var(--text);
     /* What you type is set like what you sent: same size token, same leading.
@@ -255,9 +256,9 @@
   }
   .comp-actions{display:flex;align-items:center;gap:2px;min-width:0}
   /* Formatting sits above the composer like the emoji panel: a small bar of
-     markers that wrap the selection. */
+     markers that wrap the selection, on the right, over its button. */
   .fmt-pop{
-    position:absolute;left:20px;bottom:calc(100% - 4px);z-index:42;
+    position:absolute;right:20px;bottom:calc(100% - 4px);z-index:42;
     display:flex;gap:2px;padding:4px;border-radius:10px;
     background:var(--surface-raised);border:1px solid var(--line);box-shadow:var(--shadow-pop);
     animation:emoPopIn var(--dur-base) var(--ease-standard);
@@ -390,10 +391,16 @@
   @media (max-width:767px), (pointer:coarse){
     /* Keep Safari from zooming the field on focus and honor larger text. */
     .composer textarea{font-size:max(var(--text-16), var(--msg-size))}
-    /* A touch composer keeps writing, disclosure and send in the fixed row.
-       Secondary actions open above it, including on a tablet whose persistent
-       rail leaves too little room for six finger-sized controls. */
-    .composer .comp-lead{display:none}
+    /* A touch composer keeps the plus, the field, emoji and the microphone in
+       the fixed row, with send in the microphone's place once there is
+       something to send. Everything else is in the sheet the plus opens,
+       including on a tablet whose persistent rail leaves too little room for
+       six finger-sized controls. */
+    /* Pulled in by the room its larger target adds, so it sits as far from
+       the box's edge as send does from the other. */
+    .composer .comp-lead{width:44px;height:44px;margin-left:-6px;margin-right:2px}
+    /* Code mode has no plus on the left, so it keeps the disclosure and the
+       tray above the field for its own actions (see ComposerCode.module.css). */
     .composer .comp-mobile-more{
       display:inline-flex;width:44px;height:44px;flex:none;
     }
@@ -419,6 +426,16 @@
     .composer .comp-actions .attach[aria-pressed="true"]{
       background:var(--surface-overlay);color:var(--text);
     }
+    .composer-box[data-commands] > .comp-actions{
+      position:static;display:flex;gap:2px;padding:0;
+      border-radius:0;background:none;box-shadow:none;animation:none;
+    }
+    .composer-box[data-commands] > .comp-actions .attach{width:44px;border-radius:50%}
+    .composer-box[data-commands] > .comp-actions .comp-format,
+    .composer-box[data-commands] > .comp-actions .comp-code-trigger,
+    .composer-box[data-commands] > .comp-actions .gif-trigger,
+    .composer-box[data-commands][data-payload] > .comp-actions .comp-voice{display:none}
+    .fmt-btn{min-width:44px;height:44px}
     .comp-reply-x,
     .chip .x,
     .voice-rec-cancel,
