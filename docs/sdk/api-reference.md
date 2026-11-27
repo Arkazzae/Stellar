@@ -1,6 +1,6 @@
 # API and CLI reference
 
-Complete technical reference for `@stellarr/sdk` (`0.3.0`), `/_stellarr/sdk/v1.js`, `stellarr.json`, and the `stellarr` CLI.
+Complete technical reference for `@stellarr/sdk` (`0.4.0`), `/_stellarr/sdk/v1.js`, `stellarr.json`, and the `stellarr` CLI.
 
 ---
 

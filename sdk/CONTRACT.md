@@ -3,7 +3,7 @@
 > [!NOTE]
 > Formal platform contract between Stellarr instances, `@stellarr/sdk`, and Activity authors. For tutorials, copy-paste recipes, and full TypeScript API signatures, start with the [SDK README](README.md) or the [Activity SDK guides](../docs/sdk/getting-started.md).
 >
-> Sections carry explicit status markers: **Decided** (enforced rule), **Implemented** (live in `0.3.0`), **Proposed** (active v1 design), or **Open** (pending product decision).
+> Sections carry explicit status markers: **Decided** (enforced rule), **Implemented** (live in `0.4.0`), **Proposed** (active v1 design), or **Open** (pending product decision).
 
 ## Terminology
 
