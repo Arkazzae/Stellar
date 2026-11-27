@@ -1,15 +1,15 @@
 #!/bin/sh
 # Installs Stellarr with Docker Compose, and updates an installation it made.
 #
-#   curl -fsSL https://raw.githubusercontent.com/Arkazzae/Stellarr/main/install.sh | bash
-#   curl -fsSL https://raw.githubusercontent.com/Arkazzae/Stellarr/main/install.sh | bash -s -- --yes --domain chat.example.com
 #   ./install.sh               in a checkout
 #   ./install.sh --build       in a checkout, building the image from it
 #
 # The installer itself is a program, built from init/installer/ in the repository
 # and published in the server registry. This script fetches the one for this
-# machine, checks its SHA-256 sum and runs it with the same arguments; --help
-# lists them. STELLARR_INSTALLER_BIN runs an executable already on the host.
+# machine, checks its SHA-256 sum and its GitHub release attestation, and runs
+# it with the same arguments; --help lists them. The attestation check needs an
+# authenticated GitHub CLI, and nothing runs without it. STELLARR_INSTALLER_BIN
+# runs an executable already on the host.
 # To run from source, use cargo run --locked --manifest-path init/installer/Cargo.toml.
 # STELLARR_INSTALLER_VERSION takes the installer of another release, such as
 # 1.5.0, in place of the latest one.
@@ -117,6 +117,8 @@ fetch_installer() {
   if ! have curl && ! have wget; then
     fail "Neither curl nor wget is installed" "Install curl or GNU wget and run the installer again."
   fi
+  have gh || fail "The binary installer requires GitHub CLI (gh) to verify its release attestation." \
+    "Use Docker Compose directly, or build the installer with cargo from a Stellarr checkout."
   if [ -n "${STELLARR_INSTALLER_VERSION:-}" ]; then
     tag=v${STELLARR_INSTALLER_VERSION#v}
   else
@@ -145,6 +147,11 @@ fetch_installer() {
     fail "The downloaded installer does not match its published SHA-256 sum" \
       "Nothing was run. Try again; if it persists, report it at $repo_url/issues"
   fi
+  gh attestation verify "$work/$name" --repo Arkazzae/Stellarr \
+    --signer-workflow Arkazzae/Stellarr/.github/workflows/release.yml \
+    --source-ref "refs/tags/server-$tag" ||
+    fail "Could not verify the installer against the GitHub release workflow for server-$tag." \
+      "Check gh auth status and that your gh version supports attestation verify --source-ref."
   chmod 700 "$work/$name" || fail "Could not make the verified installer executable"
   installer="$work/$name"
 }

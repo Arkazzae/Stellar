@@ -1,10 +1,10 @@
 # Stellarr Installer (`init/installer/`)
 
-`stellarr-installer` deploys and updates Docker Compose installations of Stellarr on Linux and macOS hosts. The root [`install.sh`](../../install.sh) (`https://raw.githubusercontent.com/Arkazzae/Stellarr/main/install.sh`) downloads the matching platform binary from `stellarr.online/server-downloads/`, verifies its SHA-256 against `stellarr-installer.sha256`, and forwards all arguments.
+`stellarr-installer` deploys and updates Docker Compose installations of Stellarr on Linux and macOS hosts. The root [`install.sh`](../../install.sh) (`https://raw.githubusercontent.com/Arkazzae/Stellarr/main/install.sh`) downloads the matching platform binary from `stellarr.online/server-downloads/`, checks its SHA-256 manifest, then verifies the binary against the GitHub attestation for `.github/workflows/release.yml` at the selected server tag. This requires an authenticated GitHub CLI with support for `gh attestation verify --source-ref`.
 
 ```bash
-# Inspect CLI options via the hosted bootstrap script
-curl -fsSL https://raw.githubusercontent.com/Arkazzae/Stellarr/main/install.sh | bash -s -- --help
+# From this checkout, verify and run the published installer for a specific release
+STELLARR_INSTALLER_VERSION=0.2.1 ./install.sh --help
 
 # Build and run directly from local Rust sources + local checkout image
 cargo run --locked --manifest-path init/installer/Cargo.toml -- --dir . --build
