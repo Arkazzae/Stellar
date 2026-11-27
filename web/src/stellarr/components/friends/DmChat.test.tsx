@@ -109,7 +109,7 @@ describe("DmChat composer", () => {
   it("is addressed to the person", () => {
     openChat();
 
-    expect(screen.getByRole("textbox", { name: "Napisz do @Ada" })).toHaveAttribute(
+    expect(screen.getByRole("combobox", { name: "Napisz do @Ada" })).toHaveAttribute(
       "placeholder",
       "Napisz do @Ada",
     );
@@ -125,14 +125,14 @@ describe("DmChat composer", () => {
     };
     openChat({ translation });
 
-    expect(screen.getByRole("textbox", { name: "Message @Ada" })).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Message @Ada" })).toBeTruthy();
     expect(screen.getByRole("log", { name: "Messages with Ada" })).toBeTruthy();
   });
 
   it("sends the trimmed text on Enter", async () => {
     const { user, props } = openChat();
 
-    await user.type(screen.getByRole("textbox"), "  do zobaczenia  {Enter}");
+    await user.type(screen.getByRole("combobox"), "  do zobaczenia  {Enter}");
 
     expect(props.onSend).toHaveBeenCalledExactlyOnceWith("do zobaczenia");
   });
@@ -140,7 +140,7 @@ describe("DmChat composer", () => {
   it("sends nothing for an empty message", async () => {
     const { user, props } = openChat();
 
-    await user.type(screen.getByRole("textbox"), "   {Enter}");
+    await user.type(screen.getByRole("combobox"), "   {Enter}");
 
     expect(props.onSend).not.toHaveBeenCalled();
   });

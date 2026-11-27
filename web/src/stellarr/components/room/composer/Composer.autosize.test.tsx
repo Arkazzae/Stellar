@@ -63,7 +63,7 @@ describe("Composer field height", () => {
     await user.click(screen.getByRole("button", { name: "Nagraj wiadomość głosową" }));
     await user.click(screen.getByRole("button", { name: "Anuluj wiadomość głosową" }));
 
-    const field = screen.getByRole("textbox") as HTMLTextAreaElement;
+    const field = screen.getByRole("combobox") as HTMLTextAreaElement;
     fireEvent.change(field, { target: { value: "first line\nsecond line" } });
     expect(field.style.height).toBe("48px");
 

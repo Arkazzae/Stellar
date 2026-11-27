@@ -161,6 +161,23 @@ export function codeLanguageLabel(id: CodeLanguageId): string {
 }
 
 /**
+ * The language a person named, by alias, id or label ("ts", "rust", "C#"), or
+ * null when the name is none of them. Unlike `resolveCodeLanguage` it never
+ * guesses: an unknown name is left for the reader to pick.
+ */
+export function codeLanguageNamed(name: string): CodeLanguageId | null {
+  const wanted = name.trim().toLowerCase();
+  if (wanted === "") return null;
+  return (
+    BY_ALIAS.get(wanted) ??
+    CODE_LANGUAGES.find(
+      (language) => language.id === wanted || language.label.toLowerCase() === wanted,
+    )?.id ??
+    null
+  );
+}
+
+/**
  * Picks a language from a fence's info string: a conventional alias (`ts`,
  * `{.py}`, `language-js`) or a file name (`worker.ts`, `Dockerfile`). Anything
  * after the first word is ignored, and an unrecognised or missing name falls

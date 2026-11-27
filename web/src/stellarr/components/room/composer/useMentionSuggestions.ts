@@ -15,6 +15,11 @@ interface Options {
   locale: InterfaceLocale;
   /** False while the draft is code, where an @ is just a character. */
   enabled: boolean;
+  /**
+   * The whole text is the name being looked up, with or without its "@", as
+   * in a command's person argument, rather than an `@name` under the caret.
+   */
+  whole?: boolean;
 }
 
 /**
@@ -24,12 +29,16 @@ interface Options {
  * The caret is state here rather than read from the field, because the list
  * has to re-evaluate when the caret moves without the text changing.
  */
-export function useMentionSuggestions({ text, candidates, locale, enabled }: Options) {
+export function useMentionSuggestions({ text, candidates, locale, enabled, whole = false }: Options) {
   const [caret, setCaret] = useState(0);
   const [index, setIndex] = useState(0);
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
 
-  const mention: ActiveMention | null = enabled ? activeMention(text, caret) : null;
+  const mention: ActiveMention | null = !enabled
+    ? null
+    : whole
+      ? { start: 0, end: text.length, query: text.replace(/^@/, "").trim(), key: `whole:${text}` }
+      : activeMention(text, caret);
   const query = mention?.query;
   const matches = useMemo(
     () => (query === undefined ? [] : matchMentions(candidates, query, locale)),

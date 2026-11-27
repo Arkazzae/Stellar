@@ -1149,12 +1149,10 @@
   }
 
   /* The panel is phone-narrow at any window width, so its composer takes the
-     phone's row (see `composer.css`): the field, one button for everything
-     else, and send. */
-  .dm-chat .composer .comp-lead {
-    display: none;
-  }
-
+     phone's row (see `composer.css`): the plus, the field, emoji and the
+     microphone, with send in its place once there is something to send. The
+     rest is in the sheet the plus opens. Code mode keeps one button for its
+     actions, and send. */
   .dm-chat .composer .comp-mobile-more {
     display: inline-flex;
   }
@@ -1186,6 +1184,27 @@
   .dm-chat .composer .comp-actions .attach {
     width: 100%;
     border-radius: var(--radius-sm);
+  }
+
+  /* After the tray's rules, which it overrides outside code mode. */
+  .dm-chat .composer-box[data-commands] > .comp-actions {
+    position: static;
+    display: flex;
+    padding: 0;
+    background: none;
+    box-shadow: none;
+  }
+
+  .dm-chat .composer-box[data-commands] > .comp-actions .comp-format,
+  .dm-chat .composer-box[data-commands] > .comp-actions .comp-code-trigger,
+  .dm-chat .composer-box[data-commands] > .comp-actions .gif-trigger,
+  .dm-chat .composer-box[data-commands][data-payload] > .comp-actions .comp-voice {
+    display: none;
+  }
+
+  .dm-chat .composer-box[data-commands] > .comp-actions .attach {
+    width: 34px;
+    border-radius: 50%;
   }
 
   /* ---------- PROFILE BESIDE A CONVERSATION ---------- */

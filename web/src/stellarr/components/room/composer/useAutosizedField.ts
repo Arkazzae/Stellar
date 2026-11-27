@@ -26,18 +26,22 @@ function fit(element: HTMLTextAreaElement | null, maxHeight: number) {
  * `scope` names the place the field is used in. It is a dependency on purpose:
  * leaving a narrower thread must discard the height measured for that layout
  * even if React reuses the same field before its text changes.
+ *
+ * A `hidden` field, such as the one waiting behind a command's arguments,
+ * measures as nothing, so it is left alone and fitted again when it shows.
  */
 export function useAutosizedField(
   field: RefObject<HTMLTextAreaElement | null>,
   text: string,
   scope: string | null,
   maxHeight = MAX_HEIGHT,
+  hidden = false,
 ) {
   // Measure-then-set has to happen before paint, or the box visibly jumps a
   // frame behind the caret.
   useLayoutEffect(() => {
-    fit(field.current, maxHeight);
-  }, [field, text, scope, maxHeight]);
+    if (!hidden) fit(field.current, maxHeight);
+  }, [field, text, scope, maxHeight, hidden]);
 
   // A thread can also be expanded or restored without the draft changing.
   // Refit only when the form changes width; observing height as well would
@@ -52,9 +56,9 @@ export function useAutosizedField(
     const observer = new ResizeObserver(([entry]) => {
       if (entry === undefined || entry.contentRect.width === width) return;
       width = entry.contentRect.width;
-      fit(field.current, maxHeight);
+      if (!hidden) fit(field.current, maxHeight);
     });
     observer.observe(box);
     return () => observer.disconnect();
-  }, [field, scope, maxHeight]);
+  }, [field, scope, maxHeight, hidden]);
 }
