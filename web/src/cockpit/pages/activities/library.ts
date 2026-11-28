@@ -32,9 +32,24 @@ export interface ActivityRelease {
   manifest: ActivityManifest;
 }
 
+/** What the last look for a newer release than the installed version found. */
+export interface UpdateCheck {
+  checkedAt: string;
+  /** The newer version and its release page; null when the installed version is the newest. */
+  version: string | null;
+  release: string | null;
+  /** Why the look failed; a failed look says nothing of a newer version. */
+  error: string | null;
+}
+
 export interface InstalledActivity extends ActivityRelease {
   install: string;
   enabled: boolean;
+  /** When the activity was first installed, and when its current version was; null for older installations. */
+  installedAt: string | null;
+  updatedAt: string | null;
+  /** Null until the server has looked at the current version. */
+  check: UpdateCheck | null;
 }
 
 /** An activity a repository offers, before its package is read. */
@@ -50,6 +65,8 @@ export interface ActivityLibrary {
   activities: InstalledActivity[];
   /** False when the instance cannot serve activities as it is set up. */
   hosting: boolean;
+  /** How often the server looks for newer releases by itself. */
+  checkHours: number;
 }
 
 const BASE = "/api/cockpit/activities";
@@ -77,7 +94,23 @@ export const activityApi = {
     }),
   manage: (install: string, action: "enable" | "disable" | "uninstall") =>
     post<{ ok: true }>(`${encodeURIComponent(install)}/manage`, { action }),
+  /**
+   * Looks for a newer release now and keeps what it found, as the server does
+   * by itself every `checkHours`. GitHub's request limit is a 429.
+   */
+  check: (install: string) =>
+    cockpitRequest<UpdateCheck>(`${BASE}/${encodeURIComponent(install)}/check`, { method: "POST" }),
 };
+
+/** When the installed version came, and whether it came by an update; null when the server never kept it. */
+export function versionSince(entry: InstalledActivity): { at: string; updated: boolean } | null {
+  const { installedAt, updatedAt } = entry;
+  if (updatedAt && (!installedAt || Date.parse(updatedAt) > Date.parse(installedAt))) {
+    return { at: updatedAt, updated: true };
+  }
+  const at = installedAt ?? updatedAt;
+  return at ? { at, updated: false } : null;
+}
 
 /** Why a request failed, in the server's words for the activity where it gave them. */
 export function explain(cause: unknown): string {

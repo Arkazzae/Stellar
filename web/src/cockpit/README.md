@@ -11,7 +11,7 @@ Standalone instance operator SPA served at `/cockpit` on the instance origin and
 | **Servers** | `/cockpit/servers` | Instance-wide server list, ownership transfer, and deletion. |
 | **Runtime** | `/cockpit/runtime` | `/proc` telemetry (CPU, RSS/mapped memory, threads, hub sockets, voice rooms, SQLite latency) and per-minute availability. |
 | **Logs** | `/cockpit/logs` | Searchable, filterable 10,000-line in-memory log ring buffer with TSV export. |
-| **Activities** | `/cockpit/activities` | Install static multiplayer activities from GitHub releases, review permissions/external hosts, update/toggle/uninstall, and pair dev previews. |
+| **Activities** | `/cockpit/activities` | Install static multiplayer activities from GitHub releases, review permissions/external hosts, update/toggle/uninstall, install and update dates, the server's update checks (every 12 h, or on demand), and pair dev previews. |
 | **Backups** | `/cockpit/backups` | Online `.db` snapshots and full `.zip` archives, SHA-256 verification, downloads, and schedules. |
 | **Integrations** | `/cockpit/integrations` | Resend mail, GIPHY key validation, Web Push VAPID status, OIDC invite sign-up toggles, and Cloudflare R2 (`s3` or `worker`). |
 | **Settings** | `/cockpit/settings` | Instance name, time zone, file storage quota, retention windows, SMTP transport, MFA policy, desktop version gates, and UI language. |

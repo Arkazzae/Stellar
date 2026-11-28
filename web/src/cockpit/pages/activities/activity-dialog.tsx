@@ -15,6 +15,7 @@ import {
 import { useState, type FormEvent, type ReactNode } from "react";
 
 import { t } from "../../i18n";
+import { formatShortDateTime } from "../../i18n/format";
 import {
   activityApi,
   explain,
@@ -175,9 +176,18 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 /**
  * What a version is and what it may reach: its release, and the permissions
  * and hosts it asks for. Beside an installed version, `previous`, each
- * difference is named.
+ * difference is named. For an installation, `history` says when it came and
+ * when the server last looked for a newer release.
  */
-function ReleaseFacts({ release, previous }: { release: ActivityRelease; previous: InstalledActivity | null }) {
+function ReleaseFacts({
+  release,
+  previous,
+  history,
+}: {
+  release: ActivityRelease;
+  previous: InstalledActivity | null;
+  history?: InstalledActivity;
+}) {
   const { manifest } = release;
   const before = previous?.manifest;
   const droppedPermissions = before?.permissions.filter((name) => !manifest.permissions.includes(name)) ?? [];
@@ -213,6 +223,15 @@ function ReleaseFacts({ release, previous }: { release: ActivityRelease; previou
         <Fact label={t("activities.col.size")}>
           <span className="tabular-nums">{formatSize(release.bytes)}</span>
         </Fact>
+        {history?.installedAt ? (
+          <Fact label={t("activities.installedAt")}>{formatShortDateTime(history.installedAt)}</Fact>
+        ) : null}
+        {history?.updatedAt && history.updatedAt !== history.installedAt ? (
+          <Fact label={t("activities.updatedAt")}>{formatShortDateTime(history.updatedAt)}</Fact>
+        ) : null}
+        {history?.check ? (
+          <Fact label={t("activities.checkedAt")}>{formatShortDateTime(history.check.checkedAt)}</Fact>
+        ) : null}
       </dl>
 
       <section className="space-y-2 text-sm">
@@ -320,7 +339,7 @@ export function DetailsStep({ entry, onClose }: { entry: InstalledActivity; onCl
   return (
     <>
       <ReleaseHeader release={entry} />
-      <ReleaseFacts release={entry} previous={null} />
+      <ReleaseFacts release={entry} previous={null} history={entry} />
       <DialogFooter>
         <Button type="button" variant="secondary" onClick={onClose} autoFocus>
           {t("common.close")}
