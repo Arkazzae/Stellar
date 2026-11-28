@@ -103,6 +103,21 @@ const MIGRATIONS: &[Step] = &[
         definition: "INTEGER NOT NULL DEFAULT 0",
         then: include_str!("../messages/group_mentions.sql"),
     },
+    // When an activity was first installed and when each of its versions
+    // was; null for those installed before either was kept.
+    Step::Column {
+        table: "ActivityInstalls",
+        column: "InstalledAt",
+        definition: "TEXT",
+        then: "",
+    },
+    Step::Column {
+        table: "ActivityVersions",
+        column: "InstalledAt",
+        definition: "TEXT",
+        then: "",
+    },
+    Step::Sql(include_str!("../activities/updates.sql")),
 ];
 
 /// Sets the journal mode, which the database file remembers, and gives an

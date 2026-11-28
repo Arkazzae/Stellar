@@ -5,8 +5,10 @@ mod live;
 pub(crate) mod hub;
 mod progress;
 mod releases;
+pub(crate) mod updates;
 
 use axum::extract::{Request, State};
+use axum::http::StatusCode;
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -17,7 +19,7 @@ use crate::http::{ApiError, ApiResult, Endpoints, Json, Path, Problem};
 use crate::panel::bind_then_gate;
 use crate::permissions::membership::InstanceOwner;
 use crate::state::AppState;
-use crate::values::Id;
+use crate::values::{Id, Timestamp};
 pub(crate) use live::Sessions;
 
 static DOWNLOADS: Semaphore = Semaphore::const_new(2);
@@ -155,9 +157,18 @@ struct Installed {
     release: String,
     bytes: i64,
     manifest: Manifest,
+    /// When the activity was first installed, and when its current version
+    /// was; none for what was installed before either was kept.
+    installed_at: Option<Timestamp>,
+    updated_at: Option<Timestamp>,
+    /// What the last look for a newer release than the current version found.
+    check: Option<updates::Check>,
 }
 
-const LIBRARY: &str = "SELECT i.Id,i.Source,i.Enabled,v.Digest,v.Revision,v.Release,v.Bytes,v.Manifest FROM ActivityInstalls i JOIN ActivityVersions v ON v.Install=i.Id AND v.Digest=i.Digest";
+const LIBRARY: &str = "SELECT i.Id,i.Source,i.Enabled,v.Digest,v.Revision,v.Release,v.Bytes,v.Manifest,
+    i.InstalledAt,v.InstalledAt,c.CheckedAt,c.Version,c.Release,c.Error
+    FROM ActivityInstalls i JOIN ActivityVersions v ON v.Install=i.Id AND v.Digest=i.Digest
+    LEFT JOIN ActivityUpdateChecks c ON c.Install=i.Id AND c.Digest=i.Digest";
 fn installed(row: &rusqlite::Row<'_>) -> rusqlite::Result<Installed> {
     let text: String = row.get(7)?;
     let manifest = serde_json::from_str(&text).map_err(|e| {
@@ -172,6 +183,19 @@ fn installed(row: &rusqlite::Row<'_>) -> rusqlite::Result<Installed> {
         release: row.get(5)?,
         bytes: row.get(6)?,
         manifest,
+        installed_at: row.get(8)?,
+        updated_at: row.get(9)?,
+        check: row
+            .get::<_, Option<Timestamp>>(10)?
+            .map(|checked_at| -> rusqlite::Result<_> {
+                Ok(updates::Check {
+                    checked_at,
+                    version: row.get(11)?,
+                    release: row.get(12)?,
+                    error: row.get(13)?,
+                })
+            })
+            .transpose()?,
     })
 }
 async fn library(state: &AppState) -> ApiResult<Vec<Installed>> {
@@ -199,9 +223,11 @@ async fn list(State(state): State<AppState>, _: InstanceOwner) -> ApiResult<Json
             value
         })
         .collect::<Vec<_>>();
-    Ok(Json(
-        json!({"activities":entries,"hosting":state.settings().activity_domain.is_none() || live::config(&state).is_ok()}),
-    ))
+    Ok(Json(json!({
+        "activities": entries,
+        "hosting": state.settings().activity_domain.is_none() || live::config(&state).is_ok(),
+        "checkHours": updates::INTERVAL.as_secs() / 3600,
+    })))
 }
 
 #[derive(Deserialize)]
@@ -287,6 +313,10 @@ async fn resolve(state: &AppState, input: Option<Review>, save: bool) -> ApiResu
         return Ok(Json(response));
     }
     let entry = entry.clone();
+    // A repository's link offers its newest stable release, so what it
+    // installs is current as of now; a release's link may not be.
+    let current = releases::names_repository(&input.url);
+    let now = Timestamp::now();
     let _gate = state.activities().changes.write().await;
     state.database().write(move |tx| -> ApiResult<()> {
         let existing=tx.query_row(&format!("{LIBRARY} WHERE i.Source=?1 AND i.Activity=?2"),
@@ -300,13 +330,16 @@ async fn resolve(state: &AppState, input: Option<Review>, save: bool) -> ApiResu
             old.install
         } else {
             let id=Id::random();
-            tx.execute("INSERT INTO ActivityInstalls(Id,Source,Activity,Digest,Enabled) VALUES(?1,?2,?3,?4,1)",params![id,selection.source,entry.id,entry.sha256])?;
+            tx.execute("INSERT INTO ActivityInstalls(Id,Source,Activity,Digest,Enabled,InstalledAt) VALUES(?1,?2,?3,?4,1,?5)",params![id,selection.source,entry.id,entry.sha256,now])?;
             id
         };
-        tx.execute("INSERT INTO ActivityVersions(Install,Digest,Revision,Release,Manifest,Bytes) VALUES(?1,?2,?3,?4,?5,?6)",
-            params![id,entry.sha256,revision,release,serde_json::to_string(&package.manifest).map_err(ApiError::internal)?,entry.bytes as i64])?;
+        tx.execute("INSERT INTO ActivityVersions(Install,Digest,Revision,Release,Manifest,Bytes,InstalledAt) VALUES(?1,?2,?3,?4,?5,?6,?7)",
+            params![id,entry.sha256,revision,release,serde_json::to_string(&package.manifest).map_err(ApiError::internal)?,entry.bytes as i64,now])?;
         let mut put=tx.prepare_cached("INSERT INTO ActivityFiles(Install,Digest,Path,Content) VALUES(?1,?2,?3,?4)")?;
         for(path,bytes)in package.files{put.execute(params![id,entry.sha256,path,bytes])?;}
+        if current {
+            updates::keep_in(tx,id,&entry.sha256,&updates::Check::current(now),now.plus(updates::INTERVAL))?;
+        }
         Ok(())
     }).await?;
     Ok(Json(response))
@@ -356,6 +389,32 @@ async fn manage(
     }
     Ok(Json(json!({"ok":true})))
 }
+/// Looks for a newer release of one installation now, as the worker in
+/// `updates` does by itself, and answers with what it found. GitHub's request
+/// limit is a 429, so that Cockpit stops asking about the others.
+async fn check(
+    State(state): State<AppState>,
+    Path(id): Path<Id>,
+    request: Request,
+) -> ApiResult<Json<Value>> {
+    bind_then_gate::<Value>(&state, request, false).await?;
+    let entry = library(&state)
+        .await?
+        .into_iter()
+        .find(|entry| entry.install == id)
+        .ok_or_else(ApiError::not_found)?;
+    let _slot = DOWNLOADS
+        .try_acquire()
+        .map_err(|_| invalid("The installer is busy. Try again shortly."))?;
+    let looked = updates::check(&state, &entry).await?;
+    if looked.limited {
+        let reason = looked.check.error.unwrap_or_default();
+        return Err(Problem::new(StatusCode::TOO_MANY_REQUESTS)
+            .detail(reason)
+            .into());
+    }
+    Ok(Json(json!(looked.check)))
+}
 pub fn routes() -> Endpoints {
     Endpoints::new()
         .get(
@@ -380,6 +439,9 @@ pub fn routes() -> Endpoints {
         .json_body()
         .authorized()
         .post("/api/cockpit/activities/{id}/manage", manage)
+        .json_body()
+        .authorized()
+        .post("/api/cockpit/activities/{id}/check", check)
         .json_body()
         .authorized()
         .post("/api/activities/{channel}/list", live::available)

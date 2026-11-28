@@ -136,6 +136,12 @@ fn source(url: &str) -> ApiResult<Source> {
     })
 }
 
+/// Whether `url` names a whole repository rather than one of its releases, so
+/// that what it offers is the newest stable release of each activity.
+pub(super) fn names_repository(url: &str) -> bool {
+    source(url).is_ok_and(|found| found.tag.is_none())
+}
+
 fn scoped(tag: &str) -> Option<(&str, semver::Version)> {
     let (id, version) = tag.split_once("/v")?;
     super::activity_id(id).then_some((id, semver::Version::parse(version).ok()?))
@@ -616,6 +622,15 @@ mod tests {
         let package = unpack(data, &entry).unwrap();
         assert_eq!(package.manifest.permissions, ["media.gifs"]);
     }
+    #[test]
+    fn only_a_repository_link_names_the_whole_repository() {
+        assert!(names_repository("https://github.com/Owner/demo"));
+        assert!(names_repository("https://github.com/owner/demo.git/"));
+        assert!(!names_repository("https://github.com/owner/demo/releases/tag/v1.2.0"));
+        assert!(!names_repository("https://github.com/owner/demo/releases/tag/cards/v2.0.0"));
+        assert!(!names_repository("https://example.com/owner/demo"));
+    }
+
     #[test]
     fn accepts_repository_and_published_tag_links_only() {
         assert_eq!(

@@ -65,7 +65,7 @@ cargo test --workspace --locked
 | `scheduled/` | Messages scheduled to send later, seen and announced to their author only, and the `scheduled-messages` worker that posts them through the channel and conversation post paths when they fall due. |
 | `social/`, `direct/`, `encryption/` | Friendships & blocks, 1:1 DMs, and 1:1 E2EE public keys, versioned key backups, session-bound devices, and conversation epochs. |
 | `uploads/`, `assets/`, `emoji/`, `soundboard/` | Multipart & encrypted uploads, range-streamed `/assets/{id}` downloads, custom server emojis, and soundboard clips. |
-| `voice/`, `activities/` | Voice seats, SFU control broker & closer worker, voice moderation, installed/preview multiplayer activities, and live voice-bar activity state. |
+| `voice/`, `activities/` | Voice seats, SFU control broker & closer worker, voice moderation, installed/preview multiplayer activities, the `activity-updates` worker that checks their repositories for newer releases every 12 hours, and live voice-bar activity state. |
 | `inbox/`, `delivery/` | In-app `@mention`/system inbox and async Web Push + email dispatcher worker (`notification-delivery`). |
 | `backups/`, `housekeeping/` | Online `.db` snapshots, `.zip` archives, R2 replication, staged restores, and hourly batched cleanup worker. |
 | `cockpit/`, `releases/`, `health/` | `/api/cockpit/*` routes & `/proc` runtime worker, `/.well-known/stellarr/client` + PWA manifest + native builds, and `/health/{live,ready}`. |

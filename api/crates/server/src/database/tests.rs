@@ -265,8 +265,9 @@ async fn a_new_database_has_the_schema_and_both_one_time_steps() {
 
     // Includes the temporary scrub marker, cleared during key backup
     // initialization, the access change journal with its triggers, and the
-    // tables of scheduled messages, of polls and of server events.
-    assert_eq!(objects, 365);
+    // tables of scheduled messages, of polls and of server events, and the
+    // findings of the activity update checks.
+    assert_eq!(objects, 367);
     assert_eq!(steps, ["ordinary-permissions", "view-channel"]);
     assert!(search);
 }

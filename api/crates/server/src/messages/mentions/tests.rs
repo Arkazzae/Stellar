@@ -367,8 +367,10 @@ fn the_migration_gives_the_permission_to_owners_and_administrators_and_adds_the_
             .unwrap()
     };
 
-    // The step runs again on a file that has the column already.
-    reopen(1);
+    // The step runs again on a file that has the column already, and so do
+    // the three after it (the activity dates and update checks), which
+    // change nothing they have not changed already.
+    reopen(4);
 
     assert_eq!(mask(world.owner_role), ALL);
     assert_eq!(mask(admins) & MENTION_EVERYONE, MENTION_EVERYONE);
