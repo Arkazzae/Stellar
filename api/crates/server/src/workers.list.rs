@@ -1,4 +1,5 @@
 workers! {
+    activities::updates,
     backups::schedule,
     housekeeping,
     cockpit::runtime,

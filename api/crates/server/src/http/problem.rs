@@ -129,6 +129,19 @@ impl Problem {
     pub fn status(&self) -> StatusCode {
         self.status
     }
+
+    /// What the problem tells a person, for a place that keeps it as text: the
+    /// first message about a field, else the detail, else the title.
+    pub fn message(&self) -> Option<&str> {
+        self.errors
+            .iter()
+            .flatten()
+            .flat_map(|(_, messages)| messages)
+            .map(String::as_str)
+            .next()
+            .or(self.detail.as_deref())
+            .or(self.title.as_deref())
+    }
 }
 
 struct Errors<'a>(&'a [(String, Vec<String>)]);

@@ -1006,7 +1006,7 @@ async fn private_progress_survives_a_release_and_server_restart_on_a_second_devi
     let second = "c".repeat(64);
     {
         let db = server.database();
-        db.execute("INSERT INTO ActivityVersions SELECT Install,?2,'v2','release2',json_set(Manifest,'$.version','2.0.0'),Bytes FROM ActivityVersions WHERE Install=?1", params![INSTALL.to_uppercase(), second]).unwrap();
+        db.execute("INSERT INTO ActivityVersions(Install,Digest,Revision,Release,Manifest,Bytes) SELECT Install,?2,'v2','release2',json_set(Manifest,'$.version','2.0.0'),Bytes FROM ActivityVersions WHERE Install=?1", params![INSTALL.to_uppercase(), second]).unwrap();
         db.execute(
             "UPDATE ActivityInstalls SET Digest=?2 WHERE Id=?1",
             params![INSTALL.to_uppercase(), second],
@@ -1518,4 +1518,66 @@ async fn the_channel_list_learns_what_runs_in_the_voice_channels_a_member_sees()
     assert_eq!(snapshot[0]["activity"]["host"], carol.id.as_str());
     let elsewhere = get(&bob, &format!("/api/activities/live?server={}", Id::random())).await;
     assert_eq!(elsewhere.status, 403);
+}
+
+#[tokio::test]
+async fn the_library_says_when_each_activity_came_and_what_the_last_update_check_found() {
+    let server = Server::start_with(ACTIVITIES).await;
+    let owner = server.found("owner").await;
+    let viewer = server.register("viewer").await;
+    seed(&server, INSTALL, true);
+    seed(&server, VOICE_ONLY, false);
+    let (old, dated) = (INSTALL.to_uppercase(), VOICE_ONLY.to_uppercase());
+    let db = server.database();
+    let check = "INSERT INTO ActivityUpdateChecks(Install,Digest,CheckedAt,NextAt,Version,Release,Error) VALUES(?1,?2,?3,?4,?5,?6,?7)";
+    // Installed before dates were kept, and looked at since.
+    db.execute(check, params![old, "b".repeat(64), "2026-11-28 09:30:00", "2026-11-28 21:30:00",
+        "1.1.0", "https://github.com/test/demo/releases/tag/v1.1.0", Option::<String>::None]).unwrap();
+    // Installed on the first, updated on the twentieth, and looked at only
+    // while the version before was installed.
+    db.execute("UPDATE ActivityInstalls SET InstalledAt='2026-11-01 10:00:00' WHERE Id=?1", [&dated]).unwrap();
+    db.execute("UPDATE ActivityVersions SET InstalledAt='2026-11-20 08:15:00' WHERE Install=?1", [&dated]).unwrap();
+    db.execute(check, params![dated, "a".repeat(64), "2026-11-10 09:30:00", "2026-11-10 21:30:00",
+        Option::<String>::None, Option::<String>::None, "GitHub could not supply the releases."]).unwrap();
+
+    let library = get(&owner, "/api/cockpit/activities").await.json::<Value>();
+    assert_eq!(library["checkHours"], 12);
+    let entry = |id: &str| {
+        library["activities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["install"].as_str().unwrap().eq_ignore_ascii_case(id))
+            .unwrap()
+            .clone()
+    };
+    let first = entry(INSTALL);
+    assert_eq!(first["installedAt"], Value::Null);
+    assert_eq!(first["updatedAt"], Value::Null);
+    assert_eq!(
+        first["check"],
+        json!({"checkedAt":"2026-11-28T09:30:00Z","version":"1.1.0",
+            "release":"https://github.com/test/demo/releases/tag/v1.1.0","error":null})
+    );
+    let second = entry(VOICE_ONLY);
+    assert_eq!(second["installedAt"], "2026-11-01T10:00:00Z");
+    assert_eq!(second["updatedAt"], "2026-11-20T08:15:00Z");
+    assert_eq!(second["check"], Value::Null, "a finding about a replaced version is not shown");
+
+    // Looking now is the owner's, and an installation that is not there is not looked for.
+    let unknown = "/api/cockpit/activities/0b5c4f0e-7b1d-4a52-9d3e-2f6a1c9e8b70/check";
+    assert_eq!(viewer.client.send(request(unknown)).await.status, 403);
+    assert_eq!(owner.client.send(request(unknown)).await.status, 404);
+
+    // Uninstalling takes the installation's findings with it.
+    let manage = format!("/api/cockpit/activities/{INSTALL}/manage");
+    assert_eq!(post(&owner, &manage, json!({"action":"uninstall"})).await.status, 200);
+    let kept: Vec<String> = db
+        .prepare("SELECT Install FROM ActivityUpdateChecks")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(kept, [dated]);
 }

@@ -29,7 +29,8 @@ async fn a_new_data_folder_gets_a_database_with_the_schema_and_the_keys_folder()
         .collect::<Result<_, _>>()
         .unwrap();
 
-    assert_eq!(objects, 364);
+    // Includes the findings of the activity update checks and their index.
+    assert_eq!(objects, 366);
     // Stored in the file: a connection from outside finds it too.
     assert_eq!(mode, "wal");
     assert_eq!(steps, ["ordinary-permissions", "view-channel"]);
