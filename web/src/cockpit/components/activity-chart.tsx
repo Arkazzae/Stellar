@@ -43,7 +43,6 @@ export function ActivityChart({ points, label, tableCaption, dateHeading }: Acti
       tableCaption={tableCaption}
       keyHeading={dateHeading}
       ticks={ticks}
-      highlight="band"
       minHeight={MIN_HEIGHT}
     />
   );

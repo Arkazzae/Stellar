@@ -1,4 +1,4 @@
-import { useId, useState, type KeyboardEvent } from "react";
+import { useState, type KeyboardEvent } from "react";
 
 import { formatNumber } from "../i18n/format";
 import { axisTop, rem } from "../lib/chart-scale";
@@ -24,12 +24,10 @@ interface LineChartProps {
   /** Points labelled under the plot, each with a dotted line up through it. */
   ticks?: readonly { index: number; text: string }[];
   /**
-   * How the point in view is lit: a column of light under it, or a thin line
-   * through the whole plot. The highest point is in view until another is picked.
+   * How far the hairline through the point in view runs: down to the baseline,
+   * or through the whole plot. The highest point is in view until another is picked.
    */
-  highlight?: "band" | "spike";
-  /** A soft wash of the accent under the line. */
-  area?: boolean;
+  highlight?: "stem" | "spike";
   /** The plot's least height in px at the default font size; it grows into the height it is given. */
   minHeight?: number;
 }
@@ -60,12 +58,10 @@ export function LineChart({
   tableCaption,
   keyHeading,
   ticks = [],
-  highlight = "band",
-  area = false,
+  highlight = "stem",
   minHeight = 96,
 }: LineChartProps) {
   const [active, setActive] = useState<number | null>(null);
-  const gradient = `line-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const shown = points.slice(-slots);
   const padding = slots - shown.length;
   const last = shown.length - 1;
@@ -75,7 +71,6 @@ export function LineChart({
   const x = (index: number) => padding + index + 0.5;
   const y = (value: number) => 100 - (value / top) * (100 - HEADROOM);
   const line = shown.map((point, index) => `${index ? "L" : "M"}${x(index)},${y(point.value)}`).join(" ");
-  const wash = last >= 0 ? `M${x(0)},100 ${line.replace(/^M/, "L")} L${x(last)},100 Z` : "";
   const peak = max > 0 ? shown.findIndex((point) => point.value === max) : -1;
   const lit = active ?? (peak >= 0 ? peak : null);
   const litPoint = lit === null ? null : shown[lit];
@@ -114,19 +109,11 @@ export function LineChart({
         </div>
 
         {litPoint && lit !== null ? (
-          highlight === "band" ? (
-            <span
-              className="pointer-events-none absolute bottom-0 w-5 -translate-x-1/2 rounded-t-full band-chart"
-              style={{ left: at(lit), top: `${y(litPoint.value)}%` }}
-              aria-hidden="true"
-            />
-          ) : (
-            <span
-              className="pointer-events-none absolute inset-y-0 w-px -translate-x-1/2 bg-chart-1/70"
-              style={{ left: at(lit) }}
-              aria-hidden="true"
-            />
-          )
+          <span
+            className="pointer-events-none absolute bottom-0 w-px -translate-x-1/2 bg-chart-1/70"
+            style={{ left: at(lit), top: highlight === "spike" ? 0 : `${y(litPoint.value)}%` }}
+            aria-hidden="true"
+          />
         ) : null}
 
         <svg
@@ -136,17 +123,6 @@ export function LineChart({
           aria-hidden="true"
           focusable="false"
         >
-          {area && wash ? (
-            <>
-              <defs>
-                <linearGradient id={gradient} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0" style={{ stopColor: "var(--chart-1)", stopOpacity: 0.22 }} />
-                  <stop offset="1" style={{ stopColor: "var(--chart-1)", stopOpacity: 0 }} />
-                </linearGradient>
-              </defs>
-              <path d={wash} fill={`url(#${gradient})`} />
-            </>
-          ) : null}
           <path
             d={line}
             fill="none"
@@ -160,7 +136,7 @@ export function LineChart({
 
         {litPoint && lit !== null ? (
           <span
-            className="pointer-events-none absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-chart-1 ring-2 ring-card marker-glow"
+            className="pointer-events-none absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-chart-1 ring-2 ring-card"
             style={{ left: at(lit), top: `${y(litPoint.value)}%` }}
             aria-hidden="true"
           />

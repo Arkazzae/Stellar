@@ -134,9 +134,8 @@ function ActivityCard({ activity, error, className }: ActivityCardProps) {
   );
 
   return (
-    <Card className={cx("relative gap-0 overflow-hidden px-5 py-4", className)}>
-      <div className="pointer-events-none absolute inset-0 glow-chart" aria-hidden="true" />
-      <div className="relative flex flex-1 flex-col">
+    <Card className={cx("gap-0 px-5 py-4", className)}>
+      <div className="flex flex-1 flex-col">
         {activity ? (
           <Tabs
             unstyled
