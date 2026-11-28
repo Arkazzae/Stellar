@@ -48,7 +48,7 @@ pub(super) struct Check {
 
 impl Check {
     /// A look that found nothing newer than what is installed.
-    pub fn current(at: Timestamp) -> Check {
+    fn current(at: Timestamp) -> Check {
         Check {
             checked_at: at,
             version: None,
@@ -114,6 +114,25 @@ pub(super) fn keep_in(
         "INSERT OR REPLACE INTO ActivityUpdateChecks(Install,Digest,CheckedAt,NextAt,Version,Release,Error)
          SELECT ?1,?2,?3,?4,?5,?6,?7 WHERE EXISTS (SELECT 1 FROM ActivityInstalls WHERE Id=?1 AND Digest=?2)",
         params![install, digest, check.checked_at, next, check.version, check.release, check.error],
+    )?;
+    Ok(())
+}
+
+/// Carries a finding over to the version it found, as that version replaces
+/// the one it was made about: the newest release is then the one installed.
+/// A finding that named another version, or failed, stays with the old
+/// version and so is no longer listed.
+pub(super) fn carry_over(
+    connection: &Connection,
+    install: Id,
+    from: &str,
+    to: &str,
+    version: &str,
+) -> rusqlite::Result<()> {
+    connection.execute(
+        "UPDATE ActivityUpdateChecks SET Digest=?3,Version=NULL,Release=NULL
+         WHERE Install=?1 AND Digest=?2 AND Version=?4 AND Error IS NULL",
+        params![install, from, to, version],
     )?;
     Ok(())
 }
@@ -280,5 +299,48 @@ mod tests {
             found(&db),
             Some(("new".into(), None, Some("GitHub could not supply the releases.".into())))
         );
+    }
+
+    #[test]
+    fn an_update_to_the_version_a_look_found_leaves_the_activity_current() {
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch(concat!(include_str!("schema.sql"), include_str!("updates.sql")))
+            .unwrap();
+        let install = Id::random();
+        db.execute(
+            "INSERT INTO ActivityInstalls(Id,Source,Activity,Digest,Enabled) VALUES(?1,'https://github.com/o/r','cards','v1',1)",
+            [install],
+        )
+        .unwrap();
+        let at = Timestamp::from_unix_seconds(1_795_000_000).unwrap();
+        let found = |version: &str| Check {
+            version: Some(version.into()),
+            release: Some(format!("https://github.com/o/r/releases/tag/cards/v{version}")),
+            ..Check::current(at)
+        };
+        let listed = |db: &Connection| {
+            db.query_row(
+                "SELECT c.Version,c.Release,c.CheckedAt FROM ActivityUpdateChecks c
+                 JOIN ActivityInstalls i ON i.Id=c.Install AND i.Digest=c.Digest",
+                [],
+                |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Option<String>>(1)?, row.get::<_, Timestamp>(2)?)),
+            )
+            .ok()
+        };
+        let update = |db: &Connection, from: &str, to: &str, version: &str| {
+            db.execute("UPDATE ActivityInstalls SET Digest=?1 WHERE Id=?2", params![to, install])
+                .unwrap();
+            carry_over(db, install, from, to, version).unwrap();
+        };
+
+        // The look found 2.0.0, and 2.0.0 is installed: current as of that look.
+        keep_in(&db, install, "v1", &found("2.0.0"), at.plus(INTERVAL)).unwrap();
+        update(&db, "v1", "v2", "2.0.0");
+        assert_eq!(listed(&db), Some((None, None, at)));
+
+        // The look found 3.0.0, but 2.5.0 is installed from its own link: unknown again.
+        keep_in(&db, install, "v2", &found("3.0.0"), at.plus(INTERVAL)).unwrap();
+        update(&db, "v2", "v25", "2.5.0");
+        assert_eq!(listed(&db), None);
     }
 }

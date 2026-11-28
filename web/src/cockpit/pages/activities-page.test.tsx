@@ -262,7 +262,7 @@ describe("ActivitiesPage", () => {
       }
       if (path === base + "/review") return next;
       if (path === base + "/install") {
-        // The server installed the newest release of the repository, so it is current.
+        // The server carries the look that found this version over to it.
         library[0] = installed(next, "cards-install", true, { check: looked() });
         return next;
       }

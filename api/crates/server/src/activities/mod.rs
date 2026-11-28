@@ -313,9 +313,6 @@ async fn resolve(state: &AppState, input: Option<Review>, save: bool) -> ApiResu
         return Ok(Json(response));
     }
     let entry = entry.clone();
-    // A repository's link offers its newest stable release, so what it
-    // installs is current as of now; a release's link may not be.
-    let current = releases::names_repository(&input.url);
     let now = Timestamp::now();
     let _gate = state.activities().changes.write().await;
     state.database().write(move |tx| -> ApiResult<()> {
@@ -327,6 +324,7 @@ async fn resolve(state: &AppState, input: Option<Review>, save: bool) -> ApiResu
             let next=semver::Version::parse(&entry.version).map_err(ApiError::internal)?;
             if !next.cmp_precedence(&current).is_gt(){return Err(invalid("An update must have higher SemVer precedence than the installed version."));}
             tx.execute("UPDATE ActivityInstalls SET Digest=?1 WHERE Id=?2",params![entry.sha256,old.install])?;
+            updates::carry_over(tx,old.install,&old.digest,&entry.sha256,&entry.version)?;
             old.install
         } else {
             let id=Id::random();
@@ -337,9 +335,6 @@ async fn resolve(state: &AppState, input: Option<Review>, save: bool) -> ApiResu
             params![id,entry.sha256,revision,release,serde_json::to_string(&package.manifest).map_err(ApiError::internal)?,entry.bytes as i64,now])?;
         let mut put=tx.prepare_cached("INSERT INTO ActivityFiles(Install,Digest,Path,Content) VALUES(?1,?2,?3,?4)")?;
         for(path,bytes)in package.files{put.execute(params![id,entry.sha256,path,bytes])?;}
-        if current {
-            updates::keep_in(tx,id,&entry.sha256,&updates::Check::current(now),now.plus(updates::INTERVAL))?;
-        }
         Ok(())
     }).await?;
     Ok(Json(response))
