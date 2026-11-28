@@ -1,5 +1,4 @@
 import { cx } from "@stellarr/ui";
-import { useId } from "react";
 
 import { useMeasuredBox } from "../lib/use-measured-box";
 
@@ -19,11 +18,6 @@ export interface MiniPoint {
   note: string;
 }
 
-/** An id that is safe inside url(#…): React's ids carry colons. */
-function useSvgId(prefix: string): string {
-  return `${prefix}-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
-}
-
 /** Hover strips over a chart, one per point, so a note shows wherever the pointer is. */
 function HoverStrips({ points }: { points: readonly { key: string; note: string }[] }) {
   return (
@@ -38,13 +32,9 @@ function HoverStrips({ points }: { points: readonly { key: string; note: string 
 /** The x of point `index` of `count` across `width`, the first and last half a step in from the edges. */
 const spread = (index: number, count: number, width: number) => ((index + 0.5) / count) * width;
 
-/**
- * A dotted line over a dotted grid, brightest at its highest point, which
- * carries a lit marker.
- */
+/** A dotted line over a dotted grid; its highest point carries a marker. */
 export function MiniLine({ points }: { points: readonly MiniPoint[] }) {
   const [ref, { width, height, scale }] = useMeasuredBox<HTMLDivElement>();
-  const fade = useSvgId("mini-line");
   const count = points.length;
   const top = Math.max(0, ...points.map((point) => point.value));
   const peak = points.findIndex((point) => point.value === top);
@@ -57,13 +47,6 @@ export function MiniLine({ points }: { points: readonly MiniPoint[] }) {
     <div ref={ref} className="relative h-full" aria-hidden="true">
       {width > 0 && count > 0 ? (
         <svg width={width} height={height} className="absolute inset-0 overflow-visible" focusable="false">
-          <defs>
-            <linearGradient id={fade} gradientUnits="userSpaceOnUse" x1="0" y1="0" x2={width} y2="0">
-              <stop offset="0" style={{ stopColor: "var(--chart-1)", stopOpacity: 0.3 }} />
-              <stop offset={x(peak) / width} style={{ stopColor: "var(--chart-1)", stopOpacity: 1 }} />
-              <stop offset="1" style={{ stopColor: "var(--chart-1)", stopOpacity: 0.3 }} />
-            </linearGradient>
-          </defs>
           {points.map((point, index) => (
             <line
               key={point.key}
@@ -79,22 +62,19 @@ export function MiniLine({ points }: { points: readonly MiniPoint[] }) {
           <path
             d={line}
             fill="none"
-            stroke={`url(#${fade})`}
+            className="stroke-chart-1"
             strokeLinecap="round"
             strokeLinejoin="round"
             style={{ strokeWidth: 2.5 * scale, strokeDasharray: `0 ${4.5 * scale}` }}
           />
           {top > 0 ? (
-            <>
-              <circle cx={x(peak)} cy={y(top)} r={9 * scale} className="fill-chart-1" opacity={0.22} />
-              <circle
-                cx={x(peak)}
-                cy={y(top)}
-                r={4 * scale}
-                className="fill-chart-1 stroke-card"
-                style={{ strokeWidth: 2 * scale }}
-              />
-            </>
+            <circle
+              cx={x(peak)}
+              cy={y(top)}
+              r={4 * scale}
+              className="fill-chart-1 stroke-card"
+              style={{ strokeWidth: 2 * scale }}
+            />
           ) : null}
         </svg>
       ) : null}
@@ -188,7 +168,7 @@ export function MiniCells({
 
 /**
  * A share of a whole on an arc across the box's width: a dotted track, the
- * share drawn solid from the left and a lit marker where it ends. The arc is
+ * share drawn solid from the left and a marker where it ends. The arc is
  * the part of a circle through both bottom corners and the top middle, so a
  * wide, low box gets a flat arc and a square one a half circle.
  */
@@ -227,7 +207,6 @@ export function ArcGauge({ part, whole, note }: { part: number; whole: number; n
             <path d={filled} fill="none" className="stroke-chart-1" strokeLinecap="round" style={{ strokeWidth: 2 * scale }} />
           ) : null}
           <circle cx={start.x} cy={start.y} r={2.5 * scale} className="fill-foreground" />
-          <circle cx={end.x} cy={end.y} r={10 * scale} className="fill-chart-1" opacity={0.22} />
           <circle
             cx={end.x}
             cy={end.y}
