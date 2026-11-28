@@ -1581,3 +1581,31 @@ async fn the_library_says_when_each_activity_came_and_what_the_last_update_check
         .unwrap();
     assert_eq!(kept, [dated]);
 }
+
+#[tokio::test]
+async fn a_look_for_an_update_is_kept_for_the_library_failure_and_all() {
+    let server = Server::start_with(ACTIVITIES).await;
+    let owner = server.found("owner").await;
+    seed(&server, INSTALL, true);
+    // A source the installer refuses to read, so the look fails before it reaches GitHub.
+    server
+        .database()
+        .execute(
+            "UPDATE ActivityInstalls SET Source='https://example.com/test/demo' WHERE Id=?1",
+            [INSTALL.to_uppercase()],
+        )
+        .unwrap();
+
+    let answer = owner
+        .client
+        .send(request(&format!("/api/cockpit/activities/{INSTALL}/check")))
+        .await;
+    assert_eq!(answer.status, 200, "{}", answer.text());
+    let check = answer.json::<Value>();
+    assert_eq!(check["error"], "Paste a public GitHub repository or release URL.");
+    assert_eq!(check["version"], Value::Null);
+    assert!(check["checkedAt"].is_string());
+
+    let library = get(&owner, "/api/cockpit/activities").await.json::<Value>();
+    assert_eq!(library["activities"][0]["check"], check);
+}
