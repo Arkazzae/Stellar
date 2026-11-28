@@ -30,6 +30,16 @@ export function formatTime(value: string | number, options?: Intl.DateTimeFormat
   return new Date(value).toLocaleTimeString(intlTag(), { hour: "2-digit", minute: "2-digit", ...options });
 }
 
+/** A date with the month as a word, as a table shows when something came: "20 Nov 2026". */
+export function formatMediumDate(value: string | number): string {
+  return new Date(value).toLocaleDateString(intlTag(), { dateStyle: "medium" });
+}
+
+/** A day of the month and a time of day, for a moment of the last few days: "27 Nov, 16:31". */
+export function formatDayTime(value: string | number): string {
+  return new Date(value).toLocaleString(intlTag(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
 export function formatDate(value: string): string {
   return new Date(value).toLocaleDateString(intlTag());
 }

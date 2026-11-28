@@ -26,8 +26,7 @@ import { CardTitleRow } from "../components/card-title-row";
 import { Icon } from "../components/icons/icon";
 import { PageHeader } from "../components/page-header";
 import { t } from "../i18n";
-import { formatNumber, formatTime } from "../i18n/format";
-import { CockpitApiError } from "../lib/api";
+import { formatDayTime, formatMediumDate, formatShortDateTime, formatTime } from "../i18n/format";
 import { useCockpitResource } from "../lib/use-cockpit-resource";
 import { ActivityIcon, AddStep, DetailsStep, ReviewStep, UninstallStep } from "./activities/activity-dialog";
 import {
@@ -35,8 +34,10 @@ import {
   explain,
   permissionShort,
   repositoryName,
+  versionSince,
   type ActivityRelease,
   type InstalledActivity,
+  type UpdateCheck,
 } from "./activities/library";
 
 /** What the dialog shows. Its content stays while the dialog fades out, so the step is kept apart from `open`. */
@@ -45,13 +46,6 @@ type Flow =
   | { step: "review"; release: ActivityRelease; current: InstalledActivity | null }
   | { step: "details"; entry: InstalledActivity }
   | { step: "uninstall"; entry: InstalledActivity };
-
-/** What the last look at an installation's repository found. No entry means nobody has looked yet. */
-type UpdateState =
-  | { kind: "checking" }
-  | { kind: "current"; at: number }
-  | { kind: "available"; at: number; release: ActivityRelease }
-  | { kind: "failed"; message: string };
 
 interface Notice {
   message: string;
@@ -65,54 +59,96 @@ interface Notice {
  */
 const fit = { wide: "max-w-48 min-[100rem]:max-w-64", narrow: "max-w-40 min-[100rem]:max-w-52" };
 
-/** A finding is about one installed version: after an update it no longer applies. */
-const versionKey = (install: string, digest: string) => `${install}:${digest}`;
-
-function CheckedAt({ at }: { at: number }) {
-  return <p className="text-xs text-muted-foreground">{t("activities.update.checkedAt", { time: formatTime(at) })}</p>;
+/** When a look was made: the time alone today, the day and time before. */
+function checkedWhen(at: string): string {
+  return new Date(at).toDateString() === new Date().toDateString()
+    ? t("activities.update.checkedAt", { time: formatTime(at) })
+    : t("activities.update.checkedOn", { date: formatDayTime(at) });
 }
 
-function UpdateCell({ state, onReview }: { state: UpdateState | undefined; onReview: () => void }) {
-  if (!state) return <span className="text-muted-foreground">{t("activities.update.unchecked")}</span>;
-  switch (state.kind) {
-    case "checking":
-      return (
-        <span role="status" className="flex items-center gap-2 text-muted-foreground">
-          <Spinner />
-          {t("activities.update.checking")}
-        </span>
-      );
-    case "current":
-      return (
-        <>
-          <p>{t("activities.update.current")}</p>
-          <CheckedAt at={state.at} />
-        </>
-      );
-    case "available":
-      return (
-        <div className="flex items-center gap-3">
-          <div>
-            <Badge variant="warning" className="tabular-nums">
-              {t("activities.update.available", { version: state.release.manifest.version })}
-            </Badge>
-            <CheckedAt at={state.at} />
-          </div>
-          <Button size="sm" variant="secondary" onClick={onReview}>
-            {t("activities.update")}
-          </Button>
-        </div>
-      );
-    case "failed":
-      return (
-        <>
-          <p className="text-danger">{t("activities.update.failed")}</p>
-          <p className={cx(fit.narrow, "truncate text-xs text-muted-foreground")} title={state.message}>
-            {state.message}
-          </p>
-        </>
-      );
+function CheckedAt({ at }: { at: string }) {
+  return (
+    <p className="text-xs text-muted-foreground" title={formatShortDateTime(at)}>
+      {checkedWhen(at)}
+    </p>
+  );
+}
+
+interface UpdateCellProps {
+  check: UpdateCheck | null;
+  /** A look started from this page is under way. */
+  checking: boolean;
+  /** The newer release is being read for its review. */
+  opening: boolean;
+  onReview: () => void;
+}
+
+/** What the server's last look at the repository found, kept since, or the look under way. */
+function UpdateCell({ check, checking, opening, onReview }: UpdateCellProps) {
+  if (checking) {
+    return (
+      <span role="status" className="flex items-center gap-2 text-muted-foreground">
+        <Spinner />
+        {t("activities.update.checking")}
+      </span>
+    );
   }
+  if (!check) return <span className="text-muted-foreground">{t("activities.update.unchecked")}</span>;
+  if (check.error) {
+    return (
+      <>
+        <p className="text-danger">{t("activities.update.failed")}</p>
+        <p
+          className={cx(fit.narrow, "truncate text-xs text-muted-foreground")}
+          title={`${check.error}\n${checkedWhen(check.checkedAt)}`}
+        >
+          {check.error}
+        </p>
+      </>
+    );
+  }
+  if (check.version) {
+    return (
+      <div className="flex items-center gap-3">
+        <div>
+          <Badge variant="warning" className="tabular-nums">
+            {t("activities.update.available", { version: check.version })}
+          </Badge>
+          <CheckedAt at={check.checkedAt} />
+        </div>
+        <Button size="sm" variant="secondary" disabled={opening} onClick={onReview}>
+          {opening ? <Spinner /> : null}
+          {t("activities.update")}
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <>
+      <p>{t("activities.update.current")}</p>
+      <CheckedAt at={check.checkedAt} />
+    </>
+  );
+}
+
+/** The installed version, and the day it came. */
+function VersionCell({ entry }: { entry: InstalledActivity }) {
+  const since = versionSince(entry);
+  return (
+    <>
+      <p className="tabular-nums">{entry.manifest.version}</p>
+      {since ? (
+        <p
+          className="text-xs whitespace-nowrap text-muted-foreground"
+          title={t(since.updated ? "activities.updatedOn" : "activities.installedOn", {
+            date: formatShortDateTime(since.at),
+          })}
+        >
+          {formatMediumDate(since.at)}
+        </p>
+      ) : null}
+    </>
+  );
 }
 
 /** The permissions in a word each, and under them the hosts the activity reaches. */
@@ -143,16 +179,18 @@ function AccessCell({ entry }: { entry: InstalledActivity }) {
 
 interface ActivityRowProps {
   entry: InstalledActivity;
-  update: UpdateState | undefined;
+  checking: boolean;
+  opening: boolean;
   toggling: boolean;
   onToggle: (enabled: boolean) => void;
   onCheck: () => void;
-  onReview: (release: ActivityRelease) => void;
+  onReview: () => void;
   onDetails: () => void;
   onUninstall: () => void;
 }
 
-function ActivityRow({ entry, update, toggling, onToggle, onCheck, onReview, onDetails, onUninstall }: ActivityRowProps) {
+function ActivityRow(props: ActivityRowProps) {
+  const { entry, checking, opening, toggling, onToggle, onCheck, onReview, onDetails, onUninstall } = props;
   const { manifest } = entry;
   return (
     <TableRow>
@@ -167,14 +205,11 @@ function ActivityRow({ entry, update, toggling, onToggle, onCheck, onReview, onD
           </div>
         </div>
       </TableCell>
-      <TableCell className="tabular-nums">{manifest.version}</TableCell>
       <TableCell>
-        <UpdateCell
-          state={update}
-          onReview={() => {
-            if (update?.kind === "available") onReview(update.release);
-          }}
-        />
+        <VersionCell entry={entry} />
+      </TableCell>
+      <TableCell>
+        <UpdateCell check={entry.check} checking={checking} opening={opening} onReview={onReview} />
       </TableCell>
       <TableCell>
         <a
@@ -212,7 +247,7 @@ function ActivityRow({ entry, update, toggling, onToggle, onCheck, onReview, onD
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onSelect={onDetails}>{t("activities.details")}</DropdownMenuItem>
-            <DropdownMenuItem disabled={update?.kind === "checking"} onSelect={onCheck}>
+            <DropdownMenuItem disabled={checking} onSelect={onCheck}>
               {t("activities.check")}
             </DropdownMenuItem>
             <DropdownMenuItem variant="destructive" onSelect={onUninstall}>
@@ -228,7 +263,8 @@ function ActivityRow({ entry, update, toggling, onToggle, onCheck, onReview, onD
 export function ActivitiesPage() {
   const { data, error, loading, refresh } = useCockpitResource(activityApi.library, t("activities.failed"));
   const [dialog, setDialog] = useState<{ open: boolean; flow: Flow }>({ open: false, flow: { step: "add" } });
-  const [updates, setUpdates] = useState<Record<string, UpdateState>>({});
+  const [checking, setChecking] = useState<ReadonlySet<string>>(new Set());
+  const [opening, setOpening] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [toggling, setToggling] = useState<string | null>(null);
   const [checkingAll, setCheckingAll] = useState(false);
@@ -240,31 +276,56 @@ export function ActivitiesPage() {
   /** Closes the dialog a finished request belongs to, and no other opened since. */
   const closeAfter = (done: Flow) =>
     setDialog((current) => (current.flow === done ? { ...current, open: false } : current));
-  const found = (install: string, digest: string, state: UpdateState) =>
-    setUpdates((current) => ({ ...current, [versionKey(install, digest)]: state }));
+  const marked = (install: string, on: boolean) =>
+    setChecking((current) => {
+      const next = new Set(current);
+      if (on) next.add(install);
+      else next.delete(install);
+      return next;
+    });
 
-  /** Looks for a newer release of one installation. Resolves to whether looking at the next one makes sense. */
+  /**
+   * Has the server look for a newer release of one installation now; it keeps
+   * what it finds, a failed look included, and the row shows it. Resolves to
+   * whether looking at the next one makes sense: GitHub's request limit, a
+   * busy installer and a server out of reach would fail it too.
+   */
   async function check(entry: InstalledActivity): Promise<boolean> {
-    found(entry.install, entry.digest, { kind: "checking" });
+    marked(entry.install, true);
     try {
-      const result = await activityApi.review(entry.source, entry.manifest.id, entry.install);
-      found(
-        entry.install,
-        entry.digest,
-        "current" in result
-          ? { kind: "current", at: Date.now() }
-          : { kind: "available", at: Date.now(), release: result },
-      );
+      await activityApi.check(entry.install);
       return true;
     } catch (cause) {
-      found(entry.install, entry.digest, { kind: "failed", message: explain(cause) });
-      // GitHub's rate limit and a server out of reach fail every repository alike.
-      return !(cause instanceof CockpitApiError && (cause.status === 429 || cause.status === 0));
+      setNotice({ message: explain(cause), error: true });
+      return false;
+    } finally {
+      await refresh();
+      marked(entry.install, false);
+    }
+  }
+
+  /** Reads the newer release the last look found, for its review beside what is installed. */
+  async function review(entry: InstalledActivity) {
+    setOpening(entry.install);
+    try {
+      const result = await activityApi.review(entry.source, entry.manifest.id, entry.install);
+      if ("current" in result) {
+        // The release the look found is gone; looking again replaces the finding.
+        setNotice({ message: t("activities.upToDate", { name: entry.manifest.name }), error: false });
+        await check(entry);
+      } else {
+        show({ step: "review", release: result, current: entry });
+      }
+    } catch (cause) {
+      setNotice({ message: explain(cause), error: true });
+    } finally {
+      setOpening(null);
     }
   }
 
   /** One repository at a time: the server reads two releases at once at most, and GitHub limits requests. */
   async function checkAll() {
+    setNotice(null);
     setCheckingAll(true);
     for (const entry of activities) {
       if (!(await check(entry))) break;
@@ -289,8 +350,6 @@ export function ActivitiesPage() {
     const { release, current } = reviewing;
     await activityApi.install(release, current?.install);
     const names = { name: release.manifest.name, version: release.manifest.version };
-    // The version just installed is the newest its repository has.
-    if (current) found(current.install, release.digest, { kind: "current", at: Date.now() });
     setNotice({ message: current ? t("activities.updated", names) : t("activities.installed", names), error: false });
     closeAfter(reviewing);
     await refresh();
@@ -345,7 +404,9 @@ export function ActivitiesPage() {
       {data ? (
         <Card className="min-h-0 flex-1 gap-0 py-0">
           <CardTitleRow icon="game" title={t("activities.list")}>
-            <span className="text-sm text-muted-foreground">{formatNumber(activities.length)}</span>
+            <span className="text-sm text-muted-foreground">
+              {t("activities.autoCheck", { hours: data.checkHours })}
+            </span>
           </CardTitleRow>
           <div className="relative min-h-0 flex-1 overflow-auto px-3 pb-2 sm:px-5">
             <Table containerClassName="overflow-visible">
@@ -367,11 +428,15 @@ export function ActivitiesPage() {
                   <ActivityRow
                     key={entry.install}
                     entry={entry}
-                    update={updates[versionKey(entry.install, entry.digest)]}
+                    checking={checking.has(entry.install)}
+                    opening={opening === entry.install}
                     toggling={toggling === entry.install}
                     onToggle={(enabled) => void toggle(entry, enabled)}
-                    onCheck={() => void check(entry)}
-                    onReview={(release) => show({ step: "review", release, current: entry })}
+                    onCheck={() => {
+                      setNotice(null);
+                      void check(entry);
+                    }}
+                    onReview={() => void review(entry)}
                     onDetails={() => show({ step: "details", entry })}
                     onUninstall={() => show({ step: "uninstall", entry })}
                   />
